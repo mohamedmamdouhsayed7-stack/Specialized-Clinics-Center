@@ -306,6 +306,7 @@ model PaymentAllocation {
 model RefreshToken {
   id           String   @id @default(uuid()) @db.Uuid
   token        String   @unique
+  jti          String?  @unique
   userId       String   @db.Uuid
   expiresAt    DateTime
   revokedAt    DateTime?
