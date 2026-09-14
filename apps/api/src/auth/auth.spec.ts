@@ -7,6 +7,13 @@ import * as argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
 import { cleanupTestData } from '../test-utils';
 
+const waitForLoginThrottleWindow = () =>
+  new Promise(resolve => {
+    const ttlSeconds = Number(process.env.AUTH_LOGIN_THROTTLE_TTL ?? 60);
+    const waitMilliseconds = (Number.isFinite(ttlSeconds) && ttlSeconds > 0 ? ttlSeconds : 60) * 1000 + 100;
+    setTimeout(resolve, waitMilliseconds);
+  });
+
 describe('Authentication Security Tests (E2E)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -359,7 +366,7 @@ describe('Authentication Security Tests (E2E)', () => {
 
     it('should allow multi-device refresh without invalidating other sessions', async () => {
       // Wait for rate limiting window to clear from previous tests
-      await new Promise(resolve => setTimeout(resolve, 65000));
+      await waitForLoginThrottleWindow();
 
       // Simulate Device A login
       const deviceA = request.agent(app.getHttpServer());
@@ -411,7 +418,7 @@ describe('Authentication Security Tests (E2E)', () => {
 
     it('should invalidate only the rotated refresh token, not other sessions', async () => {
       // Wait for rate limiting window to clear from previous tests
-      await new Promise(resolve => setTimeout(resolve, 65000));
+      await waitForLoginThrottleWindow();
 
       // Device A login
       const deviceA = request.agent(app.getHttpServer());
@@ -454,7 +461,7 @@ describe('Authentication Security Tests (E2E)', () => {
 
     it('should handle concurrent refresh requests correctly', async () => {
       // Wait for rate limiting window to clear from previous tests
-      await new Promise(resolve => setTimeout(resolve, 65000));
+      await waitForLoginThrottleWindow();
 
       // Login once
       const agent = request.agent(app.getHttpServer());
@@ -468,15 +475,15 @@ describe('Authentication Security Tests (E2E)', () => {
 
       // Issue concurrent refresh requests
       const [refresh1, refresh2] = await Promise.all([
-        agent.post('/api/auth/refresh').expect(200),
-        agent.post('/api/auth/refresh').expect(200),
+        agent.post('/api/auth/refresh'),
+        agent.post('/api/auth/refresh'),
       ]);
 
-      // Both should succeed and return new tokens
-      expect(refresh1.body.accessToken).toBeDefined();
-      expect(refresh2.body.accessToken).toBeDefined();
-      expect(refresh1.body.user).toBeDefined();
-      expect(refresh2.body.user).toBeDefined();
+      // Atomic rotation allows only one use of a refresh token.
+      expect([refresh1.status, refresh2.status].sort()).toEqual([200, 401]);
+      const successfulRefresh = refresh1.status === 200 ? refresh1 : refresh2;
+      expect(successfulRefresh.body.accessToken).toBeDefined();
+      expect(successfulRefresh.body.user).toBeDefined();
     }, 70000);
   });
 
@@ -504,7 +511,7 @@ describe('Authentication Security Tests (E2E)', () => {
 
     it('should invalidate only the logged-out session, not other active sessions', async () => {
       // Wait for rate limiting window to clear from previous tests
-      await new Promise(resolve => setTimeout(resolve, 65000));
+      await waitForLoginThrottleWindow();
 
       // Device A login
       const deviceA = request.agent(app.getHttpServer());
@@ -570,7 +577,7 @@ describe('Authentication Security Tests (E2E)', () => {
         });
 
       // Wait for rate limiting window to clear from previous tests
-      await new Promise(resolve => setTimeout(resolve, 65000));
+      await waitForLoginThrottleWindow();
 
       // Login once for this dedicated test user
       const loginResponse = await request(app.getHttpServer())
@@ -645,7 +652,7 @@ describe('Authentication Security Tests (E2E)', () => {
         });
 
       // Wait for rate limiting window to clear from previous tests
-      await new Promise(resolve => setTimeout(resolve, 65000));
+      await waitForLoginThrottleWindow();
 
       const responses = [];
       for (let i = 0; i < 15; i++) {

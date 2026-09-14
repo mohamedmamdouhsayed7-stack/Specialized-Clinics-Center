@@ -32,6 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refreshPromiseRef = useRef<Promise<void> | null>(null);
 
   const clearRefreshTimer = () => {
     if (refreshTimerRef.current) {
@@ -56,24 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // This recovers the session without needing localStorage for accessToken.
     const recoverSession = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setUser(data.user);
-          setAccessToken(data.accessToken);
-          setInMemoryAccessToken(data.accessToken);
-          startRefreshTimer();
-        } else {
-          setUser(null);
-          setAccessToken(null);
-          setInMemoryAccessToken(null);
-        }
+        await refreshAccessToken();
+        startRefreshTimer();
       } catch (error) {
-        console.error('Session recovery failed:', error);
+        if (error instanceof Error) {
+          console.error('Session recovery failed:', error);
+        } else {
+          console.error('Session recovery failed');
+        }
         setUser(null);
         setAccessToken(null);
         setInMemoryAccessToken(null);
@@ -130,7 +121,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refreshAccessToken = async () => {
-    try {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+
+    const refreshPromise = (async () => {
       const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
         method: 'POST',
         credentials: 'include',
@@ -147,12 +142,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(data.user);
       }
       setInMemoryAccessToken(data.accessToken);
+    })();
+
+    refreshPromiseRef.current = refreshPromise;
+    try {
+      await refreshPromise;
     } catch (error) {
       clearRefreshTimer();
       setUser(null);
       setAccessToken(null);
       setInMemoryAccessToken(null);
       throw error;
+    } finally {
+      if (refreshPromiseRef.current === refreshPromise) {
+        refreshPromiseRef.current = null;
+      }
     }
   };
 

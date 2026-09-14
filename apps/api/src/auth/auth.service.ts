@@ -8,6 +8,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import * as argon2 from 'argon2';
+import { randomUUID } from 'node:crypto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UserRole } from '@prisma/client';
@@ -103,7 +104,7 @@ export class AuthService {
 
     const tokens = await this.generateTokens(user.id, user.role);
 
-    await this.saveRefreshToken(user.id, tokens.refreshToken, rememberMe);
+    await this.saveRefreshToken(user.id, tokens.refreshToken, tokens.jti, rememberMe);
 
     await this.auditService.logUserAction(
       user.id,
@@ -132,20 +133,35 @@ export class AuthService {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       });
 
-      const allUserTokens = await this.prisma.refreshToken.findMany({
-        where: { userId: payload.sub },
-        include: { user: true },
-      });
+      let storedToken = payload.jti
+        ? await this.prisma.refreshToken.findUnique({
+            where: { jti: payload.jti },
+            include: { user: true },
+          })
+        : null;
 
-      let storedToken = null;
-      for (const token of allUserTokens) {
-        if (await argon2.verify(token.token, refreshToken)) {
-          storedToken = token;
-          break;
+      // Tokens issued before jti indexing was introduced remain verifiable
+      // through the legacy hash fallback and migrate on their next refresh.
+      if (!storedToken) {
+        const legacyTokens = await this.prisma.refreshToken.findMany({
+          where: { userId: payload.sub, jti: null },
+          include: { user: true },
+        });
+
+        for (const token of legacyTokens) {
+          if (await argon2.verify(token.token, refreshToken)) {
+            storedToken = token;
+            break;
+          }
         }
       }
 
-      if (!storedToken || storedToken.revokedAt || storedToken.expiresAt < new Date()) {
+      if (
+        !storedToken ||
+        storedToken.userId !== payload.sub ||
+        storedToken.revokedAt ||
+        storedToken.expiresAt < new Date()
+      ) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
@@ -153,14 +169,17 @@ export class AuthService {
         throw new UnauthorizedException('Account is inactive');
       }
 
-      await this.prisma.refreshToken.update({
-        where: { id: storedToken.id },
+      const revokeResult = await this.prisma.refreshToken.updateMany({
+        where: { id: storedToken.id, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      if (revokeResult.count !== 1) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
 
       const tokens = await this.generateTokens(storedToken.user.id, storedToken.user.role);
 
-      await this.saveRefreshToken(storedToken.user.id, tokens.refreshToken, false);
+      await this.saveRefreshToken(storedToken.user.id, tokens.refreshToken, tokens.jti, false);
 
       await this.auditService.logUserAction(
         storedToken.user.id,
@@ -269,7 +288,7 @@ export class AuthService {
 
   private async generateTokens(userId: string, role: UserRole) {
     const payload = { sub: userId, role };
-    const jti = Math.random().toString(36).substring(2);
+    const jti = randomUUID();
 
     const accessToken = this.jwtService.sign(payload, {
       secret: this.configService.get<string>('JWT_SECRET'),
@@ -281,10 +300,10 @@ export class AuthService {
       expiresIn: '7d',
     });
 
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, jti };
   }
 
-  private async saveRefreshToken(userId: string, token: string, rememberMe: boolean = false) {
+  private async saveRefreshToken(userId: string, token: string, jti: string, rememberMe: boolean = false) {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + (rememberMe ? 30 : 7));
 
@@ -293,6 +312,7 @@ export class AuthService {
     await this.prisma.refreshToken.create({
       data: {
         token: tokenHash,
+        jti,
         userId,
         expiresAt,
       },
