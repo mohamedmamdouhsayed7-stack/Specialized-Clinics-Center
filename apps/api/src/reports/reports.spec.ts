@@ -210,7 +210,7 @@ describe('Reports Module Tests (E2E)', () => {
 
     it('should exclude REVERSED payments from payment method breakdown', async () => {
       // Create payments with different methods
-      const cashPayment = await prisma.payment.create({
+      const knetPayment1 = await prisma.payment.create({
         data: {
           invoiceId: testInvoiceId,
           amount: 100,
@@ -220,11 +220,11 @@ describe('Reports Module Tests (E2E)', () => {
         },
       });
 
-      const linkPayment = await prisma.payment.create({
+      const knetPayment2 = await prisma.payment.create({
         data: {
           invoiceId: testInvoiceId,
           amount: 75,
-          method: 'LINK',
+          method: 'KNET',
           status: 'RECORDED',
           recordedById: adminUserId,
         },
@@ -235,12 +235,11 @@ describe('Reports Module Tests (E2E)', () => {
         .get('/api/reports/payment-methods')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
-      const cashBefore = breakdownBefore.body.find((m: any) => m.method === 'KNET')?.amount || 0;
-      const linkBefore = breakdownBefore.body.find((m: any) => m.method === 'LINK')?.amount || 0;
+      const knetBefore = breakdownBefore.body.find((m: any) => m.method === 'KNET')?.amount || 0;
 
-      // Reverse the LINK payment
+      // Reverse the second KNET payment
       await prisma.payment.update({
-        where: { id: linkPayment.id },
+        where: { id: knetPayment2.id },
         data: {
           status: 'REVERSED',
           reversedAt: new Date(),
@@ -254,17 +253,13 @@ describe('Reports Module Tests (E2E)', () => {
         .get('/api/reports/payment-methods')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
-      const cashAfter = breakdownAfter.body.find((m: any) => m.method === 'KNET')?.amount || 0;
-      const linkAfter = breakdownAfter.body.find((m: any) => m.method === 'LINK')?.amount || 0;
+      const knetAfter = breakdownAfter.body.find((m: any) => m.method === 'KNET')?.amount || 0;
 
-      // KNET should remain the same
-      expect(cashAfter).toBe(cashBefore);
-
-      // LINK should be excluded
-      expect(linkAfter).toBe(0);
+      // KNET should decrease by the reversed payment amount
+      expect(knetAfter).toBe(knetBefore - 75);
 
       // Clean up
-      await prisma.payment.deleteMany({ where: { id: { in: [cashPayment.id, linkPayment.id] } } });
+      await prisma.payment.deleteMany({ where: { id: { in: [knetPayment1.id, knetPayment2.id] } } });
     });
 
     it('should exclude REVERSED payments from revenue timeseries', async () => {
