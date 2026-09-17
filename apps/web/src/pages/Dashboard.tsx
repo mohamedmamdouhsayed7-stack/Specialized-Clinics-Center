@@ -1,10 +1,12 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { UsersRound, CalendarDays, ClipboardList, ReceiptText, Stethoscope, Wallet } from 'lucide-react';
+import { UsersRound, CalendarDays, ClipboardList, ReceiptText, Stethoscope, Wallet, MessageCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import DashboardCard from '../components/DashboardCard';
 import StatCard from '../components/StatCard';
+import SendAppointmentMessageDialog from '../components/SendAppointmentMessageDialog';
 import { patientsService } from '../services/patients.service';
 import { appointmentsService } from '../services/appointments.service';
 import { visitsService } from '../services/visits.service';
@@ -17,6 +19,7 @@ export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isAdmin = user?.role === 'ADMIN';
+  const [messageDialogOpen, setMessageDialogOpen] = useState(false);
 
   const roleLabel = user?.role === 'ADMIN' ? t('roles.admin') : t('roles.receptionist');
 
@@ -69,8 +72,17 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold tracking-tight text-[#102F63] sm:text-[30px]">{t('dashboard.title')}</h1>
               <p className="mt-1 text-sm text-[#64748B]">{t('dashboard.subtitle')}</p>
             </div>
-            <div className="text-start text-sm text-[#64748B] sm:text-end">
-            <div>{formatDate(new Date(), i18n.language)}</div>
+            <div className="flex flex-col items-start gap-3 sm:items-end">
+              <button
+                type="button"
+                onClick={() => setMessageDialogOpen(true)}
+                className="inline-flex items-center gap-2 rounded-lg bg-[#111844] px-4 py-2 text-sm font-semibold text-white hover:bg-[#1a237e] focus:outline-none focus:ring-2 focus:ring-[#4B5694] focus:ring-offset-2"
+              >
+                <MessageCircle size={16} /> {t('appointmentMessages.sendMessage')}
+              </button>
+              <div className="text-start text-sm text-[#64748B] sm:text-end">
+                <div>{formatDate(new Date(), i18n.language)}</div>
+              </div>
             </div>
           </div>
 
@@ -135,6 +147,7 @@ export default function Dashboard() {
             )}
           </div>
 
+      <SendAppointmentMessageDialog open={messageDialogOpen} onClose={() => setMessageDialogOpen(false)} />
     </main>
   );
 }

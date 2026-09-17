@@ -54,10 +54,8 @@ enum ChargeType {
 }
 
 enum PaymentMethod {
-  CASH
-  VISA
+  LINK
   KNET
-  OTHER
 }
 
 enum PaymentStatus {
@@ -306,7 +304,6 @@ model PaymentAllocation {
 model RefreshToken {
   id           String   @id @default(uuid()) @db.Uuid
   token        String   @unique
-  jti          String?  @unique
   userId       String   @db.Uuid
   expiresAt    DateTime
   revokedAt    DateTime?

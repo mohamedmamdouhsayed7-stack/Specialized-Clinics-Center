@@ -15,6 +15,7 @@ export interface Appointment {
     id: string;
     civilId: string;
     fullNameAr: string;
+    fullNameEn?: string;
     phone?: string;
   };
 }

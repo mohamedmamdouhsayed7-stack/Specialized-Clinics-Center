@@ -16,7 +16,6 @@
     "prisma:migrate:prod": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "seed:dev-admin": "node create-admin.js",
-    "seed:prod-admin": "node prisma/seed-prod-admin.js",
     "import:validate": "node scripts/validate-reference-workbooks.js",
     "import:reference": "node scripts/import-reference-workbooks.js",
     "test:imports": "node --test scripts/validate-reference-workbooks.test.js"

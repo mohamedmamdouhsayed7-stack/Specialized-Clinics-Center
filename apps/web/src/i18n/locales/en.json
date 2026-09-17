@@ -134,9 +134,9 @@
     "totalPatients": "Total Patients",
     "todayAppointments": "Today's Appointments",
     "weekVisits": "Visits This Week",
-    "totalOutstanding": "Total Outstanding"
-    ,"quickActions": "Quick actions"
-    ,"quickActionsSubtitle": "Open the most-used clinic workflows"
+    "totalOutstanding": "Total Outstanding",
+    "quickActions": "Quick actions",
+    "quickActionsSubtitle": "Open the most-used clinic workflows"
   },
   "patients": {
     "subtitle": "Manage patient records",
@@ -199,8 +199,8 @@
     "paymentsHistory": "Payment History",
     "noPaymentsRecorded": "No payments recorded",
     "appointmentsHistory": "Appointment History",
-    "noAppointmentsRecorded": "No appointments recorded"
-    ,"sections": "Patient sections"
+    "noAppointmentsRecorded": "No appointments recorded",
+    "sections": "Patient sections"
   },
   "visits": {
     "subtitle": "Manage and track patient visits",
@@ -419,8 +419,8 @@
     "enterValidAmount": "Enter a valid amount",
     "reversePayment": "Reverse Payment",
     "reversalReasonPlaceholder": "Reversal reason",
-    "confirmReversal": "Confirm"
-    ,"reverseConfirm": "This payment will be reversed and excluded from the invoice balance. Continue?"
+    "confirmReversal": "Confirm",
+    "reverseConfirm": "This payment will be reversed and excluded from the invoice balance. Continue?"
   },
   "appointments": {
     "patientInfo": "Patient information",
@@ -632,5 +632,31 @@
   "notifications": {
     "backupDue": "A backup is due — the last one is over a day old",
     "appointmentUpcoming": "Upcoming appointment: {{name}}"
+  },
+  "appointmentMessages": {
+    "sendMessage": "Send Message",
+    "selectAppointmentStep": "Select Appointment",
+    "composeStep": "Compose Message",
+    "selectDate": "Date",
+    "back": "Back",
+    "patientLabel": "Patient",
+    "phoneLabel": "Mobile Number",
+    "missingPhoneShort": "—",
+    "appointmentDateLabel": "Appointment Date",
+    "appointmentTimeLabel": "Appointment Time",
+    "messageTypeLabel": "Message Type",
+    "typeConfirmed": "Confirmed",
+    "typeReminder": "Reminder",
+    "typeCancelled": "Cancelled",
+    "typeRescheduled": "Rescheduled",
+    "messageLabel": "Message",
+    "missingPhone": "This patient has no mobile number on file. Add one to their record before sending.",
+    "sendButton": "Send Message",
+    "opening": "Opening WhatsApp...",
+    "limitationNote": "WhatsApp will open with this number and message ready. Review it, then send manually — the browser can't send it for you.",
+    "templateConfirmed": "Hello {{name}}, your appointment at {{clinic}} on {{date}} at {{time}} is confirmed. We look forward to seeing you.",
+    "templateReminder": "Hello {{name}}, this is a reminder of your appointment at {{clinic}} on {{date}} at {{time}}.",
+    "templateCancelled": "Hello {{name}}, your appointment at {{clinic}} on {{date}} at {{time}} has been cancelled. Please contact us to book a new appointment.",
+    "templateRescheduled": "Hello {{name}}, your appointment at {{clinic}} has been rescheduled to {{date}} at {{time}}."
   }
 }

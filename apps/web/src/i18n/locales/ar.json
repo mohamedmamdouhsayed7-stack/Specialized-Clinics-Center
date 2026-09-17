@@ -134,9 +134,9 @@
     "totalPatients": "إجمالي المرضى",
     "todayAppointments": "مواعيد اليوم",
     "weekVisits": "زيارات هذا الأسبوع",
-    "totalOutstanding": "إجمالي المستحقات"
-    ,"quickActions": "إجراءات سريعة"
-    ,"quickActionsSubtitle": "افتح مسارات العمل الأكثر استخدامًا في العيادة"
+    "totalOutstanding": "إجمالي المستحقات",
+    "quickActions": "إجراءات سريعة",
+    "quickActionsSubtitle": "افتح مسارات العمل الأكثر استخدامًا في العيادة"
   },
   "patients": {
     "subtitle": "إدارة بيانات المرضى والمريضات",
@@ -199,8 +199,8 @@
     "paymentsHistory": "سجل المدفوعات",
     "noPaymentsRecorded": "لا توجد مدفوعات مسجلة",
     "appointmentsHistory": "سجل المواعيد",
-    "noAppointmentsRecorded": "لا توجد مواعيد مسجلة"
-    ,"sections": "أقسام ملف المريض"
+    "noAppointmentsRecorded": "لا توجد مواعيد مسجلة",
+    "sections": "أقسام ملف المريض"
   },
   "visits": {
     "subtitle": "إدارة ومتابعة زيارات المريضات",
@@ -402,10 +402,8 @@
   },
   "payments": {
     "amountGuidance": "أدخل مبلغًا لا يتجاوز الرصيد المتبقي.",
-    "methodCash": "نقداً",
-    "methodVisa": "فيزا",
     "methodKnet": "كي نت",
-    "methodOther": "أخرى",
+    "methodLink": "رابط دفع",
     "recordPayment": "تسجيل دفعة",
     "amount": "المبلغ",
     "method": "طريقة الدفع",
@@ -632,5 +630,31 @@
   "notifications": {
     "backupDue": "حان وقت عمل نسخة احتياطية — آخر نسخة مر عليها أكتر من يوم",
     "appointmentUpcoming": "موعد قريب: {{name}}"
+  },
+  "appointmentMessages": {
+    "sendMessage": "إرسال رسالة",
+    "selectAppointmentStep": "اختيار الموعد",
+    "composeStep": "تجهيز الرسالة",
+    "selectDate": "التاريخ",
+    "back": "رجوع",
+    "patientLabel": "المريضة",
+    "phoneLabel": "رقم الموبايل",
+    "missingPhoneShort": "—",
+    "appointmentDateLabel": "تاريخ الموعد",
+    "appointmentTimeLabel": "وقت الموعد",
+    "messageTypeLabel": "نوع الرسالة",
+    "typeConfirmed": "تأكيد",
+    "typeReminder": "تذكير",
+    "typeCancelled": "إلغاء",
+    "typeRescheduled": "تغيير موعد",
+    "messageLabel": "الرسالة",
+    "missingPhone": "لا يوجد رقم موبايل مسجّل لهذه المريضة. أضيفي رقمًا في ملفها قبل الإرسال.",
+    "sendButton": "إرسال الرسالة",
+    "opening": "جارٍ فتح واتساب...",
+    "limitationNote": "سيفتح واتساب بالرقم والرسالة جاهزين. راجعي الرسالة ثم أرسليها يدويًا — لا يمكن للمتصفح إرسالها تلقائيًا.",
+    "templateConfirmed": "السلام عليكم {{name}}، تم تأكيد موعدك في {{clinic}} يوم {{date}} الساعة {{time}}. بانتظار زيارتك.",
+    "templateReminder": "السلام عليكم {{name}}، تذكير بموعدك في {{clinic}} يوم {{date}} الساعة {{time}}.",
+    "templateCancelled": "السلام عليكم {{name}}، تم إلغاء موعدك في {{clinic}} يوم {{date}} الساعة {{time}}. يرجى التواصل معنا لحجز موعد جديد.",
+    "templateRescheduled": "السلام عليكم {{name}}، تم تغيير موعدك في {{clinic}} ليصبح يوم {{date}} الساعة {{time}}."
   }
 }
