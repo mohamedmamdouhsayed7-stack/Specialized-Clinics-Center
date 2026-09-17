@@ -209,7 +209,7 @@ export default function DailyClosingPage() {
                 </div>
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[#1F2430]">{t('dailyClosing.exceptionInvoices')}</span>
-                  <span className="font-medium text-[#C4362B]">{data.paymentStatusCounts.UNPAID + data.paymentStatusCounts.PARTIALLY_PAID}</span>
+                  <span className="font-medium text-[#C4362B]">{data.paymentExceptions}</span>
                 </div>
               </div>
             </div>

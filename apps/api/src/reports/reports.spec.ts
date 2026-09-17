@@ -7,6 +7,9 @@ import * as argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
 import { cleanupReportsTestData } from '../test-utils';
 
+// Import the timezone helper for unit testing
+import { localDayStartToUtc, localDayEndToUtc } from './reports.service';
+
 describe('Reports Module Tests (E2E)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -117,6 +120,28 @@ describe('Reports Module Tests (E2E)', () => {
     // Clean up test data using shared utility (reports uses special patient cleanup)
     await cleanupReportsTestData(prisma);
     await app.close();
+  });
+
+  describe('Timezone Helper Unit Tests', () => {
+    it('should convert 2026-09-18 to correct UTC range for Asia/Kuwait timezone', () => {
+      const testDate = '2026-09-18';
+      const startUtc = localDayStartToUtc(testDate);
+      const endUtc = localDayEndToUtc(testDate);
+
+      // Verify the UTC range spans exactly 24 hours minus 1 millisecond
+      const duration = endUtc.getTime() - startUtc.getTime();
+      expect(duration).toBe(24 * 60 * 60 * 1000 - 1);
+
+      // Verify the start represents midnight in Kuwait timezone
+      // Kuwait is UTC+3, so midnight local = 21:00 UTC previous day
+      // For 2026-09-18 in Kuwait (UTC+3), start should be 2026-09-17T21:00:00.000Z
+      const expectedStart = new Date('2026-09-17T21:00:00.000Z');
+      expect(startUtc.getTime()).toBe(expectedStart.getTime());
+
+      // End should be 2026-09-18T20:59:59.999Z
+      const expectedEnd = new Date('2026-09-18T20:59:59.999Z');
+      expect(endUtc.getTime()).toBe(expectedEnd.getTime());
+    });
   });
 
   describe('Payment Reversal Exclusion', () => {

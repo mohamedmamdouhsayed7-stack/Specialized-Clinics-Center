@@ -641,7 +641,7 @@
     "expectedCollection": "Expected Collection",
     "actualRecorded": "Actual Recorded",
     "reconciliationDifference": "Reconciliation Difference",
-    "reconciliationNote": "Difference may be due to payment date variations or exceptional cases. Review outstanding invoices.",
+    "reconciliationNote": "Difference may be due to payment date variations or exceptional cases. Review payment reconciliation and invoice exceptions.",
     "paymentExceptions": "Payment Exceptions",
     "normalInvoices": "Normal Invoices",
     "exceptionInvoices": "Exception Invoices",

@@ -641,7 +641,7 @@
     "expectedCollection": "المجموع المتوقع",
     "actualRecorded": "المجموع المسجل",
     "reconciliationDifference": "فرق التسوية",
-    "reconciliationNote": "قد يكون الفرق بسبب اختلاف تاريخ الدفع أو حالات استثنائية. راجعي الفواتير المستحقة.",
+    "reconciliationNote": "قد يكون الفرق بسبب اختلاف تاريخ الدفع أو حالات استثنائية. راجع تسوية المدفوعات والفواتير الاستثنائية.",
     "paymentExceptions": "استثناءات الدفع",
     "normalInvoices": "الفواتير العادية",
     "exceptionInvoices": "الفواتير الاستثنائية",

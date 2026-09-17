@@ -2,6 +2,50 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
+// Clinic business timezone (Kuwait - used for KNET, KD, ar-KW localization)
+const CLINIC_TIMEZONE = 'Asia/Kuwait';
+
+/**
+ * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
+ * the corresponding UTC instant for the start of that day.
+ * This ensures PostgreSQL timestamp comparisons represent the exact local day.
+ */
+export function localDayStartToUtc(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  // Create a date in the clinic's timezone
+  const localDate = new Date(year, month - 1, day, 0, 0, 0);
+  // Convert to UTC by using the Intl API with the clinic timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLINIC_TIMEZONE,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(localDate);
+  const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+  const utcYear = Number(getPart('year'));
+  const utcMonth = Number(getPart('month')) - 1;
+  const utcDay = Number(getPart('day'));
+  const utcHour = Number(getPart('hour'));
+  const utcMinute = Number(getPart('minute'));
+  const utcSecond = Number(getPart('second'));
+  return new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHour, utcMinute, utcSecond));
+}
+
+/**
+ * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
+ * the corresponding UTC instant for the end of that day (23:59:59.999).
+ */
+export function localDayEndToUtc(dateStr: string): Date {
+  const start = localDayStartToUtc(dateStr);
+  // Add 24 hours and subtract 1 millisecond to get end of day
+  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+}
+
 function startOfDay(d: Date): Date {
   const x = new Date(d);
   x.setHours(0, 0, 0, 0);
@@ -13,23 +57,14 @@ function endOfDay(d: Date): Date {
   return x;
 }
 
-// Helper to parse date string to UTC to avoid timezone issues
-function parseDate(dateStr: string): Date {
-  // If it's already a date string like "2025-09-06", parse it as UTC
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  }
-  return new Date(dateStr);
-}
-
 @Injectable()
 export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
   private resolveRange(from?: string, to?: string) {
-    const toDate = to ? endOfDay(parseDate(to)) : endOfDay(new Date());
-    const fromDate = from ? startOfDay(parseDate(from)) : startOfDay(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
+    // Use timezone-aware calendar day conversion for date range queries
+    const toDate = to ? localDayEndToUtc(to) : endOfDay(new Date());
+    const fromDate = from ? localDayStartToUtc(from) : startOfDay(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
     return { fromDate, toDate };
   }
 
@@ -272,11 +307,16 @@ export class ReportsService {
   // collections, built entirely from real Invoice/Payment rows for that day.
   // Reversed payments are excluded from collection totals (they were undone),
   // matching what a genuine end-of-day cash closing should show.
+  //
+  // Reconciliation semantics:
+  // - expected = total of invoices issued during the selected local calendar day
+  // - actual = total of payments recorded during the selected local calendar day
+  // - difference = operational reconciliation signal
+  // - difference does NOT automatically mean unpaid debt; it may reflect payment date variations
   async getDailyClosing(date?: string) {
-    // Use parseDate for calendar-date safe handling (YYYY-MM-DD -> UTC midnight)
-    const day = date ? parseDate(date) : new Date();
-    const dayStart = startOfDay(day);
-    const dayEnd = endOfDay(day);
+    // Use timezone-aware calendar day conversion for the clinic's local business day
+    const dayStart = date ? localDayStartToUtc(date) : startOfDay(new Date());
+    const dayEnd = date ? localDayEndToUtc(date) : endOfDay(new Date());
 
     const [
       invoicesToday,
