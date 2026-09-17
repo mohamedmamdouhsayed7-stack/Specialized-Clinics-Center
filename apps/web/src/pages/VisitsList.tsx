@@ -25,6 +25,13 @@ function statusBadgeStyle(status: VisitStatus) {
   }
 }
 
+// Mask civilId for privacy while showing first and last digits
+// Handles null/empty civilId values safely
+function maskCivilId(civilId: string | null | undefined): string {
+  if (!civilId || civilId.length <= 2) return civilId || '—';
+  return civilId[0] + 'X'.repeat(civilId.length - 2) + civilId[civilId.length - 1];
+}
+
 export default function VisitsList() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -176,9 +183,9 @@ export default function VisitsList() {
                   actions={<span className="ui-badge" style={statusBadgeStyle(visit.status)}>{STATUS_LABELS[visit.status]}</span>}
                   onClick={() => navigate(preserveListState(`/visits/${visit.id}`, location))}
                 >
-                  <MobileRecordField label={t('patients.civilId')} value={visit.patient.civilId} />
+                  <MobileRecordField label={t('patients.civilId')} value={maskCivilId(visit.patient.civilId)} />
                   <MobileRecordField label={t('visits.type')} value={TYPE_LABELS[visit.type]} />
-                  <MobileRecordField label={t('visits.services')} value={invoice?.invoiceItems.length ? invoice.invoiceItems.map((i) => i.serviceNameSnapshot).join(i18n.language === 'ar' ? '، ' : ', ') : '—'} />
+                  <MobileRecordField label={t('visits.services')} value={invoice?.invoiceItems?.length ? invoice.invoiceItems.map((i) => i.serviceNameSnapshot).join(i18n.language === 'ar' ? '، ' : ', ') : '—'} />
                   <div className="flex flex-wrap gap-1 pt-1">
                     <button onClick={(event) => { event.stopPropagation(); navigate(preserveListState(`/visits/${visit.id}`, location)); }} aria-label={t('visits.viewDetails')} className="icon-btn"><Eye size={16} strokeWidth={1.75} /></button>
                     {invoice && <button onClick={(event) => { event.stopPropagation(); navigate(preserveListState(`/invoices/${invoice.id}`, location)); }} aria-label={t('visits.viewInvoice')} className="icon-btn"><ReceiptText size={16} strokeWidth={1.75} /></button>}
@@ -214,10 +221,10 @@ export default function VisitsList() {
                     <div className="text-xs text-[#94A3B8]">{formatDate(visit.visitDate, i18n.language)}</div>
                   </td>
                   <td className="font-medium text-[#1F2430]">{visit.patient.fullNameAr}</td>
-                  <td className="font-mono text-[#64748B]">{visit.patient.civilId[0]}{'X'.repeat(Math.max(0, visit.patient.civilId.length - 2))}{visit.patient.civilId.slice(-1)}</td>
+                  <td className="font-mono text-[#64748B]">{maskCivilId(visit.patient.civilId)}</td>
                   <td className="text-[#1F2430]">{TYPE_LABELS[visit.type]}</td>
                   <td className="text-[#64748B] text-sm">
-                    {invoice?.invoiceItems.length
+                    {invoice?.invoiceItems?.length
                       ? invoice.invoiceItems.map((i) => i.serviceNameSnapshot).join(i18n.language === 'ar' ? '، ' : ', ')
                       : '—'}
                   </td>

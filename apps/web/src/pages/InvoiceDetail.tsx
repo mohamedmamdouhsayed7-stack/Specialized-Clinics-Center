@@ -1807,15 +1807,14 @@ export default function InvoiceDetail() {
             <div className="p-6 text-gray-500">
               {t('common.loading')}
             </div>
-          ) : !payments ||
-            payments.length === 0 ? (
+          ) : !payments?.length ? (
             <div className="p-6 text-center text-gray-500">
               {t('payments.noPayments')}
             </div>
           ) : (
             <>
               <div className="mobile-record-list p-3 md:hidden">
-                {payments.map((payment) => (
+                {payments?.map((payment) => (
                   <div
                     key={payment.id}
                     className="ui-card p-4"
@@ -1915,7 +1914,7 @@ export default function InvoiceDetail() {
                   </thead>
 
                   <tbody className="divide-y divide-gray-200">
-                    {payments.map((payment) => (
+                    {payments?.map((payment) => (
                       <tr key={payment.id}>
                         <td className="px-6 py-4 text-gray-900 font-medium">
                           {formatMoney(

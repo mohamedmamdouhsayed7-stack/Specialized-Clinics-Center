@@ -180,7 +180,7 @@ export default function VisitDetail() {
           <Stethoscope size={17} strokeWidth={1.75} />
           {t('visits.services')}
         </h2>
-        {invoice && invoice.invoiceItems.length > 0 ? (
+        {invoice && invoice.invoiceItems?.length > 0 ? (
           <ul className="space-y-2">
             {invoice.invoiceItems.map((item, i) => (
               <li key={i} className="text-sm text-[#1F2430] flex items-center gap-2">
