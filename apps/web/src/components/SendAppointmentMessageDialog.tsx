@@ -6,6 +6,7 @@ import { appointmentsService, Appointment } from '../services/appointments.servi
 import { formatDate } from '../utils/dateFormat';
 import { buildWhatsAppUrl, isValidWhatsAppPhone, normalizeWhatsAppPhone } from '../utils/invoiceSharing';
 import { useToast } from '../contexts/ToastContext';
+import type { KeyboardEvent } from 'react';
 
 type MessageType = 'CONFIRMED' | 'REMINDER' | 'CANCELLED' | 'RESCHEDULED';
 
@@ -271,8 +272,8 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
                                         type="button"
                                         onClick={() => handleChangeMessageType(type)}
                                         className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${messageType === type
-                                                ? 'border-[#111844] bg-[#111844] text-white'
-                                                : 'border-[#DCE3EF] text-[#344054] hover:bg-[#F6F8FC]'
+                                            ? 'border-[#111844] bg-[#111844] text-white'
+                                            : 'border-[#DCE3EF] text-[#344054] hover:bg-[#F6F8FC]'
                                             }`}
                                     >
                                         {t(`appointmentMessages.type${type.charAt(0)}${type.slice(1).toLowerCase()}`)}
@@ -316,3 +317,4 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
         </div>
     );
 }
+
