@@ -157,6 +157,40 @@ export class ReportsService {
     }));
   }
 
+  async getPaymentExceptions(from?: string, to?: string) {
+    const { fromDate, toDate } = this.resolveRange(from, to);
+    const exceptions = await this.prisma.invoice.findMany({
+      where: {
+        status: 'ISSUED',
+        issuedAt: { gte: fromDate, lte: toDate },
+        OR: [
+          { remaining: { gt: 0 } },
+          { paymentStatus: { not: 'PAID' } },
+        ],
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        total: true,
+        paid: true,
+        remaining: true,
+        paymentStatus: true,
+        issuedAt: true,
+        patient: { select: { fullNameAr: true, civilId: true } },
+      },
+    });
+    return exceptions.map((inv) => ({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      total: Number(inv.total),
+      paid: Number(inv.paid),
+      remaining: Number(inv.remaining),
+      paymentStatus: inv.paymentStatus,
+      issuedAt: inv.issuedAt,
+      patient: inv.patient,
+    }));
+  }
+
   async getServiceUsage(from?: string, to?: string, limit: number = 10) {
     const { fromDate, toDate } = this.resolveRange(from, to);
     const rows = await this.prisma.invoiceItem.groupBy({
@@ -239,7 +273,8 @@ export class ReportsService {
   // Reversed payments are excluded from collection totals (they were undone),
   // matching what a genuine end-of-day cash closing should show.
   async getDailyClosing(date?: string) {
-    const day = date ? new Date(date) : new Date();
+    // Use parseDate for calendar-date safe handling (YYYY-MM-DD -> UTC midnight)
+    const day = date ? parseDate(date) : new Date();
     const dayStart = startOfDay(day);
     const dayEnd = endOfDay(day);
 

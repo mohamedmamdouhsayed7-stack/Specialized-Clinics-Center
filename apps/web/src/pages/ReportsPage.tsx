@@ -17,13 +17,22 @@ import Skeleton from '../components/Skeleton';
 
 const COLORS = ['#102F63', '#173B78', '#4B5694', '#8991A6', '#C4362B', '#C98200'];
 
+// Get local calendar date (YYYY-MM-DD) for the current day
+function getLocalToday(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function todayMinus(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() - days);
-  return d.toISOString().slice(0, 10);
-}
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function KpiCard({ icon: Icon, label, value, suffix }: { icon: typeof TrendingUp; label: string; value: string | number; suffix?: string }) {
@@ -60,7 +69,7 @@ export default function ReportsPage() {
   };
 
   const [from, setFrom] = useState(todayMinus(29));
-  const [to, setTo] = useState(today());
+  const [to, setTo] = useState(getLocalToday());
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
 
@@ -71,6 +80,7 @@ export default function ReportsPage() {
   const serviceUsage = useQuery({ queryKey: ['reports-service-usage', from, to], queryFn: () => reportsService.getServiceUsage(from, to) });
   const visitTypes = useQuery({ queryKey: ['reports-visit-types', from, to], queryFn: () => reportsService.getVisitTypes(from, to) });
   const appointmentStatus = useQuery({ queryKey: ['reports-appt-status', from, to], queryFn: () => reportsService.getAppointmentStatus(from, to) });
+  const newPatientsTimeseries = useQuery({ queryKey: ['reports-new-patients-ts', from, to], queryFn: () => reportsService.getNewPatientsTimeseries(from, to) });
 
   const handleExportPdf = async () => {
     setExportingPdf(true);
@@ -312,35 +322,38 @@ export default function ReportsPage() {
           <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.insights')}</h2>
           {summary.data && paymentMethods.data ? (
             <div className="space-y-3 text-sm">
-              {summary.data.totalRevenue > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-[#64748B]">•</span>
-                  <span className="text-[#1F2430]">
-                    {t('reports.totalRevenue')}: {formatMoney(summary.data.totalRevenue, i18n.language)} {t('common.currency')}
-                  </span>
-                </div>
-              )}
-              {summary.data.totalCollected > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-[#64748B]">•</span>
-                  <span className="text-[#1F2430]">
-                    {t('reports.totalCollected')}: {formatMoney(summary.data.totalCollected, i18n.language)} {t('common.currency')}
-                  </span>
-                </div>
-              )}
-              {paymentMethods.data.length > 0 && (
-                <div className="flex items-start gap-2">
-                  <span className="text-[#64748B]">•</span>
-                  <span className="text-[#1F2430]">
-                    {paymentMethods.data.map((m) => `${PAYMENT_METHOD_LABELS[m.method] || m.method}: ${formatMoney(m.amount, i18n.language)} ${t('common.currency')}`).join(', ')}
-                  </span>
-                </div>
-              )}
               {serviceUsage.data && serviceUsage.data.length > 0 && (
                 <div className="flex items-start gap-2">
                   <span className="text-[#64748B]">•</span>
                   <span className="text-[#1F2430]">
                     {t('reports.topService')}: {serviceUsage.data[0].serviceName} ({formatMoney(serviceUsage.data[0].revenue, i18n.language)} {t('common.currency')})
+                  </span>
+                </div>
+              )}
+              {(() => {
+                const validMethods = paymentMethods.data.filter(m => m.method === 'LINK' || m.method === 'KNET');
+                const totalPayments = validMethods.reduce((sum, m) => sum + m.amount, 0);
+                if (totalPayments > 0 && validMethods.length > 0) {
+                  const linkMethod = validMethods.find(m => m.method === 'LINK');
+                  const knetMethod = validMethods.find(m => m.method === 'KNET');
+                  const linkShare = linkMethod ? ((linkMethod.amount / totalPayments) * 100).toFixed(1) : 0;
+                  const knetShare = knetMethod ? ((knetMethod.amount / totalPayments) * 100).toFixed(1) : 0;
+                  return (
+                    <div className="flex items-start gap-2">
+                      <span className="text-[#64748B]">•</span>
+                      <span className="text-[#1F2430]">
+                        {t('payments.methodLink')}: {linkShare}%, {t('payments.methodKnet')}: {knetShare}%
+                      </span>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+              {summary.data.appointmentCompletionRate > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {t('reports.appointmentCompletionRate')}: {summary.data.appointmentCompletionRate}%
                   </span>
                 </div>
               )}
@@ -360,9 +373,37 @@ export default function ReportsPage() {
                   </span>
                 </div>
               )}
+              {summary.data.totalRevenue > 0 && summary.data.totalCollected > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {t('reports.totalCollected')}: {formatMoney(summary.data.totalCollected, i18n.language)} {t('common.currency')} ({summary.data.totalRevenue > 0 ? ((summary.data.totalCollected / summary.data.totalRevenue) * 100).toFixed(1) : 0}% of {t('reports.totalRevenue')})
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <Skeleton className="h-32 rounded-lg" />
+          )}
+        </div>
+
+        {/* New Patients Trend */}
+        <div className="ui-card p-5">
+          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.newPatientsCount')}</h2>
+          {newPatientsTimeseries.isLoading ? (
+            <Skeleton className="h-48 rounded-lg" />
+          ) : newPatientsTimeseries.data && newPatientsTimeseries.data.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <LineChart data={newPatientsTimeseries.data}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip />
+                <Line type="monotone" dataKey="count" name={t('reports.newPatientsCount')} stroke="#102F63" strokeWidth={2} dot={false} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <EmptyState title={t('reports.noDataInPeriod')} />
           )}
         </div>
       </div>

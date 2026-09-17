@@ -16,13 +16,18 @@ const PAYMENT_METHOD_KEYS: Record<string, string> = {
   KNET: 'payments.methodKnet',
 };
 
-function today(): string {
-  return new Date().toISOString().slice(0, 10);
+// Get local calendar date (YYYY-MM-DD) for the current day
+function getLocalToday(): string {
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 export default function DailyClosingPage() {
   const { t, i18n } = useTranslation();
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(getLocalToday());
   const [isExporting, setIsExporting] = useState(false);
   const { showToast } = useToast();
 
