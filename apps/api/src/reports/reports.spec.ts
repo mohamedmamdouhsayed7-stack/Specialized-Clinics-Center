@@ -8,7 +8,7 @@ import cookieParser from 'cookie-parser';
 import { cleanupReportsTestData } from '../test-utils';
 
 // Import the timezone helper for unit testing
-import { localDayStartToUtc, localDayEndToUtc, getLocalTodayInClinicTimezone } from './reports.service';
+import { localDayStartToUtc, localDayEndToUtc, getLocalTodayInClinicTimezone, getLocalCalendarDate } from './reports.service';
 
 describe('Reports Module Tests (E2E)', () => {
   let app: INestApplication;
@@ -147,19 +147,11 @@ describe('Reports Module Tests (E2E)', () => {
       // This corresponds to 2026-09-18 00:30 in Kuwait (UTC+3)
       const fixedInstant = new Date('2026-09-17T21:30:00.000Z');
       
-      // Mock Date.now() to return our fixed instant
-      const originalDateNow = Date.now;
-      Date.now = () => fixedInstant.getTime();
+      // Test the helper directly with the fixed instant
+      const kuwaitDate = getLocalCalendarDate(fixedInstant);
       
-      try {
-        const kuwaitDate = getLocalTodayInClinicTimezone();
-        
-        // Should return 2026-09-18 (the Kuwait calendar date)
-        expect(kuwaitDate).toBe('2026-09-18');
-      } finally {
-        // Restore original Date.now
-        Date.now = originalDateNow;
-      }
+      // Should return 2026-09-18 (the Kuwait calendar date)
+      expect(kuwaitDate).toBe('2026-09-18');
     });
   });
 

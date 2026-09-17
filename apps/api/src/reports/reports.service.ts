@@ -40,22 +40,31 @@ export function localDayEndToUtc(dateStr: string): Date {
 }
 
 /**
- * Get today's calendar date in the clinic's timezone as YYYY-MM-DD.
+ * Get the calendar date in the clinic's timezone (Asia/Kuwait) for a given Date object.
  * This is independent of the server's OS timezone.
+ * @param date - The Date object to convert (defaults to current time)
+ * @returns YYYY-MM-DD string representing the Kuwait calendar date
  */
-export function getLocalTodayInClinicTimezone(): string {
-  const now = new Date();
+export function getLocalCalendarDate(date: Date = new Date()): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Kuwait',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
-  const parts = formatter.formatToParts(now);
+  const parts = formatter.formatToParts(date);
   const year = parts.find(p => p.type === 'year')?.value;
   const month = parts.find(p => p.type === 'month')?.value;
   const day = parts.find(p => p.type === 'day')?.value;
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get today's calendar date in the clinic's timezone as YYYY-MM-DD.
+ * This is independent of the server's OS timezone.
+ */
+export function getLocalTodayInClinicTimezone(): string {
+  return getLocalCalendarDate(new Date());
 }
 
 @Injectable()
