@@ -95,13 +95,15 @@ describe('Reports Module Tests (E2E)', () => {
         invoiceNumber: 'DRAFT-test-reports',
         visitId: testVisitId,
         patientId: testPatientId,
-        status: 'DRAFT',
+        status: 'ISSUED',
         subtotal: 50,
         total: 50,
         paid: 0,
         remaining: 50,
         paymentStatus: 'UNPAID',
         createdById: adminUserId,
+        issuedById: adminUserId,
+        issuedAt: new Date(),
         invoiceItems: {
           create: {
             serviceNameSnapshot: 'تقرير اختبار',
@@ -132,24 +134,26 @@ describe('Reports Module Tests (E2E)', () => {
       const duration = endUtc.getTime() - startUtc.getTime();
       expect(duration).toBe(24 * 60 * 60 * 1000 - 1);
 
-      // Verify the start represents midnight in Kuwait timezone
-      // Kuwait is UTC+3, so midnight local = 21:00 UTC previous day
-      // The actual UTC offset depends on the local system's timezone interpretation
-      // What matters is that the range spans exactly one local calendar day
-      expect(startUtc.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-      expect(endUtc.toISOString()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+      // Verify exact UTC values for Kuwait (UTC+3)
+      // 2026-09-18 00:00:00 Asia/Kuwait = 2026-09-17T21:00:00.000Z
+      expect(startUtc.toISOString()).toBe('2026-09-17T21:00:00.000Z');
+
+      // 2026-09-18 23:59:59.999 Asia/Kuwait = 2026-09-18T20:59:59.999Z
+      expect(endUtc.toISOString()).toBe('2026-09-18T20:59:59.999Z');
     });
   });
 
   describe('Payment Reversal Exclusion', () => {
     it('should include RECORDED payment in summary total collected', async () => {
-      // Create a RECORDED payment
+      // Create a RECORDED payment with a paymentDate within the default range
+      const today = new Date();
       const payment = await prisma.payment.create({
         data: {
           invoiceId: testInvoiceId,
           amount: 30,
           method: 'KNET',
           status: 'RECORDED',
+          paymentDate: today,
           recordedById: adminUserId,
         },
       });
@@ -167,6 +171,7 @@ describe('Reports Module Tests (E2E)', () => {
     });
 
     it('should exclude REVERSED payment from summary total collected', async () => {
+      const today = new Date();
       // Create a payment
       const payment = await prisma.payment.create({
         data: {
@@ -174,6 +179,7 @@ describe('Reports Module Tests (E2E)', () => {
           amount: 30,
           method: 'KNET',
           status: 'RECORDED',
+          paymentDate: today,
           recordedById: adminUserId,
         },
       });
@@ -209,6 +215,7 @@ describe('Reports Module Tests (E2E)', () => {
     });
 
     it('should exclude REVERSED payments from payment method breakdown', async () => {
+      const today = new Date();
       // Create payments with different methods
       const knetPayment1 = await prisma.payment.create({
         data: {
@@ -216,6 +223,7 @@ describe('Reports Module Tests (E2E)', () => {
           amount: 100,
           method: 'KNET',
           status: 'RECORDED',
+          paymentDate: today,
           recordedById: adminUserId,
         },
       });
@@ -226,6 +234,7 @@ describe('Reports Module Tests (E2E)', () => {
           amount: 75,
           method: 'KNET',
           status: 'RECORDED',
+          paymentDate: today,
           recordedById: adminUserId,
         },
       });
@@ -263,25 +272,24 @@ describe('Reports Module Tests (E2E)', () => {
     });
 
     it('should exclude REVERSED payments from revenue timeseries', async () => {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = new Date();
       const payment = await prisma.payment.create({
         data: {
           invoiceId: testInvoiceId,
           amount: 40,
           method: 'KNET',
           status: 'RECORDED',
-          // Use UTC to ensure it falls within the report range regardless of timezone
-          paymentDate: new Date(`${today}T12:00:00.000Z`),
+          paymentDate: today,
           recordedById: adminUserId,
         },
       });
 
-      // Get revenue timeseries before reversal
+      // Get revenue timeseries with today's date (will use default range which includes today)
       const timeseriesBefore = await request(app.getHttpServer())
-        .get(`/api/reports/revenue-timeseries?from=${today}&to=${today}`)
+        .get('/api/reports/revenue-timeseries')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
-      const collectedBefore = timeseriesBefore.body.find((t: any) => t.date === today)?.collected || 0;
+      const collectedBefore = timeseriesBefore.body.reduce((sum: number, t: any) => sum + (t.collected || 0), 0);
 
       // Reverse the payment
       await prisma.payment.update({
@@ -296,10 +304,10 @@ describe('Reports Module Tests (E2E)', () => {
 
       // Get revenue timeseries after reversal
       const timeseriesAfter = await request(app.getHttpServer())
-        .get(`/api/reports/revenue-timeseries?from=${today}&to=${today}`)
+        .get('/api/reports/revenue-timeseries')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
-      const collectedAfter = timeseriesAfter.body.find((t: any) => t.date === today)?.collected || 0;
+      const collectedAfter = timeseriesAfter.body.reduce((sum: number, t: any) => sum + (t.collected || 0), 0);
 
       // Collected amount should decrease
       expect(collectedAfter).toBeLessThan(collectedBefore);
@@ -370,6 +378,50 @@ describe('Reports Module Tests (E2E)', () => {
         await prisma.payment.delete({ where: { id: payment.id } });
         await prisma.invoice.deleteMany({ where: { id: { in: [inRangeInvoice.id, outOfRangeInvoice.id] } } });
         await prisma.visit.deleteMany({ where: { id: { in: [inRangeVisit.id, outOfRangeVisit.id] } } });
+      });
+    });
+
+    describe('Daily Closing Timezone', () => {
+      it('should return data for the exact Kuwait calendar day when queried with date=2026-09-18', async () => {
+        // Create a new visit for this test
+        const timezoneTestVisit = await prisma.visit.create({
+          data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
+        });
+
+        // Create an invoice issued on 2026-09-18 Kuwait time
+        // 2026-09-18 12:00:00 Asia/Kuwait = 2026-09-18T09:00:00.000Z
+        const invoice = await prisma.invoice.create({
+          data: {
+            invoiceNumber: 'INV-timezone-test',
+            visitId: timezoneTestVisit.id,
+            patientId: testPatientId,
+            status: 'ISSUED',
+            issuedAt: new Date('2026-09-18T09:00:00.000Z'),
+            subtotal: 100,
+            total: 100,
+            paid: 100,
+            remaining: 0,
+            paymentStatus: 'PAID',
+            createdById: adminUserId,
+            issuedById: adminUserId,
+          },
+        });
+
+        // Query daily closing for 2026-09-18
+        const response = await request(app.getHttpServer())
+          .get('/api/reports/daily-closing?date=2026-09-18')
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .expect(200);
+
+        // Verify the response date matches the queried date
+        expect(response.body.date).toBe('2026-09-18');
+
+        // Verify the invoice is included in the count
+        expect(response.body.invoiceCount).toBeGreaterThanOrEqual(1);
+
+        // Clean up
+        await prisma.invoice.delete({ where: { id: invoice.id } });
+        await prisma.visit.delete({ where: { id: timezoneTestVisit.id } });
       });
     });
   });

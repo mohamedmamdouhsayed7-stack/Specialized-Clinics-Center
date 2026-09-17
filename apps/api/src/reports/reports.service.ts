@@ -3,42 +3,35 @@ import { PrismaService } from '../database/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
 // Clinic business timezone (Kuwait - used for KNET, KD, ar-KW localization)
-const CLINIC_TIMEZONE = 'Asia/Kuwait';
+// Kuwait is UTC+3 year-round (no DST)
+const CLINIC_TIMEZONE_OFFSET_HOURS = 3; // UTC+3
 
 /**
  * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
- * the corresponding UTC instant for the start of that day.
+ * the corresponding UTC instant for the start of that day (00:00:00 local).
  * This ensures PostgreSQL timestamp comparisons represent the exact local day.
+ *
+ * Example: "2026-09-18" in Kuwait (UTC+3) becomes "2026-09-17T21:00:00.000Z"
  */
 export function localDayStartToUtc(dateStr: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
-  // Create a date in the clinic's timezone
-  const localDate = new Date(year, month - 1, day, 0, 0, 0);
-  // Convert to UTC by using the Intl API with the clinic timezone
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: CLINIC_TIMEZONE,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-    hour12: false,
-  });
-  const parts = formatter.formatToParts(localDate);
-  const getPart = (type: string) => parts.find(p => p.type === type)?.value;
-  const utcYear = Number(getPart('year'));
-  const utcMonth = Number(getPart('month')) - 1;
-  const utcDay = Number(getPart('day'));
-  const utcHour = Number(getPart('hour'));
-  const utcMinute = Number(getPart('minute'));
-  const utcSecond = Number(getPart('second'));
-  return new Date(Date.UTC(utcYear, utcMonth, utcDay, utcHour, utcMinute, utcSecond));
+  
+  // Create a Date representing midnight UTC on the target date
+  const utcMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  
+  // Subtract the timezone offset to get the UTC instant that represents
+  // midnight in the clinic's local timezone
+  // For UTC+3: midnight local = 21:00 UTC previous day
+  const utcInstant = new Date(utcMidnight.getTime() - (CLINIC_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000));
+  
+  return utcInstant;
 }
 
 /**
  * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
- * the corresponding UTC instant for the end of that day (23:59:59.999).
+ * the corresponding UTC instant for the end of that day (23:59:59.999 local).
+ *
+ * Example: "2026-09-18" in Kuwait (UTC+3) becomes "2026-09-18T20:59:59.999Z"
  */
 export function localDayEndToUtc(dateStr: string): Date {
   const start = localDayStartToUtc(dateStr);
@@ -46,15 +39,20 @@ export function localDayEndToUtc(dateStr: string): Date {
   return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
 }
 
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
+/**
+ * Get today's calendar date in the clinic's timezone as YYYY-MM-DD.
+ */
+function getLocalTodayInClinicTimezone(): string {
+  const now = new Date();
+  // Convert current UTC time to clinic timezone
+  const utcNow = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
+  const clinicNow = new Date(utcNow + (CLINIC_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000));
+  
+  const year = clinicNow.getUTCFullYear();
+  const month = String(clinicNow.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(clinicNow.getUTCDate()).padStart(2, '0');
+  
+  return `${year}-${month}-${day}`;
 }
 
 @Injectable()
@@ -63,8 +61,29 @@ export class ReportsService {
 
   private resolveRange(from?: string, to?: string) {
     // Use timezone-aware calendar day conversion for date range queries
-    const toDate = to ? localDayEndToUtc(to) : endOfDay(new Date());
-    const fromDate = from ? localDayStartToUtc(from) : startOfDay(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
+    if (to) {
+      const toDate = localDayEndToUtc(to);
+      if (from) {
+        const fromDate = localDayStartToUtc(from);
+        return { fromDate, toDate };
+      }
+      // If only 'to' is provided, calculate 29 days before it
+      const toDateObj = new Date(to);
+      const fromDateObj = new Date(toDateObj.getTime() - 29 * 24 * 60 * 60 * 1000);
+      const fromDateStr = fromDateObj.toISOString().slice(0, 10);
+      const fromDate = localDayStartToUtc(fromDateStr);
+      return { fromDate, toDate };
+    }
+    
+    // If no dates provided, use today and 29 days ago in clinic timezone
+    const todayStr = getLocalTodayInClinicTimezone();
+    const toDate = localDayEndToUtc(todayStr);
+    
+    const toDateObj = new Date(todayStr);
+    const fromDateObj = new Date(toDateObj.getTime() - 29 * 24 * 60 * 60 * 1000);
+    const fromDateStr = fromDateObj.toISOString().slice(0, 10);
+    const fromDate = localDayStartToUtc(fromDateStr);
+    
     return { fromDate, toDate };
   }
 
@@ -132,16 +151,16 @@ export class ReportsService {
   async getRevenueTimeseries(from?: string, to?: string) {
     const { fromDate, toDate } = this.resolveRange(from, to);
 
-    // Raw SQL for day-level grouping — Prisma's groupBy can't truncate
-    // timestamps to a day on its own.
+    // Raw SQL for day-level grouping using Asia/Kuwait timezone
+    // We convert timestamps to Kuwait timezone before truncating to day
     const revenueRows = await this.prisma.$queryRaw<Array<{ day: Date; revenue: string }>>`
-      SELECT date_trunc('day', "issuedAt") AS day, SUM("total") AS revenue
+      SELECT date_trunc('day', "issuedAt" AT TIME ZONE 'Asia/Kuwait') AS day, SUM("total") AS revenue
       FROM "Invoice"
       WHERE "status" = 'ISSUED' AND "issuedAt" BETWEEN ${fromDate} AND ${toDate}
       GROUP BY day ORDER BY day ASC
     `;
     const collectedRows = await this.prisma.$queryRaw<Array<{ day: Date; collected: string }>>`
-      SELECT date_trunc('day', "paymentDate") AS day, SUM("amount") AS collected
+      SELECT date_trunc('day', "paymentDate" AT TIME ZONE 'Asia/Kuwait') AS day, SUM("amount") AS collected
       FROM "Payment"
       WHERE "paymentDate" BETWEEN ${fromDate} AND ${toDate} AND "status" = 'RECORDED'
       GROUP BY day ORDER BY day ASC
@@ -268,7 +287,7 @@ export class ReportsService {
   async getNewPatientsTimeseries(from?: string, to?: string) {
     const { fromDate, toDate } = this.resolveRange(from, to);
     const rows = await this.prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
-      SELECT date_trunc('day', "createdAt") AS day, COUNT(*) AS count
+      SELECT date_trunc('day', "createdAt" AT TIME ZONE 'Asia/Kuwait') AS day, COUNT(*) AS count
       FROM "Patient"
       WHERE "createdAt" BETWEEN ${fromDate} AND ${toDate}
       GROUP BY day ORDER BY day ASC
@@ -315,8 +334,9 @@ export class ReportsService {
   // - difference does NOT automatically mean unpaid debt; it may reflect payment date variations
   async getDailyClosing(date?: string) {
     // Use timezone-aware calendar day conversion for the clinic's local business day
-    const dayStart = date ? localDayStartToUtc(date) : startOfDay(new Date());
-    const dayEnd = date ? localDayEndToUtc(date) : endOfDay(new Date());
+    const dateStr = date || getLocalTodayInClinicTimezone();
+    const dayStart = localDayStartToUtc(dateStr);
+    const dayEnd = localDayEndToUtc(dateStr);
 
     const [
       invoicesToday,
@@ -409,7 +429,7 @@ export class ReportsService {
     ).length;
 
     return {
-      date: dayStart.toISOString().slice(0, 10),
+      date: dateStr,
       totalInvoiced,
       totalCollected,
       totalRemaining,
