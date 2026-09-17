@@ -10,6 +10,7 @@ export interface ReportsSummary {
   totalVisits: number;
   newPatients: number;
   totalAppointments: number;
+  appointmentCompletionRate: number;
 }
 
 export interface RevenuePoint {
@@ -19,7 +20,7 @@ export interface RevenuePoint {
 }
 
 export interface PaymentMethodRow {
-  method: 'CASH' | 'VISA' | 'KNET' | 'OTHER';
+  method: 'LINK' | 'KNET';
   amount: number;
   count: number;
 }
@@ -79,7 +80,7 @@ export interface DailyClosingPaymentRow {
   invoiceNumber: string;
   patientName: string;
   amount: number;
-  method: 'CASH' | 'VISA' | 'KNET' | 'OTHER';
+  method: 'LINK' | 'KNET';
   paymentDate: string;
 }
 
@@ -88,7 +89,14 @@ export interface DailyClosingReport {
   totalInvoiced: number;
   totalCollected: number;
   totalRemaining: number;
+  reconciliationDifference: number;
   invoiceCount: number;
+  paymentExceptions: number;
+  visitsToday: number;
+  completedVisits: number;
+  appointmentsToday: number;
+  completedAppointments: number;
+  cancelledOrNoShowAppointments: number;
   paymentMethods: Array<{ method: string; amount: number; count: number }>;
   paymentStatusCounts: { UNPAID: number; PARTIALLY_PAID: number; PAID: number };
   invoices: DailyClosingInvoiceRow[];

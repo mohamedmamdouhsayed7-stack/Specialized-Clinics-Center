@@ -4,7 +4,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { TrendingUp, Wallet, AlertCircle, ReceiptText, ClipboardList, UsersRound, CalendarDays, FileSpreadsheet, FileText, ClipboardCheck } from 'lucide-react';
+import { TrendingUp, Wallet, ReceiptText, ClipboardList, UsersRound, CalendarDays, FileSpreadsheet, FileText, ClipboardCheck } from 'lucide-react';
 import { reportsService } from '../services/reports.service';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -46,7 +46,7 @@ export default function ReportsPage() {
   const { showToast } = useToast();
 
   const PAYMENT_METHOD_LABELS: Record<string, string> = {
-    CASH: t('payments.methodCash'), VISA: t('payments.methodVisa'), KNET: t('payments.methodKnet'), OTHER: t('payments.methodOther'),
+    LINK: t('payments.methodLink'), KNET: t('payments.methodKnet'),
   };
   const PAYMENT_STATUS_LABELS: Record<string, string> = {
     UNPAID: t('invoices.unpaid'), PARTIALLY_PAID: t('invoices.partiallyPaid'), PAID: t('invoices.paidInFull'),
@@ -71,7 +71,6 @@ export default function ReportsPage() {
   const serviceUsage = useQuery({ queryKey: ['reports-service-usage', from, to], queryFn: () => reportsService.getServiceUsage(from, to) });
   const visitTypes = useQuery({ queryKey: ['reports-visit-types', from, to], queryFn: () => reportsService.getVisitTypes(from, to) });
   const appointmentStatus = useQuery({ queryKey: ['reports-appt-status', from, to], queryFn: () => reportsService.getAppointmentStatus(from, to) });
-  const outstanding = useQuery({ queryKey: ['reports-outstanding'], queryFn: () => reportsService.getOutstandingInvoices(1, 8) });
 
   const handleExportPdf = async () => {
     setExportingPdf(true);
@@ -141,20 +140,19 @@ export default function ReportsPage() {
       {summary.error && <div className="ui-card p-4 mb-5 text-sm text-[#C4362B]" role="alert">{t('reports.loadError')}</div>}
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
         <KpiCard icon={TrendingUp} label={t('reports.totalRevenue')} value={s ? formatMoney(s.totalRevenue, i18n.language) : '—'} suffix={t('common.currency')} />
         <KpiCard icon={Wallet} label={t('reports.totalCollected')} value={s ? formatMoney(s.totalCollected, i18n.language) : '—'} suffix={t('common.currency')} />
-        <KpiCard icon={AlertCircle} label={t('reports.outstandingAmount')} value={s ? formatMoney(s.outstandingAmount, i18n.language) : '—'} suffix={t('common.currency')} />
         <KpiCard icon={UsersRound} label={t('reports.newPatientsCount')} value={s ? s.newPatients : '—'} />
-        <KpiCard icon={CalendarDays} label={t('reports.totalAppointments')} value={s ? s.totalAppointments : '—'} />
         <KpiCard icon={ClipboardList} label={t('reports.totalVisits')} value={s ? s.totalVisits : '—'} />
         <KpiCard icon={ReceiptText} label={t('reports.issuedInvoices')} value={s ? s.totalInvoices : '—'} />
+        <KpiCard icon={CalendarDays} label={t('reports.appointmentCompletionRate')} value={s ? `${s.appointmentCompletionRate}%` : '—'} />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-5 mb-5">
         {/* Revenue chart */}
         <div className="ui-card p-5 lg:col-span-2">
-          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.revenueAndCollections')}</h2>
+          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.invoicedVsCollected')}</h2>
           {revenueTimeseries.isLoading ? (
             <Skeleton className="h-64 rounded-lg" />
           ) : revenueTimeseries.data && revenueTimeseries.data.length > 0 ? (
@@ -181,25 +179,35 @@ export default function ReportsPage() {
             <Skeleton className="h-64 rounded-lg" />
           ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
             <>
-              <ResponsiveContainer width="100%" height={200}>
-                <PieChart>
-                  <Pie data={paymentMethods.data} dataKey="amount" nameKey="method" innerRadius={45} outerRadius={75}>
-                    {paymentMethods.data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(v: number) => `${formatMoney(v, i18n.language)} ${t('common.currency')}`} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-1.5 mt-2">
-                {paymentMethods.data.map((row, i) => (
-                  <div key={row.method} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                      {PAYMENT_METHOD_LABELS[row.method] || row.method}
-                    </span>
-                    <span className="font-medium text-[#1F2430]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>
-                  </div>
-                ))}
-              </div>
+              {(() => {
+                const validMethods = paymentMethods.data.filter(row => row.method === 'LINK' || row.method === 'KNET');
+                if (validMethods.length === 0) {
+                  return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
+                }
+                return (
+                  <>
+                    <ResponsiveContainer width="100%" height={200}>
+                      <PieChart>
+                        <Pie data={validMethods} dataKey="amount" nameKey="method" innerRadius={45} outerRadius={75}>
+                          {validMethods.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => `${formatMoney(v, i18n.language)} ${t('common.currency')}`} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="space-y-1.5 mt-2">
+                      {validMethods.map((row, i) => (
+                        <div key={row.method} className="flex items-center justify-between text-sm">
+                          <span className="flex items-center gap-2">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                            {PAYMENT_METHOD_LABELS[row.method] || row.method}
+                          </span>
+                          <span className="font-medium text-[#1F2430]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </>
           ) : (
             <EmptyState title={t('reports.noPaymentsInPeriod')} />
@@ -237,31 +245,25 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* Invoice status donut */}
+        {/* Payment Exceptions */}
         <div className="ui-card p-5">
-          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.invoicesByStatus')}</h2>
+          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.paymentExceptions')}</h2>
           {invoiceStatus.isLoading ? (
             <Skeleton className="h-48 rounded-lg" />
-          ) : invoiceStatus.data && invoiceStatus.data.length > 0 ? (
+          ) : invoiceStatus.data ? (
             <>
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Pie data={invoiceStatus.data} dataKey="count" nameKey="paymentStatus" innerRadius={40} outerRadius={70}>
-                    {invoiceStatus.data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-1.5 mt-2">
-                {invoiceStatus.data.map((row, i) => (
-                  <div key={row.paymentStatus} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                      {PAYMENT_STATUS_LABELS[row.paymentStatus] || row.paymentStatus}
-                    </span>
-                    <span className="font-medium text-[#1F2430]">{row.count}</span>
-                  </div>
-                ))}
+              <div className="space-y-2">
+                {invoiceStatus.data
+                  .filter(row => row.paymentStatus !== 'PAID')
+                  .map((row) => (
+                    <div key={row.paymentStatus} className="flex items-center justify-between text-sm border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
+                      <span className="text-[#1F2430]">{PAYMENT_STATUS_LABELS[row.paymentStatus] || row.paymentStatus}</span>
+                      <span className="font-medium text-[#C4362B]">{row.count}</span>
+                    </div>
+                  ))}
+                {invoiceStatus.data.filter(row => row.paymentStatus !== 'PAID').length === 0 && (
+                  <div className="text-sm text-[#94A3B8] text-center py-4">{t('reports.noPaymentExceptions')}</div>
+                )}
               </div>
             </>
           ) : (
@@ -305,23 +307,62 @@ export default function ReportsPage() {
           )}
         </div>
 
-        {/* Outstanding invoices */}
+        {/* Smart Insights */}
         <div className="ui-card p-5">
-          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.topOutstandingInvoices')}</h2>
-          {outstanding.data && outstanding.data.data.length > 0 ? (
-            <div className="space-y-2">
-              {outstanding.data.data.slice(0, 6).map((row) => (
-                <div key={row.id} className="flex items-center justify-between text-sm border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
-                  <div>
-                    <div className="text-[#1F2430]">{row.patient.fullNameAr}</div>
-                    <div className="text-xs text-[#94A3B8]">{row.invoiceNumber}</div>
-                  </div>
-                  <span className="font-medium text-[#C4362B]">{formatMoney(row.remaining, i18n.language)} {t('common.currency')}</span>
+          <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.insights')}</h2>
+          {summary.data && paymentMethods.data ? (
+            <div className="space-y-3 text-sm">
+              {summary.data.totalRevenue > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {t('reports.totalRevenue')}: {formatMoney(summary.data.totalRevenue, i18n.language)} {t('common.currency')}
+                  </span>
                 </div>
-              ))}
+              )}
+              {summary.data.totalCollected > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {t('reports.totalCollected')}: {formatMoney(summary.data.totalCollected, i18n.language)} {t('common.currency')}
+                  </span>
+                </div>
+              )}
+              {paymentMethods.data.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {paymentMethods.data.map((m) => `${PAYMENT_METHOD_LABELS[m.method] || m.method}: ${formatMoney(m.amount, i18n.language)} ${t('common.currency')}`).join(', ')}
+                  </span>
+                </div>
+              )}
+              {serviceUsage.data && serviceUsage.data.length > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {t('reports.topService')}: {serviceUsage.data[0].serviceName} ({formatMoney(serviceUsage.data[0].revenue, i18n.language)} {t('common.currency')})
+                  </span>
+                </div>
+              )}
+              {summary.data.newPatients > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#64748B]">•</span>
+                  <span className="text-[#1F2430]">
+                    {t('reports.newPatientsCount')}: {summary.data.newPatients}
+                  </span>
+                </div>
+              )}
+              {invoiceStatus.data && invoiceStatus.data.filter(row => row.paymentStatus !== 'PAID').length > 0 && (
+                <div className="flex items-start gap-2">
+                  <span className="text-[#C4362B]">⚠</span>
+                  <span className="text-[#C4362B]">
+                    {invoiceStatus.data.filter(row => row.paymentStatus !== 'PAID').reduce((sum, row) => sum + row.count, 0)} {t('reports.paymentExceptionsLower')}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
-            <EmptyState title={t('reports.noOutstandingCurrently')} />
+            <Skeleton className="h-32 rounded-lg" />
           )}
         </div>
       </div>

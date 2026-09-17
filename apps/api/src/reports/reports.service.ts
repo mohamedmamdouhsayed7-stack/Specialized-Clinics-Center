@@ -46,6 +46,7 @@ export class ReportsService {
       totalVisits,
       newPatients,
       totalAppointments,
+      completedAppointments,
     ] = await Promise.all([
       this.prisma.invoice.aggregate({
         where: { status: 'ISSUED', issuedAt: { gte: fromDate, lte: toDate } },
@@ -71,7 +72,14 @@ export class ReportsService {
       this.prisma.appointment.count({
         where: { scheduledAt: { gte: fromDate, lte: toDate } },
       }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: fromDate, lte: toDate }, status: 'DONE' },
+      }),
     ]);
+
+    const appointmentCompletionRate = totalAppointments > 0
+      ? (completedAppointments / totalAppointments) * 100
+      : 0;
 
     return {
       range: { from: fromDate, to: toDate },
@@ -82,6 +90,7 @@ export class ReportsService {
       totalVisits,
       newPatients,
       totalAppointments,
+      appointmentCompletionRate: Math.round(appointmentCompletionRate * 10) / 10,
     };
   }
 
@@ -239,6 +248,11 @@ export class ReportsService {
       paymentsToday,
       paymentMethodBreakdown,
       invoicePaymentStatusBreakdown,
+      visitsToday,
+      completedVisits,
+      appointmentsToday,
+      completedAppointments,
+      cancelledOrNoShowAppointments,
     ] = await Promise.all([
       this.prisma.invoice.findMany({
         where: { status: 'ISSUED', issuedAt: { gte: dayStart, lte: dayEnd } },
@@ -276,6 +290,21 @@ export class ReportsService {
         where: { status: 'ISSUED', issuedAt: { gte: dayStart, lte: dayEnd } },
         _count: { _all: true },
       }),
+      this.prisma.visit.count({
+        where: { visitDate: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.prisma.visit.count({
+        where: { visitDate: { gte: dayStart, lte: dayEnd }, status: 'COMPLETED' },
+      }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: dayStart, lte: dayEnd }, status: 'DONE' },
+      }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: dayStart, lte: dayEnd }, status: { in: ['CANCELLED', 'NO_SHOW'] } },
+      }),
     ]);
 
     const totalInvoiced = invoicesToday
@@ -296,12 +325,27 @@ export class ReportsService {
       paymentStatusCounts[row.paymentStatus] = row._count._all;
     }
 
+    // Calculate reconciliation difference
+    const reconciliationDifference = totalInvoiced - totalCollected;
+
+    // Count payment exceptions
+    const paymentExceptions = invoicesToday.filter(
+      inv => inv.remaining.gt(0) || inv.paymentStatus !== 'PAID'
+    ).length;
+
     return {
       date: dayStart.toISOString().slice(0, 10),
       totalInvoiced,
       totalCollected,
       totalRemaining,
+      reconciliationDifference,
       invoiceCount: invoicesToday.length,
+      paymentExceptions,
+      visitsToday,
+      completedVisits,
+      appointmentsToday,
+      completedAppointments,
+      cancelledOrNoShowAppointments,
       paymentMethods: paymentMethodBreakdown.map((r) => ({
         method: r.method,
         amount: Number(r._sum.amount || 0),
