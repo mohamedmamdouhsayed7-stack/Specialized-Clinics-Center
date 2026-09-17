@@ -46,3 +46,7 @@ logs/
 # Temporary files
 tmp/
 temp/
+
+# Local migration artifacts
+migration-work/
+clinic_old_data.dump
