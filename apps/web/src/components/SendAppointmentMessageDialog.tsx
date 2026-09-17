@@ -6,8 +6,6 @@ import { appointmentsService, Appointment } from '../services/appointments.servi
 import { formatDate } from '../utils/dateFormat';
 import { buildWhatsAppUrl, isValidWhatsAppPhone, normalizeWhatsAppPhone } from '../utils/invoiceSharing';
 import { useToast } from '../contexts/ToastContext';
-import type { KeyboardEvent } from 'react';
-
 type MessageType = 'CONFIRMED' | 'REMINDER' | 'CANCELLED' | 'RESCHEDULED';
 
 interface SendAppointmentMessageDialogProps {
@@ -52,7 +50,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
 
     useEffect(() => {
         if (!open) return undefined;
-        const handleKeyDown = (event: KeyboardEvent) => {
+        const handleKeyDown = (event: globalThis.KeyboardEvent) => {
             if (event.key === 'Escape') onClose();
         };
         document.addEventListener('keydown', handleKeyDown);
@@ -317,4 +315,3 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
         </div>
     );
 }
-
