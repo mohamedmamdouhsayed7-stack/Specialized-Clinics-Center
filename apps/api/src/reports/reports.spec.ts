@@ -8,7 +8,7 @@ import cookieParser from 'cookie-parser';
 import { cleanupReportsTestData } from '../test-utils';
 
 // Import the timezone helper for unit testing
-import { localDayStartToUtc, localDayEndToUtc } from './reports.service';
+import { localDayStartToUtc, localDayEndToUtc, getLocalTodayInClinicTimezone } from './reports.service';
 
 describe('Reports Module Tests (E2E)', () => {
   let app: INestApplication;
@@ -141,19 +141,40 @@ describe('Reports Module Tests (E2E)', () => {
       // 2026-09-18 23:59:59.999 Asia/Kuwait = 2026-09-18T20:59:59.999Z
       expect(endUtc.toISOString()).toBe('2026-09-18T20:59:59.999Z');
     });
+
+    it('should extract Kuwait calendar date independent of server timezone', () => {
+      // Use a fixed UTC instant: 2026-09-17 21:30 UTC
+      // This corresponds to 2026-09-18 00:30 in Kuwait (UTC+3)
+      const fixedInstant = new Date('2026-09-17T21:30:00.000Z');
+      
+      // Mock Date.now() to return our fixed instant
+      const originalDateNow = Date.now;
+      Date.now = () => fixedInstant.getTime();
+      
+      try {
+        const kuwaitDate = getLocalTodayInClinicTimezone();
+        
+        // Should return 2026-09-18 (the Kuwait calendar date)
+        expect(kuwaitDate).toBe('2026-09-18');
+      } finally {
+        // Restore original Date.now
+        Date.now = originalDateNow;
+      }
+    });
   });
 
   describe('Payment Reversal Exclusion', () => {
     it('should include RECORDED payment in summary total collected', async () => {
       // Create a RECORDED payment with a paymentDate within the default range
-      const today = new Date();
+      const todayKuwait = getLocalTodayInClinicTimezone();
+      const todayStartUtc = localDayStartToUtc(todayKuwait);
       const payment = await prisma.payment.create({
         data: {
           invoiceId: testInvoiceId,
           amount: 30,
           method: 'KNET',
           status: 'RECORDED',
-          paymentDate: today,
+          paymentDate: todayStartUtc,
           recordedById: adminUserId,
         },
       });
@@ -171,7 +192,8 @@ describe('Reports Module Tests (E2E)', () => {
     });
 
     it('should exclude REVERSED payment from summary total collected', async () => {
-      const today = new Date();
+      const todayKuwait = getLocalTodayInClinicTimezone();
+      const todayStartUtc = localDayStartToUtc(todayKuwait);
       // Create a payment
       const payment = await prisma.payment.create({
         data: {
@@ -179,7 +201,7 @@ describe('Reports Module Tests (E2E)', () => {
           amount: 30,
           method: 'KNET',
           status: 'RECORDED',
-          paymentDate: today,
+          paymentDate: todayStartUtc,
           recordedById: adminUserId,
         },
       });
@@ -215,7 +237,8 @@ describe('Reports Module Tests (E2E)', () => {
     });
 
     it('should exclude REVERSED payments from payment method breakdown', async () => {
-      const today = new Date();
+      const todayKuwait = getLocalTodayInClinicTimezone();
+      const todayStartUtc = localDayStartToUtc(todayKuwait);
       // Create payments with different methods
       const knetPayment1 = await prisma.payment.create({
         data: {
@@ -223,7 +246,7 @@ describe('Reports Module Tests (E2E)', () => {
           amount: 100,
           method: 'KNET',
           status: 'RECORDED',
-          paymentDate: today,
+          paymentDate: todayStartUtc,
           recordedById: adminUserId,
         },
       });
@@ -234,7 +257,7 @@ describe('Reports Module Tests (E2E)', () => {
           amount: 75,
           method: 'KNET',
           status: 'RECORDED',
-          paymentDate: today,
+          paymentDate: todayStartUtc,
           recordedById: adminUserId,
         },
       });
@@ -272,14 +295,15 @@ describe('Reports Module Tests (E2E)', () => {
     });
 
     it('should exclude REVERSED payments from revenue timeseries', async () => {
-      const today = new Date();
+      const todayKuwait = getLocalTodayInClinicTimezone();
+      const todayStartUtc = localDayStartToUtc(todayKuwait);
       const payment = await prisma.payment.create({
         data: {
           invoiceId: testInvoiceId,
           amount: 40,
           method: 'KNET',
           status: 'RECORDED',
-          paymentDate: today,
+          paymentDate: todayStartUtc,
           recordedById: adminUserId,
         },
       });

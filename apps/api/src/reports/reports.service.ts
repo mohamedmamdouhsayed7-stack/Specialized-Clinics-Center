@@ -41,17 +41,20 @@ export function localDayEndToUtc(dateStr: string): Date {
 
 /**
  * Get today's calendar date in the clinic's timezone as YYYY-MM-DD.
+ * This is independent of the server's OS timezone.
  */
-function getLocalTodayInClinicTimezone(): string {
+export function getLocalTodayInClinicTimezone(): string {
   const now = new Date();
-  // Convert current UTC time to clinic timezone
-  const utcNow = now.getTime() + (now.getTimezoneOffset() * 60 * 1000);
-  const clinicNow = new Date(utcNow + (CLINIC_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000));
-  
-  const year = clinicNow.getUTCFullYear();
-  const month = String(clinicNow.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(clinicNow.getUTCDate()).padStart(2, '0');
-  
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kuwait',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(now);
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
   return `${year}-${month}-${day}`;
 }
 
@@ -68,6 +71,7 @@ export class ReportsService {
         return { fromDate, toDate };
       }
       // If only 'to' is provided, calculate 29 days before it
+      // We work with date strings (YYYY-MM-DD) which are timezone-independent
       const toDateObj = new Date(to);
       const fromDateObj = new Date(toDateObj.getTime() - 29 * 24 * 60 * 60 * 1000);
       const fromDateStr = fromDateObj.toISOString().slice(0, 10);
@@ -79,9 +83,10 @@ export class ReportsService {
     const todayStr = getLocalTodayInClinicTimezone();
     const toDate = localDayEndToUtc(todayStr);
     
-    const toDateObj = new Date(todayStr);
-    const fromDateObj = new Date(toDateObj.getTime() - 29 * 24 * 60 * 60 * 1000);
-    const fromDateStr = fromDateObj.toISOString().slice(0, 10);
+    // Calculate 29 days ago using date strings (timezone-independent)
+    const todayDate = new Date(todayStr);
+    const fromDateDate = new Date(todayDate.getTime() - 29 * 24 * 60 * 60 * 1000);
+    const fromDateStr = fromDateDate.toISOString().slice(0, 10);
     const fromDate = localDayStartToUtc(fromDateStr);
     
     return { fromDate, toDate };
@@ -153,14 +158,15 @@ export class ReportsService {
 
     // Raw SQL for day-level grouping using Asia/Kuwait timezone
     // We convert timestamps to Kuwait timezone before truncating to day
-    const revenueRows = await this.prisma.$queryRaw<Array<{ day: Date; revenue: string }>>`
-      SELECT date_trunc('day', "issuedAt" AT TIME ZONE 'Asia/Kuwait') AS day, SUM("total") AS revenue
+    // Return YYYY-MM-DD string directly from PostgreSQL to avoid server-timezone interpretation
+    const revenueRows = await this.prisma.$queryRaw<Array<{ day: string; revenue: string }>>`
+      SELECT TO_CHAR(DATE_TRUNC('day', "issuedAt" AT TIME ZONE 'Asia/Kuwait'), 'YYYY-MM-DD') AS day, SUM("total") AS revenue
       FROM "Invoice"
       WHERE "status" = 'ISSUED' AND "issuedAt" BETWEEN ${fromDate} AND ${toDate}
       GROUP BY day ORDER BY day ASC
     `;
-    const collectedRows = await this.prisma.$queryRaw<Array<{ day: Date; collected: string }>>`
-      SELECT date_trunc('day', "paymentDate" AT TIME ZONE 'Asia/Kuwait') AS day, SUM("amount") AS collected
+    const collectedRows = await this.prisma.$queryRaw<Array<{ day: string; collected: string }>>`
+      SELECT TO_CHAR(DATE_TRUNC('day', "paymentDate" AT TIME ZONE 'Asia/Kuwait'), 'YYYY-MM-DD') AS day, SUM("amount") AS collected
       FROM "Payment"
       WHERE "paymentDate" BETWEEN ${fromDate} AND ${toDate} AND "status" = 'RECORDED'
       GROUP BY day ORDER BY day ASC
@@ -168,14 +174,12 @@ export class ReportsService {
 
     const byDay = new Map<string, { date: string; revenue: number; collected: number }>();
     for (const row of revenueRows) {
-      const key = row.day.toISOString().slice(0, 10);
-      byDay.set(key, { date: key, revenue: Number(row.revenue), collected: 0 });
+      byDay.set(row.day, { date: row.day, revenue: Number(row.revenue), collected: 0 });
     }
     for (const row of collectedRows) {
-      const key = row.day.toISOString().slice(0, 10);
-      const existing = byDay.get(key);
+      const existing = byDay.get(row.day);
       if (existing) existing.collected = Number(row.collected);
-      else byDay.set(key, { date: key, revenue: 0, collected: Number(row.collected) });
+      else byDay.set(row.day, { date: row.day, revenue: 0, collected: Number(row.collected) });
     }
 
     return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -286,13 +290,13 @@ export class ReportsService {
 
   async getNewPatientsTimeseries(from?: string, to?: string) {
     const { fromDate, toDate } = this.resolveRange(from, to);
-    const rows = await this.prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
-      SELECT date_trunc('day', "createdAt" AT TIME ZONE 'Asia/Kuwait') AS day, COUNT(*) AS count
+    const rows = await this.prisma.$queryRaw<Array<{ day: string; count: bigint }>>`
+      SELECT TO_CHAR(DATE_TRUNC('day', "createdAt" AT TIME ZONE 'Asia/Kuwait'), 'YYYY-MM-DD') AS day, COUNT(*) AS count
       FROM "Patient"
       WHERE "createdAt" BETWEEN ${fromDate} AND ${toDate}
       GROUP BY day ORDER BY day ASC
     `;
-    return rows.map((r) => ({ date: r.day.toISOString().slice(0, 10), count: Number(r.count) }));
+    return rows.map((r) => ({ date: r.day, count: Number(r.count) }));
   }
 
   async getOutstandingInvoices(page: number = 1, limit: number = 20) {
