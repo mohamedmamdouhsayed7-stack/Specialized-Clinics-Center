@@ -90,7 +90,7 @@ describe('Backup PostgreSQL integration', () => {
       },
     });
     const payment = await source.payment.create({
-      data: { invoiceId: invoice.id, amount: 25, method: 'CASH', recordedById: user.id },
+      data: { invoiceId: invoice.id, amount: 25, method: 'KNET', recordedById: user.id },
     });
     await source.paymentAllocation.create({ data: { paymentId: payment.id, invoiceId: invoice.id, amount: 25 } });
 

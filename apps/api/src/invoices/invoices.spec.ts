@@ -763,7 +763,7 @@ describe('Invoices Module Tests (E2E)', () => {
         .send({
           invoiceId: invoice.body.id,
           amount: 10,
-          method: 'CASH',
+          method: 'KNET',
         })
         .expect(201);
 
@@ -814,7 +814,7 @@ describe('Invoices Module Tests (E2E)', () => {
         .send({
           invoiceId: invoice.body.id,
           amount: 10,
-          method: 'CASH',
+          method: 'KNET',
         })
         .expect(201);
 
@@ -939,7 +939,7 @@ describe('Invoices Module Tests (E2E)', () => {
         .send({
           invoiceId: invoice.body.id,
           amount: 30,
-          method: 'CASH',
+          method: 'KNET',
         })
         .expect(201);
 
@@ -992,7 +992,7 @@ describe('Invoices Module Tests (E2E)', () => {
         .send({
           invoiceId: invoice.body.id,
           amount: 15,
-          method: 'CASH',
+          method: 'KNET',
         })
         .expect(201);
 
@@ -1077,7 +1077,7 @@ describe('Invoices Module Tests (E2E)', () => {
         .send({
           invoiceId: originalInvoice.body.id,
           amount: 30,
-          method: 'CASH',
+          method: 'KNET',
         })
         .expect(201);
 

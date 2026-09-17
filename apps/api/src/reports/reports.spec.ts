@@ -126,7 +126,7 @@ describe('Reports Module Tests (E2E)', () => {
         data: {
           invoiceId: testInvoiceId,
           amount: 30,
-          method: 'VISA',
+          method: 'KNET',
           status: 'RECORDED',
           recordedById: adminUserId,
         },
@@ -150,7 +150,7 @@ describe('Reports Module Tests (E2E)', () => {
         data: {
           invoiceId: testInvoiceId,
           amount: 30,
-          method: 'VISA',
+          method: 'KNET',
           status: 'RECORDED',
           recordedById: adminUserId,
         },
@@ -192,7 +192,7 @@ describe('Reports Module Tests (E2E)', () => {
         data: {
           invoiceId: testInvoiceId,
           amount: 100,
-          method: 'CASH',
+          method: 'KNET',
           status: 'RECORDED',
           recordedById: adminUserId,
         },
@@ -202,7 +202,7 @@ describe('Reports Module Tests (E2E)', () => {
         data: {
           invoiceId: testInvoiceId,
           amount: 75,
-          method: 'VISA',
+          method: 'LINK',
           status: 'RECORDED',
           recordedById: adminUserId,
         },
@@ -213,8 +213,8 @@ describe('Reports Module Tests (E2E)', () => {
         .get('/api/reports/payment-methods')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
-      const cashBefore = breakdownBefore.body.find((m: any) => m.method === 'CASH')?.amount || 0;
-      const visaBefore = breakdownBefore.body.find((m: any) => m.method === 'VISA')?.amount || 0;
+      const cashBefore = breakdownBefore.body.find((m: any) => m.method === 'KNET')?.amount || 0;
+      const visaBefore = breakdownBefore.body.find((m: any) => m.method === 'LINK')?.amount || 0;
 
       // Reverse the VISA payment
       await prisma.payment.update({
@@ -232,8 +232,8 @@ describe('Reports Module Tests (E2E)', () => {
         .get('/api/reports/payment-methods')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
-      const cashAfter = breakdownAfter.body.find((m: any) => m.method === 'CASH')?.amount || 0;
-      const visaAfter = breakdownAfter.body.find((m: any) => m.method === 'VISA')?.amount || 0;
+      const cashAfter = breakdownAfter.body.find((m: any) => m.method === 'KNET')?.amount || 0;
+      const visaAfter = breakdownAfter.body.find((m: any) => m.method === 'LINK')?.amount || 0;
 
       // CASH should remain the same
       expect(cashAfter).toBe(cashBefore);
@@ -333,7 +333,7 @@ describe('Reports Module Tests (E2E)', () => {
           data: {
             invoiceId: inRangeInvoice.id,
             amount: 60,
-            method: 'CASH',
+            method: 'KNET',
             status: 'RECORDED',
             paymentDate: new Date('2026-01-20T12:00:00.000Z'),
             recordedById: adminUserId,

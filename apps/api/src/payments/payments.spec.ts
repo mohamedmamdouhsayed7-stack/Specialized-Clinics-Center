@@ -168,7 +168,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: draftInvoiceId, amount: 10, method: 'CASH' })
+        .send({ invoiceId: draftInvoiceId, amount: 10, method: 'KNET' })
         .expect(400);
     });
 
@@ -176,7 +176,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: fullyPaidInvoiceId, amount: 10, method: 'CASH' })
+        .send({ invoiceId: fullyPaidInvoiceId, amount: 10, method: 'KNET' })
         .expect(400);
     });
 
@@ -184,7 +184,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: '00000000-0000-0000-0000-000000000000', amount: 10, method: 'CASH' })
+        .send({ invoiceId: '00000000-0000-0000-0000-000000000000', amount: 10, method: 'KNET' })
         .expect(404);
     });
 
@@ -192,7 +192,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: issuedInvoiceId, amount: 999, method: 'CASH' })
+        .send({ invoiceId: issuedInvoiceId, amount: 999, method: 'KNET' })
         .expect(400);
     });
 
@@ -200,7 +200,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: issuedInvoiceId, amount: 0, method: 'CASH' })
+        .send({ invoiceId: issuedInvoiceId, amount: 0, method: 'KNET' })
         .expect(400);
     });
 
@@ -208,7 +208,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: issuedInvoiceId, amount: 1.001, method: 'CASH' })
+        .send({ invoiceId: issuedInvoiceId, amount: 1.001, method: 'KNET' })
         .expect(400);
     });
 
@@ -240,7 +240,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${receptionistAccessToken}`)
-        .send({ invoiceId: issuedInvoiceId, amount: 10, method: 'OTHER', notes: 'Bank transfer' })
+        .send({ invoiceId: issuedInvoiceId, amount: 10, method: 'LINK', notes: 'Bank transfer' })
         .expect(201);
 
       const invoice = await prisma.invoice.findUnique({ where: { id: issuedInvoiceId } });
@@ -252,7 +252,7 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: issuedInvoiceId, amount: 20, method: 'VISA' })
+        .send({ invoiceId: issuedInvoiceId, amount: 20, method: 'KNET' })
         .expect(201);
 
       const invoice = await prisma.invoice.findUnique({ where: { id: issuedInvoiceId } });
@@ -265,14 +265,14 @@ describe('Payments Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/payments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ invoiceId: issuedInvoiceId, amount: 5, method: 'CASH' })
+        .send({ invoiceId: issuedInvoiceId, amount: 5, method: 'KNET' })
         .expect(400);
     });
 
     it('should reject unauthenticated payment creation', async () => {
       await request(app.getHttpServer())
         .post('/api/payments')
-        .send({ invoiceId: issuedInvoiceId, amount: 5, method: 'CASH' })
+        .send({ invoiceId: issuedInvoiceId, amount: 5, method: 'KNET' })
         .expect(401);
     });
   });
@@ -402,11 +402,11 @@ describe('Payments Module Tests (E2E)', () => {
         request(app.getHttpServer())
           .post('/api/payments')
           .set('Authorization', `Bearer ${adminAccessToken}`)
-          .send({ invoiceId: concurrentInvoiceId, amount: 80, method: 'CASH' }),
+          .send({ invoiceId: concurrentInvoiceId, amount: 80, method: 'KNET' }),
         request(app.getHttpServer())
           .post('/api/payments')
           .set('Authorization', `Bearer ${adminAccessToken}`)
-          .send({ invoiceId: concurrentInvoiceId, amount: 80, method: 'CASH' }),
+          .send({ invoiceId: concurrentInvoiceId, amount: 80, method: 'KNET' }),
       ]);
 
       // At least one should succeed
