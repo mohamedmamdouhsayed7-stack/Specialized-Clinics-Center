@@ -13,6 +13,13 @@ import ModalDialog from '../components/ModalDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatDateTime as formatLocalizedDateTime } from '../utils/dateFormat';
 
+// Mask civilId for privacy while showing first and last digits
+// Handles null/empty civilId values safely
+function maskCivilId(civilId: string | null | undefined): string {
+  if (!civilId || civilId.length <= 2) return civilId || '—';
+  return civilId[0] + 'X'.repeat(civilId.length - 2) + civilId[civilId.length - 1];
+}
+
 export default function AppointmentDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -184,7 +191,7 @@ export default function AppointmentDetail() {
                     </div>
                     <div>
                       <label className="text-sm text-gray-500 block mb-1">{t('patients.civilId')}</label>
-                      <p className="font-medium text-gray-900">{appointment.patient.civilId}</p>
+                      <p className="font-medium text-gray-900">{maskCivilId(appointment.patient.civilId)}</p>
                     </div>
                     {appointment.patient.phone && (
                       <div>
