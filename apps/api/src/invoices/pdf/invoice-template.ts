@@ -63,18 +63,6 @@ const CLINIC_ADDRESS_EN = "Hawally - Block 4 - Al-Motasim St. - Specialized Clin
 const CLINIC_PHONE_EN = 'Tel.: 22650700 ext. 607';
 const CLINIC_MOBILE_EN = 'Mobile & WhatsApp: 60008977';
 
-const VISIT_TYPE_LABELS_EN: Record<'CHECKUP' | 'FOLLOW_UP' | 'OTHER', string> = {
-  CHECKUP: 'Checkup',
-  FOLLOW_UP: 'Follow-up',
-  OTHER: 'Other',
-};
-
-const PAYMENT_STATUS_LABELS_EN: Record<InvoicePdfData['paymentStatus'], string> = {
-  UNPAID: 'UNPAID',
-  PARTIALLY_PAID: 'PARTIALLY PAID',
-  PAID: 'PAID',
-};
-
 const PAYMENT_METHOD_LABELS_EN: Record<InvoicePdfData['payments'][number]['method'], string> = {
 
   KNET: 'KNET',
@@ -122,7 +110,31 @@ function icon(name: keyof typeof ICON_PATHS, size = 16): string {
 }
 
 // ── One compact invoice copy (used twice per printed page) ──
-function renderInvoiceCopy(invoice: InvoicePdfData, language: InvoiceLocale, labels: any): string {
+interface InvoiceLabels {
+  invoice: string;
+  invoiceNo: string;
+  date: string;
+  patientName: string;
+  civilId: string;
+  mobile: string;
+  service: string;
+  code: string;
+  qty: string;
+  unitPrice: string;
+  total: string;
+  paid: string;
+  paymentMethod: string;
+  additional: string;
+  fixed: string;
+  percentage: string;
+  paymentMethods: Record<'LINK' | 'KNET', string>;
+}
+
+function renderInvoiceCopy(
+  invoice: InvoicePdfData,
+  language: InvoiceLocale,
+  labels: InvoiceLabels,
+): string {
   const isArabic = language === 'ar';
 
   const itemsRows = invoice.invoiceItems
