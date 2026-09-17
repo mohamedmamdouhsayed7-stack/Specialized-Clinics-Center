@@ -2,25 +2,69 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
-function startOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x;
-}
-function endOfDay(d: Date): Date {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x;
+// Clinic business timezone (Kuwait - used for KNET, KD, ar-KW localization)
+// Kuwait is UTC+3 year-round (no DST)
+const CLINIC_TIMEZONE_OFFSET_HOURS = 3; // UTC+3
+
+/**
+ * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
+ * the corresponding UTC instant for the start of that day (00:00:00 local).
+ * This ensures PostgreSQL timestamp comparisons represent the exact local day.
+ *
+ * Example: "2026-09-18" in Kuwait (UTC+3) becomes "2026-09-17T21:00:00.000Z"
+ */
+export function localDayStartToUtc(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  
+  // Create a Date representing midnight UTC on the target date
+  const utcMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  
+  // Subtract the timezone offset to get the UTC instant that represents
+  // midnight in the clinic's local timezone
+  // For UTC+3: midnight local = 21:00 UTC previous day
+  const utcInstant = new Date(utcMidnight.getTime() - (CLINIC_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000));
+  
+  return utcInstant;
 }
 
-// Helper to parse date string to UTC to avoid timezone issues
-function parseDate(dateStr: string): Date {
-  // If it's already a date string like "2025-09-06", parse it as UTC
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  }
-  return new Date(dateStr);
+/**
+ * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
+ * the corresponding UTC instant for the end of that day (23:59:59.999 local).
+ *
+ * Example: "2026-09-18" in Kuwait (UTC+3) becomes "2026-09-18T20:59:59.999Z"
+ */
+export function localDayEndToUtc(dateStr: string): Date {
+  const start = localDayStartToUtc(dateStr);
+  // Add 24 hours and subtract 1 millisecond to get end of day
+  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+}
+
+/**
+ * Get the calendar date in the clinic's timezone (Asia/Kuwait) for a given Date object.
+ * This is independent of the server's OS timezone.
+ * @param date - The Date object to convert (defaults to current time)
+ * @returns YYYY-MM-DD string representing the Kuwait calendar date
+ */
+export function getLocalCalendarDate(date: Date = new Date()): string {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kuwait',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(date);
+  const year = parts.find(p => p.type === 'year')?.value;
+  const month = parts.find(p => p.type === 'month')?.value;
+  const day = parts.find(p => p.type === 'day')?.value;
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Get today's calendar date in the clinic's timezone as YYYY-MM-DD.
+ * This is independent of the server's OS timezone.
+ */
+export function getLocalTodayInClinicTimezone(): string {
+  return getLocalCalendarDate(new Date());
 }
 
 @Injectable()
@@ -28,8 +72,32 @@ export class ReportsService {
   constructor(private prisma: PrismaService) {}
 
   private resolveRange(from?: string, to?: string) {
-    const toDate = to ? endOfDay(parseDate(to)) : endOfDay(new Date());
-    const fromDate = from ? startOfDay(parseDate(from)) : startOfDay(new Date(Date.now() - 29 * 24 * 60 * 60 * 1000));
+    // Use timezone-aware calendar day conversion for date range queries
+    if (to) {
+      const toDate = localDayEndToUtc(to);
+      if (from) {
+        const fromDate = localDayStartToUtc(from);
+        return { fromDate, toDate };
+      }
+      // If only 'to' is provided, calculate 29 days before it
+      // We work with date strings (YYYY-MM-DD) which are timezone-independent
+      const toDateObj = new Date(to);
+      const fromDateObj = new Date(toDateObj.getTime() - 29 * 24 * 60 * 60 * 1000);
+      const fromDateStr = fromDateObj.toISOString().slice(0, 10);
+      const fromDate = localDayStartToUtc(fromDateStr);
+      return { fromDate, toDate };
+    }
+    
+    // If no dates provided, use today and 29 days ago in clinic timezone
+    const todayStr = getLocalTodayInClinicTimezone();
+    const toDate = localDayEndToUtc(todayStr);
+    
+    // Calculate 29 days ago using date strings (timezone-independent)
+    const todayDate = new Date(todayStr);
+    const fromDateDate = new Date(todayDate.getTime() - 29 * 24 * 60 * 60 * 1000);
+    const fromDateStr = fromDateDate.toISOString().slice(0, 10);
+    const fromDate = localDayStartToUtc(fromDateStr);
+    
     return { fromDate, toDate };
   }
 
@@ -46,6 +114,7 @@ export class ReportsService {
       totalVisits,
       newPatients,
       totalAppointments,
+      completedAppointments,
     ] = await Promise.all([
       this.prisma.invoice.aggregate({
         where: { status: 'ISSUED', issuedAt: { gte: fromDate, lte: toDate } },
@@ -71,7 +140,14 @@ export class ReportsService {
       this.prisma.appointment.count({
         where: { scheduledAt: { gte: fromDate, lte: toDate } },
       }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: fromDate, lte: toDate }, status: 'DONE' },
+      }),
     ]);
+
+    const appointmentCompletionRate = totalAppointments > 0
+      ? (completedAppointments / totalAppointments) * 100
+      : 0;
 
     return {
       range: { from: fromDate, to: toDate },
@@ -82,22 +158,24 @@ export class ReportsService {
       totalVisits,
       newPatients,
       totalAppointments,
+      appointmentCompletionRate: Math.round(appointmentCompletionRate * 10) / 10,
     };
   }
 
   async getRevenueTimeseries(from?: string, to?: string) {
     const { fromDate, toDate } = this.resolveRange(from, to);
 
-    // Raw SQL for day-level grouping — Prisma's groupBy can't truncate
-    // timestamps to a day on its own.
-    const revenueRows = await this.prisma.$queryRaw<Array<{ day: Date; revenue: string }>>`
-      SELECT date_trunc('day', "issuedAt") AS day, SUM("total") AS revenue
+    // Raw SQL for day-level grouping using Asia/Kuwait timezone
+    // We convert timestamps to Kuwait timezone before truncating to day
+    // Return YYYY-MM-DD string directly from PostgreSQL to avoid server-timezone interpretation
+    const revenueRows = await this.prisma.$queryRaw<Array<{ day: string; revenue: string }>>`
+      SELECT TO_CHAR(DATE_TRUNC('day', "issuedAt" AT TIME ZONE 'Asia/Kuwait'), 'YYYY-MM-DD') AS day, SUM("total") AS revenue
       FROM "Invoice"
       WHERE "status" = 'ISSUED' AND "issuedAt" BETWEEN ${fromDate} AND ${toDate}
       GROUP BY day ORDER BY day ASC
     `;
-    const collectedRows = await this.prisma.$queryRaw<Array<{ day: Date; collected: string }>>`
-      SELECT date_trunc('day', "paymentDate") AS day, SUM("amount") AS collected
+    const collectedRows = await this.prisma.$queryRaw<Array<{ day: string; collected: string }>>`
+      SELECT TO_CHAR(DATE_TRUNC('day', "paymentDate" AT TIME ZONE 'Asia/Kuwait'), 'YYYY-MM-DD') AS day, SUM("amount") AS collected
       FROM "Payment"
       WHERE "paymentDate" BETWEEN ${fromDate} AND ${toDate} AND "status" = 'RECORDED'
       GROUP BY day ORDER BY day ASC
@@ -105,14 +183,12 @@ export class ReportsService {
 
     const byDay = new Map<string, { date: string; revenue: number; collected: number }>();
     for (const row of revenueRows) {
-      const key = row.day.toISOString().slice(0, 10);
-      byDay.set(key, { date: key, revenue: Number(row.revenue), collected: 0 });
+      byDay.set(row.day, { date: row.day, revenue: Number(row.revenue), collected: 0 });
     }
     for (const row of collectedRows) {
-      const key = row.day.toISOString().slice(0, 10);
-      const existing = byDay.get(key);
+      const existing = byDay.get(row.day);
       if (existing) existing.collected = Number(row.collected);
-      else byDay.set(key, { date: key, revenue: 0, collected: Number(row.collected) });
+      else byDay.set(row.day, { date: row.day, revenue: 0, collected: Number(row.collected) });
     }
 
     return Array.from(byDay.values()).sort((a, b) => a.date.localeCompare(b.date));
@@ -145,6 +221,40 @@ export class ReportsService {
       paymentStatus: r.paymentStatus,
       amount: Number(r._sum.total || 0),
       count: r._count._all,
+    }));
+  }
+
+  async getPaymentExceptions(from?: string, to?: string) {
+    const { fromDate, toDate } = this.resolveRange(from, to);
+    const exceptions = await this.prisma.invoice.findMany({
+      where: {
+        status: 'ISSUED',
+        issuedAt: { gte: fromDate, lte: toDate },
+        OR: [
+          { remaining: { gt: 0 } },
+          { paymentStatus: { not: 'PAID' } },
+        ],
+      },
+      select: {
+        id: true,
+        invoiceNumber: true,
+        total: true,
+        paid: true,
+        remaining: true,
+        paymentStatus: true,
+        issuedAt: true,
+        patient: { select: { fullNameAr: true, civilId: true } },
+      },
+    });
+    return exceptions.map((inv) => ({
+      id: inv.id,
+      invoiceNumber: inv.invoiceNumber,
+      total: Number(inv.total),
+      paid: Number(inv.paid),
+      remaining: Number(inv.remaining),
+      paymentStatus: inv.paymentStatus,
+      issuedAt: inv.issuedAt,
+      patient: inv.patient,
     }));
   }
 
@@ -189,13 +299,13 @@ export class ReportsService {
 
   async getNewPatientsTimeseries(from?: string, to?: string) {
     const { fromDate, toDate } = this.resolveRange(from, to);
-    const rows = await this.prisma.$queryRaw<Array<{ day: Date; count: bigint }>>`
-      SELECT date_trunc('day', "createdAt") AS day, COUNT(*) AS count
+    const rows = await this.prisma.$queryRaw<Array<{ day: string; count: bigint }>>`
+      SELECT TO_CHAR(DATE_TRUNC('day', "createdAt" AT TIME ZONE 'Asia/Kuwait'), 'YYYY-MM-DD') AS day, COUNT(*) AS count
       FROM "Patient"
       WHERE "createdAt" BETWEEN ${fromDate} AND ${toDate}
       GROUP BY day ORDER BY day ASC
     `;
-    return rows.map((r) => ({ date: r.day.toISOString().slice(0, 10), count: Number(r.count) }));
+    return rows.map((r) => ({ date: r.day, count: Number(r.count) }));
   }
 
   async getOutstandingInvoices(page: number = 1, limit: number = 20) {
@@ -229,16 +339,28 @@ export class ReportsService {
   // collections, built entirely from real Invoice/Payment rows for that day.
   // Reversed payments are excluded from collection totals (they were undone),
   // matching what a genuine end-of-day cash closing should show.
+  //
+  // Reconciliation semantics:
+  // - expected = total of invoices issued during the selected local calendar day
+  // - actual = total of payments recorded during the selected local calendar day
+  // - difference = operational reconciliation signal
+  // - difference does NOT automatically mean unpaid debt; it may reflect payment date variations
   async getDailyClosing(date?: string) {
-    const day = date ? new Date(date) : new Date();
-    const dayStart = startOfDay(day);
-    const dayEnd = endOfDay(day);
+    // Use timezone-aware calendar day conversion for the clinic's local business day
+    const dateStr = date || getLocalTodayInClinicTimezone();
+    const dayStart = localDayStartToUtc(dateStr);
+    const dayEnd = localDayEndToUtc(dateStr);
 
     const [
       invoicesToday,
       paymentsToday,
       paymentMethodBreakdown,
       invoicePaymentStatusBreakdown,
+      visitsToday,
+      completedVisits,
+      appointmentsToday,
+      completedAppointments,
+      cancelledOrNoShowAppointments,
     ] = await Promise.all([
       this.prisma.invoice.findMany({
         where: { status: 'ISSUED', issuedAt: { gte: dayStart, lte: dayEnd } },
@@ -276,6 +398,21 @@ export class ReportsService {
         where: { status: 'ISSUED', issuedAt: { gte: dayStart, lte: dayEnd } },
         _count: { _all: true },
       }),
+      this.prisma.visit.count({
+        where: { visitDate: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.prisma.visit.count({
+        where: { visitDate: { gte: dayStart, lte: dayEnd }, status: 'COMPLETED' },
+      }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: dayStart, lte: dayEnd } },
+      }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: dayStart, lte: dayEnd }, status: 'DONE' },
+      }),
+      this.prisma.appointment.count({
+        where: { scheduledAt: { gte: dayStart, lte: dayEnd }, status: { in: ['CANCELLED', 'NO_SHOW'] } },
+      }),
     ]);
 
     const totalInvoiced = invoicesToday
@@ -296,12 +433,27 @@ export class ReportsService {
       paymentStatusCounts[row.paymentStatus] = row._count._all;
     }
 
+    // Calculate reconciliation difference
+    const reconciliationDifference = totalInvoiced - totalCollected;
+
+    // Count payment exceptions
+    const paymentExceptions = invoicesToday.filter(
+      inv => inv.remaining.gt(0) || inv.paymentStatus !== 'PAID'
+    ).length;
+
     return {
-      date: dayStart.toISOString().slice(0, 10),
+      date: dateStr,
       totalInvoiced,
       totalCollected,
       totalRemaining,
+      reconciliationDifference,
       invoiceCount: invoicesToday.length,
+      paymentExceptions,
+      visitsToday,
+      completedVisits,
+      appointmentsToday,
+      completedAppointments,
+      cancelledOrNoShowAppointments,
       paymentMethods: paymentMethodBreakdown.map((r) => ({
         method: r.method,
         amount: Number(r._sum.amount || 0),
