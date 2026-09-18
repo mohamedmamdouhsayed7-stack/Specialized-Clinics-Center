@@ -40,9 +40,12 @@ export default function InvoiceDetail() {
   const returnTo = getReturnTo(searchParams.toString(), '/invoices');
   const { showToast } = useToast();
 
-  const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
+  const PAYMENT_METHOD_LABELS: Record<PaymentMethod | 'CASH' | 'VISA', string> = {
     KNET: t('payments.methodKnet'),
     LINK: t('payments.methodLink'),
+    OTHER: 'OTHER',
+    CASH: 'CASH',
+    VISA: 'VISA',
   };
 
   const { user } = useAuth();
@@ -68,8 +71,17 @@ export default function InvoiceDetail() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: (data: { status: 'ISSUED' | 'VOID'; paymentMethod?: 'KNET' | 'LINK' }) =>
-      invoicesService.updateInvoiceStatus(id!, data.status, data.paymentMethod),
+    mutationFn: (
+      data: {
+        status: 'ISSUED' | 'VOID';
+        paymentMethod?: 'KNET' | 'LINK' | 'OTHER';
+      }
+    ) =>
+      invoicesService.updateInvoiceStatus(
+        id!,
+        data.status,
+        data.paymentMethod
+      ),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice', id] });
       setConfirmStatus(null);
@@ -1045,7 +1057,14 @@ export default function InvoiceDetail() {
                 {invoice.status === 'DRAFT' && (
                   <button
                     onClick={() => {
-                      setConfirmStatus('ISSUED');
+                      // Check if invoice needs payment method
+                      const remainingValue = Number(invoice.remaining);
+                      if (remainingValue > 0) {
+                        setConfirmStatus('ISSUED');
+                      } else {
+                        // No payment needed, can issue directly
+                        statusMutation.mutate({ status: 'ISSUED' });
+                      }
                     }}
                     disabled={statusMutation.isPending}
                     className="px-4 py-2 bg-[#111844] text-white rounded-md hover:bg-[#1a237e] transition-colors disabled:opacity-50"
@@ -1633,7 +1652,7 @@ export default function InvoiceDetail() {
                       name="replacementPaymentMethod"
                       value="KNET"
                       checked={issuePaymentMethod === 'KNET'}
-                      onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                      onChange={(e) => setIssuePaymentMethod(e.target.value as PaymentMethod)}
                       className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
                     />
                     <span className="text-gray-900">KNET</span>
@@ -1644,10 +1663,21 @@ export default function InvoiceDetail() {
                       name="replacementPaymentMethod"
                       value="LINK"
                       checked={issuePaymentMethod === 'LINK'}
-                      onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                      onChange={(e) => setIssuePaymentMethod(e.target.value as PaymentMethod)}
                       className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
                     />
                     <span className="text-gray-900">LINK</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="replacementPaymentMethod"
+                      value="OTHER"
+                      checked={issuePaymentMethod === 'OTHER'}
+                      onChange={(e) => setIssuePaymentMethod(e.target.value as PaymentMethod)}
+                      className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                    />
+                    <span className="text-gray-900">OTHER</span>
                   </label>
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
@@ -1752,6 +1782,7 @@ export default function InvoiceDetail() {
                 >
                   <option value="KNET">KNET</option>
                   <option value="LINK">LINK</option>
+                  <option value="OTHER">OTHER</option>
                 </select>
               </div>
 
@@ -2064,7 +2095,7 @@ export default function InvoiceDetail() {
                     name="issuePaymentMethod"
                     value="KNET"
                     checked={issuePaymentMethod === 'KNET'}
-                    onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                    onChange={(e) => setIssuePaymentMethod(e.target.value as PaymentMethod)}
                     className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
                   />
                   <span className="text-gray-900">KNET</span>
@@ -2075,10 +2106,21 @@ export default function InvoiceDetail() {
                     name="issuePaymentMethod"
                     value="LINK"
                     checked={issuePaymentMethod === 'LINK'}
-                    onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                    onChange={(e) => setIssuePaymentMethod(e.target.value as PaymentMethod)}
                     className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
                   />
                   <span className="text-gray-900">LINK</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="issuePaymentMethod"
+                    value="OTHER"
+                    checked={issuePaymentMethod === 'OTHER'}
+                    onChange={(e) => setIssuePaymentMethod(e.target.value as PaymentMethod)}
+                    className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                  />
+                  <span className="text-gray-900">OTHER</span>
                 </label>
               </div>
             </div>

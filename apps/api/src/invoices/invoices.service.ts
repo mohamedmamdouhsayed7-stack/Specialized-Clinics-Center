@@ -106,8 +106,8 @@ export class InvoicesService {
         throw new ConflictException('This visit already has an active invoice');
       }
 
-      // Validate payment method - only KNET and LINK are allowed
-      const validPaymentMethods = ['KNET', 'LINK'];
+      // Validate payment method - only KNET, LINK, and OTHER are allowed
+      const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
       if (!validPaymentMethods.includes(createInvoiceDto.paymentMethod)) {
         throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
       }
@@ -424,9 +424,9 @@ export class InvoicesService {
             }
 
             // Validate payment method
-            const validPaymentMethods = ['KNET', 'LINK'];
+            const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
             if (!validPaymentMethods.includes(updateStatusDto.paymentMethod)) {
-              throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
+              throw new BadRequestException('Invalid payment method. Only KNET, LINK, and OTHER are allowed.');
             }
 
             // Create payment for remaining balance
@@ -763,9 +763,9 @@ export class InvoicesService {
 
       if (needsAdditionalPayment && additionalPaymentMethod) {
         // Validate payment method
-        const validPaymentMethods = ['KNET', 'LINK'];
+        const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
         if (!validPaymentMethods.includes(additionalPaymentMethod)) {
-          throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
+          throw new BadRequestException('Invalid payment method. Only KNET, LINK, and OTHER are allowed.');
         }
       }
       

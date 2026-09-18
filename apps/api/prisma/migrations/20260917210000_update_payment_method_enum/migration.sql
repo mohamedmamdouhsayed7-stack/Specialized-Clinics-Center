@@ -1,7 +1,15 @@
--- AlterEnum
+-- Update PaymentMethod enum while preserving historical payment methods
+-- New payments are restricted at the application/API level.
+
 ALTER TYPE "PaymentMethod" RENAME TO "PaymentMethod_old";
 
-CREATE TYPE "PaymentMethod" AS ENUM ('KNET', 'LINK');
+CREATE TYPE "PaymentMethod" AS ENUM (
+  'CASH',
+  'VISA',
+  'KNET',
+  'LINK',
+  'OTHER'
+);
 
 ALTER TABLE "Payment"
   ALTER COLUMN "method"

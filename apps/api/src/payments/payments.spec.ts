@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
 import { cleanupTestData } from '../test-utils';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 
 describe('Payments Module Tests (E2E)', () => {
   let app: INestApplication;
@@ -220,6 +221,70 @@ describe('Payments Module Tests (E2E)', () => {
         .expect(400);
     });
 
+    it('should record OTHER as a valid payment method', async () => {
+      const visit = await prisma.visit.create({
+        data: {
+          patientId: testPatientId,
+          type: 'OTHER',
+          createdById: adminUserId,
+        },
+      });
+
+      const invoice = await prisma.invoice.create({
+        data: {
+          invoiceNumber: `INV-OTHER-${Date.now()}`,
+          visitId: visit.id,
+          patientId: testPatientId,
+          status: 'ISSUED',
+          subtotal: 30,
+          total: 30,
+          paid: 0,
+          remaining: 30,
+          paymentStatus: 'UNPAID',
+          createdById: adminUserId,
+          issuedAt: new Date(),
+          issuedById: adminUserId,
+          invoiceItems: {
+            create: [
+              {
+                serviceId: testServiceId,
+                serviceNameSnapshot: 'Consultation',
+                unitPriceSnapshot: 30,
+                quantity: 1,
+                lineTotal: 30,
+              },
+            ],
+          },
+        },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/payments')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({
+          invoiceId: invoice.id,
+          amount: 30,
+          method: 'OTHER',
+        })
+        .expect(201);
+
+      expect(response.body.method).toBe('OTHER');
+      expect(response.body.status).toBe('RECORDED');
+      expect(Number(response.body.amount)).toBe(30);
+
+      const updatedInvoice = await prisma.invoice.findUnique({
+        where: { id: invoice.id },
+      });
+
+      if (!updatedInvoice) {
+        throw new Error('Expected the OTHER payment invoice to exist');
+      }
+
+      expect(Number(updatedInvoice.paid)).toBe(30);
+      expect(Number(updatedInvoice.remaining)).toBe(0);
+      expect(updatedInvoice.paymentStatus).toBe('PAID');
+    });
+
     it('should record a partial payment and move the invoice to PARTIALLY_PAID', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/payments')
@@ -231,6 +296,11 @@ describe('Payments Module Tests (E2E)', () => {
       expect(response.body.method).toBe('KNET');
 
       const invoice = await prisma.invoice.findUnique({ where: { id: issuedInvoiceId } });
+
+      if (!invoice) {
+        throw new Error('Expected the issued invoice to exist');
+      }
+
       expect(Number(invoice.paid)).toBe(20);
       expect(Number(invoice.remaining)).toBe(30);
       expect(invoice.paymentStatus).toBe('PARTIALLY_PAID');
@@ -244,6 +314,11 @@ describe('Payments Module Tests (E2E)', () => {
         .expect(201);
 
       const invoice = await prisma.invoice.findUnique({ where: { id: issuedInvoiceId } });
+
+      if (!invoice) {
+        throw new Error('Expected the issued invoice to exist');
+      }
+
       expect(Number(invoice.paid)).toBe(30);
       expect(invoice.paymentStatus).toBe('PARTIALLY_PAID');
     });
@@ -256,6 +331,11 @@ describe('Payments Module Tests (E2E)', () => {
         .expect(201);
 
       const invoice = await prisma.invoice.findUnique({ where: { id: issuedInvoiceId } });
+
+      if (!invoice) {
+        throw new Error('Expected the issued invoice to exist');
+      }
+
       expect(Number(invoice.paid)).toBe(50);
       expect(Number(invoice.remaining)).toBe(0);
       expect(invoice.paymentStatus).toBe('PAID');
@@ -306,7 +386,14 @@ describe('Payments Module Tests (E2E)', () => {
     let paymentToReverseId: string;
 
     beforeAll(async () => {
-      const payment = await prisma.payment.findFirst({ where: { invoiceId: issuedInvoiceId, amount: 10 } });
+      const payment = await prisma.payment.findFirst({
+        where: { invoiceId: issuedInvoiceId, amount: 10 },
+      });
+
+      if (!payment) {
+        throw new Error('Expected a payment of 10 to exist for the issued invoice');
+      }
+
       paymentToReverseId = payment.id;
     });
 
@@ -328,12 +415,24 @@ describe('Payments Module Tests (E2E)', () => {
       expect(response.body.reversed).toBe(true);
 
       const invoice = await prisma.invoice.findUnique({ where: { id: issuedInvoiceId } });
+
+      if (!invoice) {
+        throw new Error('Expected the issued invoice to exist');
+      }
+
       expect(Number(invoice.paid)).toBe(40);
       expect(Number(invoice.remaining)).toBe(10);
       expect(invoice.paymentStatus).toBe('PARTIALLY_PAID');
 
       // Payment should be marked as REVERSED, not deleted
-      const reversedPayment = await prisma.payment.findUnique({ where: { id: paymentToReverseId } });
+      const reversedPayment = await prisma.payment.findUnique({
+        where: { id: paymentToReverseId },
+      });
+
+      if (!reversedPayment) {
+        throw new Error('Expected the reversed payment to exist');
+      }
+
       expect(reversedPayment.status).toBe('REVERSED');
       expect(reversedPayment.reversedAt).toBeDefined();
       expect(reversedPayment.reversedBy).toBe(adminUserId);
@@ -415,6 +514,11 @@ describe('Payments Module Tests (E2E)', () => {
 
       // Verify final state is consistent - total should not exceed 100
       const invoice = await prisma.invoice.findUnique({ where: { id: concurrentInvoiceId } });
+
+      if (!invoice) {
+        throw new Error('Expected the concurrent test invoice to exist');
+      }
+
       expect(Number(invoice.paid)).toBeLessThanOrEqual(100);
       expect(Number(invoice.remaining)).toBeGreaterThanOrEqual(0);
     });

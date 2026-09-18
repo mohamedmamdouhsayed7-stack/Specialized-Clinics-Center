@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
 import { cleanupTestData } from '../test-utils';
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 
 describe('Invoices Module Tests (E2E)', () => {
   let app: INestApplication;
@@ -170,7 +171,7 @@ describe('Invoices Module Tests (E2E)', () => {
         })
         .expect(400);
 
-      // Invalid paymentMethod (only KNET and LINK allowed)
+      // Invalid paymentMethod (CASH and VISA are not allowed for new payments)
       await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
@@ -180,6 +181,28 @@ describe('Invoices Module Tests (E2E)', () => {
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(400);
+    });
+
+    it('should allow OTHER as a payment method for a new invoice', async () => {
+      const visit = await prisma.visit.create({
+        data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/invoices')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({
+          visitId: visit.id,
+          paymentMethod: 'OTHER',
+          items: [{ serviceId: testServiceAId, quantity: 1 }],
+        })
+        .expect(201);
+
+      expect(response.body.status).toBe('ISSUED');
+      expect(response.body.paymentStatus).toBe('PAID');
+      expect(response.body.payments).toHaveLength(1);
+      expect(response.body.payments[0].method).toBe('OTHER');
+      expect(Number(response.body.payments[0].amount)).toBe(30);
     });
 
     it('should reject downgrading a visit after an invoice exists', async () => {
