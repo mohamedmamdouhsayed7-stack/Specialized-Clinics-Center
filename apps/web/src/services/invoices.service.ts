@@ -67,6 +67,7 @@ export interface CreateInvoiceDto {
     chargeValue: number;
     description?: string;
   }[];
+  paymentMethod: 'KNET' | 'LINK';
 }
 
 export interface AddChargeDto {
@@ -82,6 +83,7 @@ export interface CreateReplacementDto {
     chargeValue: number;
     description?: string;
   }[];
+  paymentMethod?: 'KNET' | 'LINK';
 }
 
 export interface InvoicesListResponse {
@@ -180,11 +182,11 @@ class InvoicesService {
     return response.json();
   }
 
-  async updateInvoiceStatus(id: string, status: 'DRAFT' | 'ISSUED' | 'VOID'): Promise<Invoice> {
+  async updateInvoiceStatus(id: string, status: 'DRAFT' | 'ISSUED' | 'VOID', paymentMethod?: 'KNET' | 'LINK'): Promise<Invoice> {
     const response = await fetch(`${apiBaseUrl}/invoices/${id}/status`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(paymentMethod && { paymentMethod }) }),
     });
 
     if (!response.ok) {

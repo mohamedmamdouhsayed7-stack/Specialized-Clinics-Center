@@ -36,6 +36,7 @@ export default function InvoiceForm() {
 
   const [items, setItems] = useState<LineItem[]>([{ serviceId: '', quantity: 1, unitPrice: null }]);
   const [additionalCharges, setAdditionalCharges] = useState<AdditionalCharge[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<'KNET' | 'LINK'>('KNET');
   const [error, setError] = useState<string | null>(null);
   const { confirmOpen, requestNavigation, stay, leave } = useUnsavedChanges(items.some((item) => item.serviceId || item.unitPrice !== null || item.quantity !== 1) || additionalCharges.length > 0);
 
@@ -145,6 +146,7 @@ export default function InvoiceForm() {
       visitId,
       items: validItems,
       additionalCharges: additionalCharges.length > 0 ? additionalCharges : undefined,
+      paymentMethod,
     });
   };
 
@@ -366,6 +368,55 @@ export default function InvoiceForm() {
             <div className="border-t border-gray-200 pt-2 flex justify-between items-center">
               <span className="text-lg font-bold text-[#111844]">{t('invoices.total')}</span>
               <span className="text-lg font-bold text-[#111844]">{formatMoney(centsToMoney(totalCents), i18n.language)} {t('common.currency')}</span>
+            </div>
+          </div>
+
+          {/* Payment Method Selection */}
+          <div className="border-t border-gray-200 pt-4 mb-6">
+            <h3 className="text-lg font-bold text-[#111844] mb-3">{t('invoices.paymentMethod')}</h3>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="KNET"
+                  checked={paymentMethod === 'KNET'}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                  className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                  required
+                />
+                <span className="text-gray-900">KNET</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="LINK"
+                  checked={paymentMethod === 'LINK'}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                  className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                  required
+                />
+                <span className="text-gray-900">LINK</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Summary before submission */}
+          <div className="bg-[#F8FBFF] border border-[#DCE3EE] rounded-md p-4 mb-6">
+            <div className="text-sm space-y-1">
+              <div className="flex justify-between">
+                <span className="text-gray-600">{t('invoices.total')}:</span>
+                <span className="font-medium text-gray-900">{formatMoney(centsToMoney(totalCents), i18n.language)} {t('common.currency')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">{t('invoices.paymentMethod')}:</span>
+                <span className="font-medium text-gray-900">{paymentMethod}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600">{t('invoices.amountPaid')}:</span>
+                <span className="font-medium text-gray-900">{formatMoney(centsToMoney(totalCents), i18n.language)} {t('common.currency')}</span>
+              </div>
             </div>
           </div>
 

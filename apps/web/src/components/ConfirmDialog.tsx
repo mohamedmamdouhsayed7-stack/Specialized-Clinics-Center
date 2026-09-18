@@ -10,6 +10,7 @@ interface ConfirmDialogProps {
   loading?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  children?: React.ReactNode;
 }
 
 export default function ConfirmDialog({
@@ -22,6 +23,7 @@ export default function ConfirmDialog({
   loading = false,
   onConfirm,
   onCancel,
+  children,
 }: ConfirmDialogProps) {
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
@@ -79,6 +81,7 @@ export default function ConfirmDialog({
           {title}
         </h2>
         <p id="confirm-dialog-message" className="mb-5 text-sm text-[#64748B]">{message}</p>
+        {children}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             ref={cancelRef}
