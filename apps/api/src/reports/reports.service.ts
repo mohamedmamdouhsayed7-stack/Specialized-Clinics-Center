@@ -297,6 +297,36 @@ export class ReportsService {
     return rows.map((r) => ({ status: r.status, count: r._count._all }));
   }
 
+  async getTodayAppointmentExceptions() {
+    const todayStr = getLocalTodayInClinicTimezone();
+    const dayStart = localDayStartToUtc(todayStr);
+    const dayEnd = localDayEndToUtc(todayStr);
+
+    const exceptions = await this.prisma.appointment.findMany({
+      where: {
+        scheduledAt: { gte: dayStart, lte: dayEnd },
+        status: { in: ['CANCELLED', 'NO_SHOW'] },
+      },
+      include: {
+        patient: {
+          select: {
+            fullNameAr: true,
+            fullNameEn: true,
+          },
+        },
+      },
+      orderBy: { scheduledAt: 'asc' },
+    });
+
+    return exceptions.map((apt) => ({
+      id: apt.id,
+      patientNameAr: apt.patient.fullNameAr || '—',
+      patientNameEn: apt.patient.fullNameEn || apt.patient.fullNameAr || '—',
+      scheduledAt: apt.scheduledAt,
+      status: apt.status,
+    }));
+  }
+
   async getNewPatientsTimeseries(from?: string, to?: string) {
     const { fromDate, toDate } = this.resolveRange(from, to);
     const rows = await this.prisma.$queryRaw<Array<{ day: string; count: bigint }>>`
