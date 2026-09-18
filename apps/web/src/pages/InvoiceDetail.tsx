@@ -28,6 +28,7 @@ import {
   MessageCircle,
   Printer,
   Share2,
+  X,
   Smartphone,
 } from 'lucide-react';
 
@@ -175,8 +176,8 @@ export default function InvoiceDetail() {
 
   const [whatsappOpening, setWhatsappOpening] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
-  const [whatsappShareMenuOpen, setWhatsappShareMenuOpen] = useState(false);
   const [shareActionPending, setShareActionPending] = useState(false);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
 
   const [messageShareChannel, setMessageShareChannel] = useState<
     'whatsapp' | 'sms' | null
@@ -187,9 +188,10 @@ export default function InvoiceDetail() {
 
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const messageShareDialogRef = useRef<HTMLDivElement>(null);
+  const whatsappModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!shareMenuOpen && !messageShareChannel) return;
+    if (!shareMenuOpen && !messageShareChannel && !whatsappModalOpen) return;
 
     const handlePointerDown = (event: { target: object | null }) => {
       const target = event.target as Node;
@@ -199,7 +201,6 @@ export default function InvoiceDetail() {
         !shareMenuRef.current?.contains(target)
       ) {
         setShareMenuOpen(false);
-        setWhatsappShareMenuOpen(false);
       }
 
       if (
@@ -208,13 +209,20 @@ export default function InvoiceDetail() {
       ) {
         setMessageShareChannel(null);
       }
+
+      if (
+        whatsappModalOpen &&
+        !whatsappModalRef.current?.contains(target)
+      ) {
+        setWhatsappModalOpen(false);
+      }
     };
 
     const handleKeyDown = (event: { key?: string }) => {
       if (event.key === 'Escape') {
         setShareMenuOpen(false);
-        setWhatsappShareMenuOpen(false);
         setMessageShareChannel(null);
+        setWhatsappModalOpen(false);
       }
     };
 
@@ -225,11 +233,10 @@ export default function InvoiceDetail() {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [messageShareChannel, shareMenuOpen]);
+  }, [messageShareChannel, shareMenuOpen, whatsappModalOpen]);
 
   const downloadInvoicePdf = async () => {
     setShareMenuOpen(false);
-    setWhatsappShareMenuOpen(false);
     setPdfLoading(true);
 
     try {
@@ -260,7 +267,6 @@ export default function InvoiceDetail() {
 
     setShareActionPending(true);
     setShareMenuOpen(false);
-    setWhatsappShareMenuOpen(false);
 
     const printWindow = window.open('', '_blank');
 
@@ -334,7 +340,6 @@ export default function InvoiceDetail() {
     channel: 'whatsapp' | 'sms'
   ) => {
     setShareMenuOpen(false);
-    setWhatsappShareMenuOpen(false);
     setMessageShareChannel(channel);
     setMessageSharePhone(invoice?.patient.phone || '');
     setMessageShareCountryCode('');
@@ -502,12 +507,6 @@ export default function InvoiceDetail() {
    * - Send Message
    * - Send Invoice PDF
    */
-  const shareInvoiceOnWhatsApp = () => {
-    if (shareActionPending) return;
-
-    setWhatsappShareMenuOpen((open) => !open);
-  };
-
   /*
    * Send Message:
    * Uses the patient's saved phone number automatically and opens
@@ -534,8 +533,6 @@ export default function InvoiceDetail() {
       return;
     }
 
-    setShareMenuOpen(false);
-    setWhatsappShareMenuOpen(false);
     setWhatsappOpening(true);
     setShareActionPending(true);
 
@@ -577,7 +574,6 @@ export default function InvoiceDetail() {
     if (!invoice || shareActionPending) return;
 
     setShareMenuOpen(false);
-    setWhatsappShareMenuOpen(false);
     setShareActionPending(true);
 
     void (async () => {
@@ -680,7 +676,6 @@ export default function InvoiceDetail() {
 
   const copyInvoiceNumber = async () => {
     setShareMenuOpen(false);
-    setWhatsappShareMenuOpen(false);
 
     const invoiceNumber = invoice?.invoiceNumber;
 
@@ -910,7 +905,6 @@ export default function InvoiceDetail() {
                       setShareMenuOpen(
                         (open) => !open
                       );
-                      setWhatsappShareMenuOpen(false);
                     }}
                     aria-expanded={shareMenuOpen}
                     aria-haspopup="menu"
@@ -941,7 +935,10 @@ export default function InvoiceDetail() {
                         <button
                           type="button"
                           role="menuitem"
-                          onClick={shareInvoiceOnWhatsApp}
+                          onClick={() => {
+                            setShareMenuOpen(false);
+                            setWhatsappModalOpen(true);
+                          }}
                           disabled={
                             whatsappOpening ||
                             shareActionPending
@@ -959,62 +956,7 @@ export default function InvoiceDetail() {
                                 'invoices.shareWhatsApp'
                               )}
                           </span>
-
-                          <ChevronDown
-                            size={14}
-                            className={
-                              whatsappShareMenuOpen
-                                ? '-rotate-90 transition-transform'
-                                : '-rotate-90 transition-transform'
-                            }
-                          />
                         </button>
-
-                        {whatsappShareMenuOpen && (
-                          <div className="absolute end-full top-0 z-40 me-2 w-56 overflow-hidden rounded-xl border border-[#DCE3EF] bg-white p-2 shadow-[0_16px_40px_rgba(16,47,99,0.18)]">
-                            <p className="px-3 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wider text-[#8991A6]">
-                              Share via WhatsApp
-                            </p>
-
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={
-                                sendWhatsAppMessage
-                              }
-                              disabled={
-                                shareActionPending
-                              }
-                              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium text-[#128C7E] transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50"
-                            >
-                              <MessageCircle
-                                size={16}
-                              />
-
-                              <span>
-                                Send Message
-                              </span>
-                            </button>
-
-                            <button
-                              type="button"
-                              role="menuitem"
-                              onClick={
-                                shareInvoicePdfOnWhatsApp
-                              }
-                              disabled={
-                                shareActionPending
-                              }
-                              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium text-[#173B78] transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50"
-                            >
-                              <FileText size={16} />
-
-                              <span>
-                                Send Invoice PDF
-                              </span>
-                            </button>
-                          </div>
-                        )}
                       </div>
 
                       <button
@@ -1636,6 +1578,19 @@ export default function InvoiceDetail() {
                 {t('common.currency')}
               </span>
             </div>
+
+            {/* Payment Method - show from latest payment */}
+            {payments && payments.length > 0 && (
+              <div className="flex justify-between">
+                <span className="text-gray-600">
+                  {t('invoices.paymentMethod')}
+                </span>
+
+                <span className="text-gray-900">
+                  {PAYMENT_METHOD_LABELS[payments[payments.length - 1].method]}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1746,16 +1701,8 @@ export default function InvoiceDetail() {
                   }
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-[#111844]"
                 >
-                  {Object.entries(
-                    PAYMENT_METHOD_LABELS
-                  ).map(([value, label]) => (
-                    <option
-                      key={value}
-                      value={value}
-                    >
-                      {label}
-                    </option>
-                  ))}
+                  <option value="KNET">KNET</option>
+                  <option value="LINK">LINK</option>
                 </select>
               </div>
 
@@ -2134,6 +2081,96 @@ export default function InvoiceDetail() {
             }
           }}
         />
+
+        {/* WhatsApp Mobile Modal */}
+        {whatsappModalOpen && (
+          <div
+            ref={whatsappModalRef}
+            className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+            style={{ maxHeight: '90dvh' }}
+          >
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setWhatsappModalOpen(false)}
+            />
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90dvh] overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {t('invoices.shareWhatsApp')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setWhatsappModalOpen(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWhatsappModalOpen(false);
+                    sendWhatsAppMessage();
+                  }}
+                  disabled={shareActionPending}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#128C7E]/10 flex items-center justify-center">
+                    <MessageCircle size={24} className="text-[#128C7E]" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-medium text-gray-900">
+                      {t('invoices.sendViaWhatsApp')}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {t('invoices.whatsappLimitation')}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWhatsappModalOpen(false);
+                    shareInvoicePdfOnWhatsApp();
+                  }}
+                  disabled={shareActionPending}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#173B78]/10 flex items-center justify-center">
+                    <FileText size={24} className="text-[#173B78]" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-medium text-gray-900">
+                      {t('invoices.sendInvoicePdf')}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {t('invoices.whatsappLimitation')}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setWhatsappModalOpen(false)}
+                  className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

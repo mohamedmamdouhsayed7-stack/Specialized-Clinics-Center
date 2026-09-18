@@ -79,7 +79,7 @@ export class InvoicesService {
     return this.prisma.$transaction(async (tx) => {
       // Lock the visit row to prevent concurrent invoice creation using SELECT ... FOR UPDATE
       await tx.$queryRaw`SELECT * FROM "Visit" WHERE id = ${createInvoiceDto.visitId}::uuid FOR UPDATE`;
-      
+
       // Re-read the visit after locking to get the actual data
       const visit = await tx.visit.findUnique({
         where: { id: createInvoiceDto.visitId },
@@ -96,14 +96,20 @@ export class InvoicesService {
       // Check for existing active invoices (DRAFT or ISSUED) for this visit
       // Historical VOID invoices are allowed to coexist
       const existingActiveInvoice = await tx.invoice.findFirst({
-        where: { 
-          visitId: createInvoiceDto.visitId, 
+        where: {
+          visitId: createInvoiceDto.visitId,
           status: { in: ['DRAFT', 'ISSUED'] }
         },
       });
 
       if (existingActiveInvoice) {
         throw new ConflictException('This visit already has an active invoice');
+      }
+
+      // Validate payment method - only KNET and LINK are allowed
+      const validPaymentMethods = ['KNET', 'LINK'];
+      if (!validPaymentMethods.includes(createInvoiceDto.paymentMethod)) {
+        throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
       }
 
       // Validate and price every requested service, snapshotting name + price
@@ -128,10 +134,10 @@ export class InvoicesService {
         // Use the per-item override if provided, otherwise fall back to the
         // service's current default price. The service's own price is never
         // written to here — this only affects this one invoice's snapshot.
-        const unitPrice = item.unitPrice !== undefined 
-          ? new Decimal(item.unitPrice) 
+        const unitPrice = item.unitPrice !== undefined
+          ? new Decimal(item.unitPrice)
           : service.currentPrice;
-        
+
         // Calculate line total using Decimal arithmetic
         const lineTotal = unitPrice.mul(quantity).toDecimalPlaces(2);
 
@@ -146,12 +152,12 @@ export class InvoicesService {
 
       // Calculate subtotal using Decimal arithmetic
       const subtotal = invoiceItemsData.reduce((sum, i) => sum.add(i.lineTotal), new Decimal(0)).toDecimalPlaces(2);
-      
+
       // Calculate additional charges
       const additionalChargesData = (createInvoiceDto.additionalCharges || []).map(charge => {
         const chargeValue = new Decimal(charge.chargeValue);
         let calculatedAmount: Decimal;
-        
+
         if (charge.chargeType === 'PERCENTAGE') {
           // Percentage of subtotal
           calculatedAmount = subtotal.mul(chargeValue.div(100)).toDecimalPlaces(2);
@@ -159,7 +165,7 @@ export class InvoicesService {
           // Fixed amount
           calculatedAmount = chargeValue.toDecimalPlaces(2);
         }
-        
+
         return {
           chargeType: charge.chargeType,
           chargeValue: chargeValue,
@@ -171,27 +177,39 @@ export class InvoicesService {
       // Calculate total from subtotal + additional charges
       const totalCharges = additionalChargesData.reduce((sum, charge) => sum.add(charge.calculatedAmount), new Decimal(0)).toDecimalPlaces(2);
       const total = subtotal.add(totalCharges).toDecimalPlaces(2);
-      
-      // Draft invoices get a temporary placeholder; final number assigned at issuance
-      const tempInvoiceNumber = `DRAFT-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
 
+      // Generate final invoice number using PostgreSQL sequence
+      const finalInvoiceNumber = await this.generateInvoiceNumber(tx);
+
+      // Create the invoice as ISSUED with full payment in one transaction
       const invoice = await tx.invoice.create({
         data: {
-          invoiceNumber: tempInvoiceNumber,
+          invoiceNumber: finalInvoiceNumber,
           visitId: visit.id,
           patientId: visit.patientId,
-          status: 'DRAFT',
+          status: 'ISSUED',
+          issuedAt: new Date(),
+          issuedById: userId,
           subtotal,
           total,
-          paid: 0,
-          remaining: total,
-          paymentStatus: 'UNPAID',
+          paid: total,
+          remaining: new Decimal(0),
+          paymentStatus: 'PAID',
           createdById: userId,
           invoiceItems: {
             create: invoiceItemsData,
           },
           additionalCharges: {
             create: additionalChargesData,
+          },
+          payments: {
+            create: {
+              amount: total,
+              method: createInvoiceDto.paymentMethod,
+              status: 'RECORDED',
+              paymentDate: new Date(),
+              recordedById: userId,
+            },
           },
         },
         include: INVOICE_ITEM_INCLUDE,
@@ -217,7 +235,7 @@ export class InvoicesService {
         });
       }
 
-      // Audit log within transaction
+      // Audit log for invoice creation
       await tx.auditLog.create({
         data: {
           userId,
@@ -231,6 +249,26 @@ export class InvoicesService {
             patientId: invoice.patientId,
             total: invoice.total,
             status: invoice.status,
+            paymentMethod: createInvoiceDto.paymentMethod,
+          },
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      // Audit log for payment recording
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: 'CREATE',
+          entityType: 'Payment',
+          entityId: invoice.payments[0].id,
+          beforeState: null,
+          afterState: {
+            invoiceId: invoice.id,
+            amount: invoice.payments[0].amount,
+            method: invoice.payments[0].method,
+            status: 'RECORDED',
           },
           ipAddress,
           userAgent,

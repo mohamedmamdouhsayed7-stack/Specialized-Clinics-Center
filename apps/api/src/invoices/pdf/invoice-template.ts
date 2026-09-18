@@ -75,11 +75,15 @@ function formatMoney(value: number | string | Decimal): string {
 }
 
 function formatDate(value: string | Date): string {
+  // Use Asia/Kuwait timezone for clinic invoice dates
   const d = new Date(value);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuwait',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  });
+  return formatter.format(d).replace(/\//g, '/');
 }
 
 function escapeHtml(input: string): string {
