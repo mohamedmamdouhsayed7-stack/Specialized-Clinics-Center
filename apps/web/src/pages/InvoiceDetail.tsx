@@ -1045,7 +1045,14 @@ export default function InvoiceDetail() {
                 {invoice.status === 'DRAFT' && (
                   <button
                     onClick={() => {
-                      setConfirmStatus('ISSUED');
+                      // Check if invoice needs payment method
+                      const remainingValue = Number(invoice.remaining);
+                      if (remainingValue > 0) {
+                        setConfirmStatus('ISSUED');
+                      } else {
+                        // No payment needed, can issue directly
+                        statusMutation.mutate({ status: 'ISSUED' });
+                      }
                     }}
                     disabled={statusMutation.isPending}
                     className="px-4 py-2 bg-[#111844] text-white rounded-md hover:bg-[#1a237e] transition-colors disabled:opacity-50"
