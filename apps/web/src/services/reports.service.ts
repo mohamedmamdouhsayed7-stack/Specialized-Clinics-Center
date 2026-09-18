@@ -54,7 +54,8 @@ export interface NewPatientsPoint {
 
 export interface TodayAppointmentException {
   id: string;
-  patientName: string;
+  patientNameAr: string;
+  patientNameEn: string;
   scheduledAt: string;
   status: 'CANCELLED' | 'NO_SHOW';
 }

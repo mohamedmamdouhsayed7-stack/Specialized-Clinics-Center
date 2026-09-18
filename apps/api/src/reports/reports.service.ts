@@ -320,7 +320,8 @@ export class ReportsService {
 
     return exceptions.map((apt) => ({
       id: apt.id,
-      patientName: apt.patient.fullNameAr || apt.patient.fullNameEn || '—',
+      patientNameAr: apt.patient.fullNameAr || '—',
+      patientNameEn: apt.patient.fullNameEn || apt.patient.fullNameAr || '—',
       scheduledAt: apt.scheduledAt,
       status: apt.status,
     }));

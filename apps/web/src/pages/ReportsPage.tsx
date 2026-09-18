@@ -37,9 +37,13 @@ function todayMinus(days: number): string {
 
 function formatAppointmentTime(dateStr: string): string {
   const d = new Date(dateStr);
-  const hours = d.getHours().toString().padStart(2, '0');
-  const minutes = d.getMinutes().toString().padStart(2, '0');
-  return `${hours}:${minutes}`;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kuwait',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  return formatter.format(d);
 }
 
 function KpiCard({ icon: Icon, label, value, suffix }: { icon: typeof TrendingUp; label: string; value: string | number; suffix?: string }) {
@@ -222,7 +226,9 @@ export default function ReportsPage() {
                 {todayAppointmentExceptions.data.map((apt) => (
                   <div key={apt.id} className="flex items-center justify-between text-xs border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium text-[#1F2430] truncate">{apt.patientName}</div>
+                      <div className="font-medium text-[#1F2430] truncate">
+                        {i18n.language === 'ar' ? apt.patientNameAr : apt.patientNameEn || apt.patientNameAr}
+                      </div>
                       <div className="text-[#64748B]">{formatAppointmentTime(apt.scheduledAt)}</div>
                     </div>
                     <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-medium ${
@@ -329,7 +335,7 @@ export default function ReportsPage() {
             onClick={() => navigate('/services')}
             className="text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
           >
-            {t('reports.viewAllAppointments')} →
+            {t('reports.viewAllServices')} →
           </button>
         </div>
         {serviceUsage.isLoading ? (
