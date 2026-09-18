@@ -101,7 +101,9 @@ export default function PatientProfile() {
   });
 
   const visits = visitsData?.data || [];
-  const outstandingAmount = (invoicesData?.data || []).reduce((total, invoice) => total + Number(invoice.remaining || 0), 0);
+  const outstandingAmount = (invoicesData?.data || [])
+    .filter((invoice) => invoice.status === 'ISSUED')
+    .reduce((total, invoice) => total + Number(invoice.remaining || 0), 0);
   const lastVisit = visits
     .filter((visit) => visit.visitDate)
     .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())[0];
@@ -157,9 +159,11 @@ export default function PatientProfile() {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-md p-6 sticky top-8">
               {/* Unpaid Balance Warning */}
-              <div className="mb-4 bg-orange-50 border border-orange-200 text-orange-700 px-4 py-2 rounded text-sm">
-                {t('patients.outstandingBalance')}: {formatMoney(outstandingAmount, i18n.language)} {t('common.currency')}
-              </div>
+              {outstandingAmount > 0 && (
+                <div className="mb-4 bg-orange-50 border border-orange-200 text-orange-700 px-4 py-2 rounded text-sm">
+                  {t('patients.outstandingBalance')}: {formatMoney(outstandingAmount, i18n.language)} {t('common.currency')}
+                </div>
+              )}
 
               {/* Patient Name */}
               <h2 className="text-2xl font-bold text-[#111844] mb-4">{patient.fullNameAr}</h2>

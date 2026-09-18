@@ -6,6 +6,7 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
+import { localDayStartToUtc, localDayEndToUtc } from '../reports/reports.service';
 
 @Injectable()
 export class AppointmentsService {
@@ -99,17 +100,15 @@ export class AppointmentsService {
     const skip = (page - 1) * limit;
 
     const where: {
-      scheduledAt?: { gte: Date; lt: Date };
+      scheduledAt?: { gte: Date; lte: Date };
       status?: AppointmentStatus;
       patientId?: string;
     } = {};
 
     if (date) {
-      const startDate = new Date(date);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(date);
-      endDate.setHours(23, 59, 59, 999);
-      where.scheduledAt = { gte: startDate, lt: endDate };
+      const startDate = localDayStartToUtc(date);
+      const endDate = localDayEndToUtc(date);
+      where.scheduledAt = { gte: startDate, lte: endDate };
     }
 
     if (status) {

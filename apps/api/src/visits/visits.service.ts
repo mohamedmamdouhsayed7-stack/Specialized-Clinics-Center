@@ -5,6 +5,7 @@ import { VisitType, VisitStatus } from '@prisma/client';
 import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
+import { localDayStartToUtc, localDayEndToUtc, getLocalTodayInClinicTimezone } from '../reports/reports.service';
 
 const VISIT_INCLUDE = {
   patient: {
@@ -45,17 +46,10 @@ const VISIT_INCLUDE = {
 };
 
 function parseDateBoundary(value: string, endOfDay: boolean): Date {
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? new Date(`${value}T00:00:00`)
-    : new Date(value);
-
-  if (endOfDay) {
-    date.setHours(23, 59, 59, 999);
-  } else {
-    date.setHours(0, 0, 0, 0);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return endOfDay ? localDayEndToUtc(value) : localDayStartToUtc(value);
   }
-
-  return date;
+  return new Date(value);
 }
 
 @Injectable()
@@ -203,10 +197,9 @@ export class VisitsService {
   // Today's status breakdown for the receptionist's quick-glance cards on the
   // Visits page. Real counts from today's visits only — never invented.
   async getTodayCounts() {
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    const todayStr = getLocalTodayInClinicTimezone();
+    const startOfDay = localDayStartToUtc(todayStr);
+    const endOfDay = localDayEndToUtc(todayStr);
 
     const counts = await this.prisma.visit.groupBy({
       by: ['status'],
