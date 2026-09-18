@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Printer, Calendar, FileSpreadsheet } from 'lucide-react';
 import { reportsService } from '../services/reports.service';
-import { formatDateTime } from '../utils/dateFormat';
+import { formatDate, formatDateTime } from '../utils/dateFormat';
 import DateInput from '../components/DateInput';
 import { formatMoney } from '../utils/money';
 import { useToast } from '../contexts/ToastContext';
@@ -12,16 +12,25 @@ import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
 
 const PAYMENT_METHOD_KEYS: Record<string, string> = {
-  LINK: 'payments.methodLink',
   KNET: 'payments.methodKnet',
+  LINK: 'payments.methodLink',
+  OTHER: 'payments.methodOther',
+  CASH: 'payments.methodCash',
+  VISA: 'payments.methodVisa',
 };
 
-// Get local calendar date (YYYY-MM-DD) for the current day
+// Get local calendar date (YYYY-MM-DD) in Asia/Kuwait for the current day
 function getLocalToday(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kuwait',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
   return `${year}-${month}-${day}`;
 }
 
@@ -94,7 +103,7 @@ export default function DailyClosingPage() {
         <h1 className="text-2xl font-bold text-[#102F63]">مركز العيادات التخصصية</h1>
         <p className="text-sm text-[#64748B]">Specialized Clinics Center</p>
         <h2 className="text-lg font-bold mt-3">{t('dailyClosing.title')}</h2>
-        <p className="text-sm">{data ? formatDateTime(data.date, i18n.language) : ''}</p>
+        <p className="text-sm">{data ? formatDate(data.date, i18n.language) : ''}</p>
       </div>
 
       {isLoading && (
@@ -128,7 +137,13 @@ export default function DailyClosingPage() {
           </div>
 
           {/* Second KPI row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
+            <div className="ui-card p-4">
+              <div className="text-xs text-[#64748B] mb-1">{t('payments.methodKnet')}</div>
+              <div className="text-xl font-bold text-[#102F63]">
+                {formatMoney(data.paymentMethods.find(m => m.method === 'KNET')?.amount || 0, i18n.language)} {t('common.currency')}
+              </div>
+            </div>
             <div className="ui-card p-4">
               <div className="text-xs text-[#64748B] mb-1">{t('payments.methodLink')}</div>
               <div className="text-xl font-bold text-[#102F63]">
@@ -136,9 +151,9 @@ export default function DailyClosingPage() {
               </div>
             </div>
             <div className="ui-card p-4">
-              <div className="text-xs text-[#64748B] mb-1">{t('payments.methodKnet')}</div>
+              <div className="text-xs text-[#64748B] mb-1">{t('payments.methodOther')}</div>
               <div className="text-xl font-bold text-[#102F63]">
-                {formatMoney(data.paymentMethods.find(m => m.method === 'KNET')?.amount || 0, i18n.language)} {t('common.currency')}
+                {formatMoney(data.paymentMethods.find(m => m.method === 'OTHER')?.amount || 0, i18n.language)} {t('common.currency')}
               </div>
             </div>
             <div className="ui-card p-4">
@@ -182,7 +197,7 @@ export default function DailyClosingPage() {
             <div className="ui-card p-5">
               <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.paymentMethods')}</h2>
               {(() => {
-                const validMethods = data.paymentMethods.filter(m => m.method === 'LINK' || m.method === 'KNET');
+                const validMethods = data.paymentMethods.filter(m => m.amount > 0 || m.count > 0);
                 if (validMethods.length === 0) {
                   return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
                 }
@@ -267,25 +282,22 @@ export default function DailyClosingPage() {
             <div className="px-5 pt-5 pb-3">
               <h2 className="text-[15px] font-bold text-[#102F63]">{t('dailyClosing.paymentsToday')}</h2>
             </div>
-            {(() => {
-              const validPayments = data.payments.filter(p => p.method === 'LINK' || p.method === 'KNET');
-              if (validPayments.length === 0) {
-                return <EmptyState title={t('payments.noPayments')} />;
-              }
-              return (
-                <div className="overflow-x-auto">
-                <table className="ui-table min-w-[620px]">
-                  <thead>
-                    <tr>
-                      <th>{t('invoices.number')}</th>
-                      <th>{t('visits.patient')}</th>
-                      <th>{t('payments.amount')}</th>
-                      <th>{t('payments.method')}</th>
-                      <th>{t('visits.time')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {validPayments.map((p) => (
+            {data.payments.length === 0 ? (
+              <EmptyState title={t('payments.noPayments')} />
+            ) : (
+              <div className="overflow-x-auto">
+              <table className="ui-table min-w-[620px]">
+                <thead>
+                  <tr>
+                    <th>{t('invoices.number')}</th>
+                    <th>{t('visits.patient')}</th>
+                    <th>{t('payments.amount')}</th>
+                    <th>{t('payments.method')}</th>
+                    <th>{t('visits.time')}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.payments.map((p) => (
                       <tr key={p.id}>
                         <td className="font-mono text-[#64748B]">{p.invoiceNumber}</td>
                         <td className="text-[#1F2430]">{p.patientName}</td>
@@ -297,8 +309,7 @@ export default function DailyClosingPage() {
                   </tbody>
                 </table>
                 </div>
-              );
-            })()}
+            )}
           </div>
         </>
       )}

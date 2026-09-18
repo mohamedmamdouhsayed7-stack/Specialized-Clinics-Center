@@ -19,8 +19,14 @@ export interface RevenuePoint {
   collected: number;
 }
 
+export type ReportPaymentMethod =
+  | 'LINK'
+  | 'KNET'
+  | 'OTHER'
+  | 'CASH'
+  | 'VISA';
 export interface PaymentMethodRow {
-  method: 'LINK' | 'KNET';
+  method: ReportPaymentMethod;
   amount: number;
   count: number;
 }
@@ -88,7 +94,7 @@ export interface DailyClosingPaymentRow {
   invoiceNumber: string;
   patientName: string;
   amount: number;
-  method: 'LINK' | 'KNET';
+  method: ReportPaymentMethod;
   paymentDate: string;
 }
 

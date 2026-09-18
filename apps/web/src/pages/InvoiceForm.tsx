@@ -75,7 +75,6 @@ export default function InvoiceForm() {
     },
     onError: (err: Error) => {
       setError(err.message);
-      showToast({ type: 'error', message: err.message || t('invoices.createError') });
     },
   });
 

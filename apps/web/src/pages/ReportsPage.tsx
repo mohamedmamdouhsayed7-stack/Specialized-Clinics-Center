@@ -17,21 +17,32 @@ import Skeleton from '../components/Skeleton';
 
 const COLORS = ['#102F63', '#173B78', '#4B5694', '#8991A6', '#C4362B', '#C98200'];
 
-// Get local calendar date (YYYY-MM-DD) for the current day
+// Get local calendar date (YYYY-MM-DD) in Asia/Kuwait for the current day
 function getLocalToday(): string {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Kuwait',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((p) => p.type === 'year')?.value;
+  const month = parts.find((p) => p.type === 'month')?.value;
+  const day = parts.find((p) => p.type === 'day')?.value;
   return `${year}-${month}-${day}`;
 }
 
 function todayMinus(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const todayStr = getLocalToday();
+  const [y, m, d] = todayStr.split('-').map(Number);
+
+  const date = new Date(Date.UTC(y, m - 1, d));
+  date.setUTCDate(date.getUTCDate() - days);
+
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+
   return `${year}-${month}-${day}`;
 }
 
@@ -66,7 +77,11 @@ export default function ReportsPage() {
   const { showToast } = useToast();
 
   const PAYMENT_METHOD_LABELS: Record<string, string> = {
-    LINK: t('payments.methodLink'), KNET: t('payments.methodKnet'),
+    KNET: t('payments.methodKnet'),
+    LINK: t('payments.methodLink'),
+    OTHER: t('payments.methodOther'),
+    CASH: t('payments.methodCash'),
+    VISA: t('payments.methodVisa'),
   };
   const VISIT_TYPE_LABELS: Record<string, string> = {
     CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'),
@@ -259,7 +274,7 @@ export default function ReportsPage() {
           ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
             <>
               {(() => {
-                const validMethods = paymentMethods.data.filter(row => row.method === 'LINK' || row.method === 'KNET');
+                const validMethods = paymentMethods.data.filter(row => row.amount > 0 || row.count > 0);
                 if (validMethods.length === 0) {
                   return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
                 }
