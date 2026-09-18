@@ -36,7 +36,7 @@ export default function InvoiceForm() {
 
   const [items, setItems] = useState<LineItem[]>([{ serviceId: '', quantity: 1, unitPrice: null }]);
   const [additionalCharges, setAdditionalCharges] = useState<AdditionalCharge[]>([]);
-  const [paymentMethod, setPaymentMethod] = useState<'KNET' | 'LINK'>('KNET');
+  const [paymentMethod, setPaymentMethod] = useState<'KNET' | 'LINK' | 'OTHER'>('KNET');
   const [error, setError] = useState<string | null>(null);
   const { confirmOpen, requestNavigation, stay, leave } = useUnsavedChanges(items.some((item) => item.serviceId || item.unitPrice !== null || item.quantity !== 1) || additionalCharges.length > 0);
 
@@ -381,7 +381,7 @@ export default function InvoiceForm() {
                   name="paymentMethod"
                   value="KNET"
                   checked={paymentMethod === 'KNET'}
-                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK' | 'OTHER')}
                   className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
                   required
                 />
@@ -393,11 +393,23 @@ export default function InvoiceForm() {
                   name="paymentMethod"
                   value="LINK"
                   checked={paymentMethod === 'LINK'}
-                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK' | 'OTHER')}
                   className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
                   required
                 />
                 <span className="text-gray-900">LINK</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="OTHER"
+                  checked={paymentMethod === 'OTHER'}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK' | 'OTHER')}
+                  className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                  required
+                />
+                <span className="text-gray-900">OTHER</span>
               </label>
             </div>
           </div>

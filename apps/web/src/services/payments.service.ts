@@ -1,7 +1,7 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
 
-export type PaymentMethod = 'KNET' | 'LINK';
+export type PaymentMethod = 'KNET' | 'LINK' | 'OTHER';
 
 export interface Payment {
   id: string;

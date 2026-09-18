@@ -54,8 +54,11 @@ enum ChargeType {
 }
 
 enum PaymentMethod {
-  LINK
+  CASH
+  VISA
   KNET
+  LINK
+  OTHER
 }
 
 enum PaymentStatus {

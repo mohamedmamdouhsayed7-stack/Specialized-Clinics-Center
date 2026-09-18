@@ -39,7 +39,7 @@ export interface InvoicePdfData {
   }>;
   payments: Array<{
     amount: number | string | Decimal;
-    method: 'KNET' | 'LINK';
+    method: 'CASH' | 'VISA' | 'KNET' | 'LINK' | 'OTHER';
     paymentDate: string | Date;
     status?: 'RECORDED' | 'REVERSED';
   }>;
@@ -67,6 +67,9 @@ const PAYMENT_METHOD_LABELS_EN: Record<InvoicePdfData['payments'][number]['metho
 
   KNET: 'KNET',
   LINK: 'LINK',
+  CASH: 'CASH',
+  VISA: 'VISA',
+  OTHER: 'OTHER',
 
 };
 

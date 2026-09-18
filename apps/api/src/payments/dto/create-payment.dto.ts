@@ -19,7 +19,7 @@ export class CreatePaymentDto {
   @Min(0.01)
   amount: number;
 
-  @IsIn(['LINK', 'KNET'])
+  @IsIn(['LINK', 'KNET', 'OTHER'])
   method: PaymentMethod;
 
   @IsString()
