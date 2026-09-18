@@ -5,13 +5,13 @@ import { PdfBrowserService } from '../common/filters/pdf/pdf-browser.service';
 import { renderReportsHtml, ReportsExportData } from './templates/reports-pdf-template';
 
 const LABELS_EN: Record<string, string> = {
-  CASH: 'Cash', VISA: 'Visa', KNET: 'KNET', OTHER: 'Other',
+  CASH: 'Cash', VISA: 'Visa', KNET: 'KNET', LINK: 'Payment Link', OTHER: 'Other',
   UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid in Full',
   CHECKUP: 'Checkup', FOLLOW_UP: 'Follow-up',
   BOOKED: 'Booked', CONFIRMED: 'Confirmed', DONE: 'Done', CANCELLED: 'Cancelled', NO_SHOW: 'No Show',
 };
 const LABELS_AR: Record<string, string> = {
-  CASH: 'نقداً', VISA: 'فيزا', KNET: 'كي نت', OTHER: 'أخرى',
+  CASH: 'نقداً', VISA: 'فيزا', KNET: 'كي نت', LINK: 'رابط دفع', OTHER: 'أخرى',
   UNPAID: 'غير مدفوعة', PARTIALLY_PAID: 'مدفوعة جزئيًا', PAID: 'مدفوعة بالكامل',
   CHECKUP: 'كشف', FOLLOW_UP: 'متابعة',
   BOOKED: 'محجوز', CONFIRMED: 'مؤكد', DONE: 'تم', CANCELLED: 'ملغي', NO_SHOW: 'لم يحضر',
