@@ -355,6 +355,7 @@
     "messagePreview": "Message preview",
     "whatsappLimitation": "WhatsApp will open with this number and message prefilled. The browser cannot send the message or attach the PDF automatically.",
     "sendInvoicePdf": "Send Invoice PDF",
+    "paidViaAllocation": "Paid via existing payment allocation",
     "telegramLimitation": "Telegram will open its supported share chooser with this message. The browser cannot send a PDF automatically.",
     "smsLimitation": "Your device may open a new SMS draft. The browser cannot guarantee that the message will be sent.",
     "sendViaWhatsApp": "Send via WhatsApp",

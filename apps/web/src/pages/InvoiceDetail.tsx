@@ -51,6 +51,7 @@ export default function InvoiceDetail() {
 
   const [paymentAmount, setPaymentAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('KNET');
+  const [issuePaymentMethod, setIssuePaymentMethod] = useState<PaymentMethod>('KNET');
   const [paymentNotes, setPaymentNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -67,11 +68,12 @@ export default function InvoiceDetail() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: (status: 'ISSUED' | 'VOID') =>
-      invoicesService.updateInvoiceStatus(id!, status),
+    mutationFn: (data: { status: 'ISSUED' | 'VOID'; paymentMethod?: 'KNET' | 'LINK' }) =>
+      invoicesService.updateInvoiceStatus(id!, data.status, data.paymentMethod),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['invoice', id] });
       setConfirmStatus(null);
+      setIssuePaymentMethod('KNET');
       showToast({
         type: 'success',
         message: t('feedback.invoiceStatusUpdated'),
@@ -147,6 +149,8 @@ export default function InvoiceDetail() {
       invoicesService.createReplacement(id!, replacementData),
     onSuccess: (newInvoice) => {
       setConfirmReplacement(false);
+      setShowReplacementForm(false);
+      setIssuePaymentMethod('KNET');
       showToast({
         type: 'success',
         message: t('feedback.invoiceReplaced'),
@@ -1040,9 +1044,9 @@ export default function InvoiceDetail() {
 
                 {invoice.status === 'DRAFT' && (
                   <button
-                    onClick={() =>
-                      setConfirmStatus('ISSUED')
-                    }
+                    onClick={() => {
+                      setConfirmStatus('ISSUED');
+                    }}
                     disabled={statusMutation.isPending}
                     className="px-4 py-2 bg-[#111844] text-white rounded-md hover:bg-[#1a237e] transition-colors disabled:opacity-50"
                   >
@@ -1579,18 +1583,28 @@ export default function InvoiceDetail() {
               </span>
             </div>
 
-            {/* Payment Method - show from latest payment */}
-            {payments && payments.length > 0 && (
+            {/* Payment Method - show from latest payment or allocation */}
+            {payments && payments.length > 0 ? (
               <div className="flex justify-between">
                 <span className="text-gray-600">
                   {t('invoices.paymentMethod')}
                 </span>
 
                 <span className="text-gray-900">
-                  {PAYMENT_METHOD_LABELS[payments[payments.length - 1].method]}
+                  {PAYMENT_METHOD_LABELS[payments[0].method]}
                 </span>
               </div>
-            )}
+            ) : invoice.paymentStatus === 'PAID' ? (
+              <div className="flex justify-between">
+                <span className="text-gray-600">
+                  {t('invoices.paymentMethod')}
+                </span>
+
+                <span className="text-gray-900">
+                  {t('invoices.paidViaAllocation')}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -1606,6 +1620,41 @@ export default function InvoiceDetail() {
             <p className="text-sm text-gray-600 mb-4">
               {t('invoices.replacementNote')}
             </p>
+
+            {Number(invoice.remaining) > 0 && (
+              <div className="mb-4 p-4 bg-[#F8FBFF] border border-[#DCE3EE] rounded-lg">
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  {t('invoices.paymentMethod')}
+                </label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="replacementPaymentMethod"
+                      value="KNET"
+                      checked={issuePaymentMethod === 'KNET'}
+                      onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                      className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                    />
+                    <span className="text-gray-900">KNET</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="replacementPaymentMethod"
+                      value="LINK"
+                      checked={issuePaymentMethod === 'LINK'}
+                      onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                      className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                    />
+                    <span className="text-gray-900">LINK</span>
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-gray-500">
+                  {t('invoices.remaining')}: {formatMoney(invoice.remaining, i18n.language)} {t('common.currency')}
+                </p>
+              </div>
+            )}
 
             <button
               onClick={() =>
@@ -1977,7 +2026,9 @@ export default function InvoiceDetail() {
           }
           message={
             confirmStatus === 'ISSUED'
-              ? t('invoices.issueConfirm')
+              ? Number(invoice.remaining) > 0
+                ? `${t('invoices.issueConfirm')} ${t('invoices.remaining')}: ${formatMoney(invoice.remaining, i18n.language)} ${t('common.currency')}`
+                : t('invoices.issueConfirm')
               : t('invoices.voidConfirm')
           }
           confirmLabel={t('common.confirm')}
@@ -1990,13 +2041,49 @@ export default function InvoiceDetail() {
             setConfirmStatus(null)
           }
           onConfirm={() => {
-            if (confirmStatus) {
-              statusMutation.mutate(
-                confirmStatus
-              );
+            if (confirmStatus === 'ISSUED') {
+              if (Number(invoice.remaining) > 0) {
+                statusMutation.mutate({ status: 'ISSUED', paymentMethod: issuePaymentMethod });
+              } else {
+                statusMutation.mutate({ status: 'ISSUED' });
+              }
+            } else if (confirmStatus === 'VOID') {
+              statusMutation.mutate({ status: 'VOID' });
             }
           }}
-        />
+        >
+          {confirmStatus === 'ISSUED' && Number(invoice.remaining) > 0 && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                {t('invoices.paymentMethod')}
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="issuePaymentMethod"
+                    value="KNET"
+                    checked={issuePaymentMethod === 'KNET'}
+                    onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                    className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                  />
+                  <span className="text-gray-900">KNET</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="issuePaymentMethod"
+                    value="LINK"
+                    checked={issuePaymentMethod === 'LINK'}
+                    onChange={(e) => setIssuePaymentMethod(e.target.value as 'KNET' | 'LINK')}
+                    className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                  />
+                  <span className="text-gray-900">LINK</span>
+                </label>
+              </div>
+            </div>
+          )}
+        </ConfirmDialog>
 
         <ConfirmDialog
           open={confirmReplacement}
@@ -2044,6 +2131,7 @@ export default function InvoiceDetail() {
                       undefined,
                   })
                 ) || [],
+              paymentMethod: Number(invoice.remaining) > 0 ? issuePaymentMethod : undefined,
             });
           }}
         />

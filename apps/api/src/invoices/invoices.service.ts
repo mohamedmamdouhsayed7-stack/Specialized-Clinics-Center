@@ -378,7 +378,7 @@ export class InvoicesService {
         }
       }
 
-      const data: { status: InvoiceStatus; issuedAt?: Date; issuedById?: string; invoiceNumber?: string } = {
+      const data: { status: InvoiceStatus; issuedAt?: Date; issuedById?: string; invoiceNumber?: string; paid?: Decimal; remaining?: Decimal; paymentStatus?: InvoicePaymentStatus } = {
         status: updateStatusDto.status,
       };
 
@@ -388,6 +388,90 @@ export class InvoicesService {
         
         // Assign final invoice number using PostgreSQL sequence within transaction
         data.invoiceNumber = await this.generateInvoiceNumber(tx);
+
+        // Handle payment for DRAFT invoices being issued
+        if (invoice.status === 'DRAFT') {
+          // Check if there are existing payment allocations (replacement invoice)
+          const existingAllocations = await tx.paymentAllocation.findMany({
+            where: { invoiceId: id },
+            include: {
+              payment: {
+                select: { id: true, amount: true, status: true },
+              },
+            },
+          });
+
+          const allocatedCredit = existingAllocations
+            .filter(allocation => allocation.payment.status === 'RECORDED')
+            .reduce((sum, allocation) => sum.add(allocation.amount), new Decimal(0));
+
+          // Check if there are existing direct payments (to prevent duplicate payments)
+          const existingDirectPayments = await tx.payment.findMany({
+            where: { invoiceId: id, status: 'RECORDED' },
+            select: { amount: true },
+          });
+
+          const directCredit = existingDirectPayments
+            .reduce((sum, payment) => sum.add(payment.amount), new Decimal(0));
+
+          const totalExistingCredit = allocatedCredit.add(directCredit);
+          const remainingBalance = Decimal.max(invoice.total.sub(totalExistingCredit), new Decimal(0)).toDecimalPlaces(2);
+
+          if (remainingBalance.gt(0)) {
+            // Need additional payment
+            if (!updateStatusDto.paymentMethod) {
+              throw new BadRequestException('Payment method is required when issuing a DRAFT invoice with remaining balance');
+            }
+
+            // Validate payment method
+            const validPaymentMethods = ['KNET', 'LINK'];
+            if (!validPaymentMethods.includes(updateStatusDto.paymentMethod)) {
+              throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
+            }
+
+            // Create payment for remaining balance
+            const newPayment = await tx.payment.create({
+              data: {
+                invoiceId: id,
+                amount: remainingBalance,
+                method: updateStatusDto.paymentMethod,
+                status: 'RECORDED',
+                paymentDate: new Date(),
+                recordedById: userId,
+              },
+            });
+
+            // Audit log for payment recording
+            await tx.auditLog.create({
+              data: {
+                userId,
+                action: 'CREATE',
+                entityType: 'Payment',
+                entityId: newPayment.id,
+                beforeState: null,
+                afterState: {
+                  invoiceId: id,
+                  amount: remainingBalance.toString(),
+                  method: updateStatusDto.paymentMethod,
+                  status: 'RECORDED',
+                  context: 'Draft invoice issuance payment',
+                },
+                ipAddress,
+                userAgent,
+              },
+            });
+
+            // Update invoice to fully paid
+            data.paid = invoice.total;
+            data.remaining = new Decimal(0);
+            data.paymentStatus = 'PAID';
+          } else {
+            // Fully covered by existing credit (allocations or direct payments)
+            data.paid = invoice.total;
+            data.remaining = new Decimal(0);
+            data.paymentStatus = 'PAID';
+          }
+        }
       }
 
       const updated = await tx.invoice.update({
@@ -617,9 +701,10 @@ export class InvoicesService {
       const totalCharges = additionalChargesData.reduce((sum, charge) => sum.add(charge.calculatedAmount), new Decimal(0)).toDecimalPlaces(2);
       const total = subtotal.add(totalCharges).toDecimalPlaces(2);
       
-      // For payment credit, we need to handle two cases:
-      // 1. Original invoice has direct payments (no allocations) - create allocations from them
-      // 2. Original invoice has allocations (it's a replacement) - copy those allocations
+      // A predecessor invoice may have:
+      // 1. Payment allocations from earlier invoices it replaced
+      // 2. Direct payments recorded directly on it
+      // Both represent valid payment credits that must carry over to the replacement.
       const sourceAllocations = await tx.paymentAllocation.findMany({
         where: { invoiceId: originalInvoiceId },
         orderBy: { createdAt: 'asc' },
@@ -629,28 +714,26 @@ export class InvoicesService {
           },
         },
       });
-      
-      let sourceCredits: Array<{ paymentId: string; amount: Decimal }> = [];
-      
-      // If there are allocations, this is a replacement invoice - copy those allocations
-      if (sourceAllocations.length > 0) {
-        sourceCredits = sourceAllocations
-          .filter(allocation => allocation.payment.status === 'RECORDED')
-          .map(allocation => ({
-            paymentId: allocation.paymentId,
-            amount: allocation.amount,
-          }));
-      } else {
-        // If there are no allocations, this is the original invoice with direct payments
-        // We need to create allocations from the direct payments
-        const directPayments = await tx.payment.findMany({
-          where: { invoiceId: originalInvoiceId, status: 'RECORDED' },
-          orderBy: [{ paymentDate: 'asc' }, { id: 'asc' }],
-          select: { id: true, amount: true },
-        });
-        
-        sourceCredits = directPayments.map((payment) => ({ paymentId: payment.id, amount: payment.amount }));
-      }
+
+      const allocatedCredits = sourceAllocations
+        .filter(allocation => allocation.payment.status === 'RECORDED')
+        .map(allocation => ({
+          paymentId: allocation.paymentId,
+          amount: allocation.amount,
+        }));
+
+      const directPayments = await tx.payment.findMany({
+        where: { invoiceId: originalInvoiceId, status: 'RECORDED' },
+        orderBy: [{ paymentDate: 'asc' }, { id: 'asc' }],
+        select: { id: true, amount: true },
+      });
+
+      const directCredits = directPayments.map((payment) => ({
+        paymentId: payment.id,
+        amount: payment.amount,
+      }));
+
+      const sourceCredits = [...allocatedCredits, ...directCredits];
 
       // A successor may be cheaper than its predecessor. Allocate credit in
       // order, capped at this replacement's total, so remaining can never be
@@ -672,6 +755,18 @@ export class InvoicesService {
         replacementPaymentStatus = 'PAID';
       } else if (replacementRemaining.lessThan(total)) {
         replacementPaymentStatus = 'PARTIALLY_PAID';
+      }
+      
+      // Check if an optional payment method was provided for remaining balance
+      const needsAdditionalPayment = replacementRemaining.gt(0);
+      const additionalPaymentMethod = createReplacementDto.paymentMethod;
+
+      if (needsAdditionalPayment && additionalPaymentMethod) {
+        // Validate payment method
+        const validPaymentMethods = ['KNET', 'LINK'];
+        if (!validPaymentMethods.includes(additionalPaymentMethod)) {
+          throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
+        }
       }
       
       // Replacement invoices start as DRAFT with temporary number
@@ -717,6 +812,50 @@ export class InvoicesService {
         },
         include: INVOICE_ITEM_INCLUDE,
       });
+
+      // If there's a remaining balance, create payment directly on the replacement invoice
+      if (needsAdditionalPayment && additionalPaymentMethod) {
+        const balancePayment = await tx.payment.create({
+          data: {
+            invoiceId: replacementInvoice.id,
+            amount: replacementRemaining,
+            method: additionalPaymentMethod,
+            status: 'RECORDED',
+            paymentDate: new Date(),
+            recordedById: userId,
+          },
+        });
+
+        // Update replacement invoice to fully paid
+        await tx.invoice.update({
+          where: { id: replacementInvoice.id },
+          data: {
+            paid: total,
+            remaining: new Decimal(0),
+            paymentStatus: 'PAID',
+          },
+        });
+
+        // Audit log for the payment
+        await tx.auditLog.create({
+          data: {
+            userId,
+            action: 'CREATE',
+            entityType: 'Payment',
+            entityId: balancePayment.id,
+            beforeState: null,
+            afterState: {
+              invoiceId: replacementInvoice.id,
+              amount: replacementRemaining,
+              method: additionalPaymentMethod,
+              status: 'RECORDED',
+              context: 'Replacement balance payment',
+            },
+            ipAddress,
+            userAgent,
+          },
+        });
+      }
 
       // Mark original invoice as VOID and link to replacement
       await tx.invoice.update({
