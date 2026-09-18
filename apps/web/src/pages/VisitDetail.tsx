@@ -70,9 +70,9 @@ export default function VisitDetail() {
   });
 
   const invoices = visit?.invoices ?? [];
-  const invoice = invoices.find((item) => item.status === 'ISSUED')
-    ?? invoices.find((item) => item.status === 'DRAFT')
-    ?? invoices[0];
+  const activeInvoice = invoices.find((item) => item.status === 'ISSUED' || item.status === 'DRAFT');
+  const invoice = activeInvoice ?? invoices[0];
+  const canCreateInvoice = Boolean(visit && !activeInvoice && visit.status !== 'CANCELLED');
 
   if (isLoading) {
     return (
@@ -195,10 +195,21 @@ export default function VisitDetail() {
       </div>
 
       <div className="ui-card p-5">
-        <h2 className="text-[15px] font-bold text-[#102F63] mb-4 flex items-center gap-2">
-          <FileText size={17} strokeWidth={1.75} />
-          {t('sidebar.invoices')}
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-[15px] font-bold text-[#102F63] flex items-center gap-2">
+            <FileText size={17} strokeWidth={1.75} />
+            {t('sidebar.invoices')}
+          </h2>
+          {canCreateInvoice && invoices.length > 0 && (
+            <button
+              onClick={() => navigate(`/invoices/new?visitId=${visit.id}`)}
+              className="btn-primary flex items-center gap-2 px-3 py-1.5 text-xs sm:text-sm"
+            >
+              <ReceiptText size={15} strokeWidth={1.75} />
+              {t('visits.createInvoiceBtn')}
+            </button>
+          )}
+        </div>
         {invoice ? (
           <>
             <div className="space-y-3">
