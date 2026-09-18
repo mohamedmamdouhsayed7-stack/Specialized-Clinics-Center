@@ -61,6 +61,11 @@ export class ReportsController {
     return this.reportsService.getAppointmentStatusBreakdown(from, to);
   }
 
+  @Get('today-appointment-exceptions')
+  getTodayAppointmentExceptions() {
+    return this.reportsService.getTodayAppointmentExceptions();
+  }
+
   @Get('new-patients-timeseries')
   getNewPatientsTimeseries(@Query('from') from?: string, @Query('to') to?: string) {
     return this.reportsService.getNewPatientsTimeseries(from, to);
