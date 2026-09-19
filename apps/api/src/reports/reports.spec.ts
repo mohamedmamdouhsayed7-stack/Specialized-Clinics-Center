@@ -440,5 +440,159 @@ describe('Reports Module Tests (E2E)', () => {
         await prisma.visit.delete({ where: { id: timezoneTestVisit.id } });
       });
     });
+
+    describe('Daily Closing payment exceptions', () => {
+      it('counts only actionable unpaid invoices for the selected Kuwait business day', async () => {
+        const issuedAt = new Date('2026-09-17T21:05:00.000Z'); // 00:05 Asia/Kuwait on 18 Sep
+        const createdAppointments: string[] = [];
+        const createdVisits: string[] = [];
+        const createdInvoices: string[] = [];
+
+        const createInvoice = async (
+          suffix: string,
+          paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID',
+          remaining: number,
+          appointmentStatus?: 'CANCELLED' | 'NO_SHOW',
+          status: 'ISSUED' | 'VOID' = 'ISSUED',
+        ) => {
+          const appointment = appointmentStatus
+            ? await prisma.appointment.create({
+              data: {
+                patientId: testPatientId,
+                scheduledAt: issuedAt,
+                status: appointmentStatus,
+                createdById: adminUserId,
+              },
+            })
+            : null;
+          if (appointment) createdAppointments.push(appointment.id);
+
+          const visit = await prisma.visit.create({
+            data: {
+              patientId: testPatientId,
+              appointmentId: appointment?.id,
+              type: 'OTHER',
+              visitDate: issuedAt,
+              createdById: adminUserId,
+            },
+          });
+          createdVisits.push(visit.id);
+
+          const invoice = await prisma.invoice.create({
+            data: {
+              invoiceNumber: `INV-payment-exception-${suffix}`,
+              visitId: visit.id,
+              patientId: testPatientId,
+              status,
+              subtotal: 100,
+              total: 100,
+              paid: 100 - remaining,
+              remaining,
+              paymentStatus,
+              issuedAt,
+              createdById: adminUserId,
+              issuedById: adminUserId,
+            },
+          });
+          createdInvoices.push(invoice.id);
+        };
+
+        try {
+          await createInvoice('actionable', 'PARTIALLY_PAID', 40);
+          await createInvoice('unpaid', 'UNPAID', 100);
+          await createInvoice('cancelled', 'UNPAID', 100, 'CANCELLED');
+          await createInvoice('no-show', 'UNPAID', 100, 'NO_SHOW');
+          await createInvoice('paid', 'PAID', 0);
+          await createInvoice('void', 'UNPAID', 100, undefined, 'VOID');
+
+          const response = await request(app.getHttpServer())
+            .get('/api/reports/daily-closing?date=2026-09-18')
+            .set('Authorization', `Bearer ${adminAccessToken}`)
+            .expect(200);
+
+          expect(response.body.paymentExceptions).toBe(2);
+        } finally {
+          await prisma.invoice.deleteMany({ where: { id: { in: createdInvoices } } });
+          await prisma.visit.deleteMany({ where: { id: { in: createdVisits } } });
+          await prisma.appointment.deleteMany({ where: { id: { in: createdAppointments } } });
+        }
+      });
+
+      it('counts unpaid invoice correctly when appointment date is rescheduled to a different day', async () => {
+        // BUSINESS RULE: Payment exceptions are based on invoice.issuedAt, not appointment.scheduledAt
+        // When an appointment is rescheduled (by updating scheduledAt), the invoice remains
+        // associated with the day it was issued. This is the intended behavior because:
+        // 1. The invoice represents a financial transaction that occurred on the issue date
+        // 2. Rescheduling an appointment does not change when the invoice was created
+        // 3. Daily Closing tracks financial activity by invoice date, not appointment date
+        // 4. There is no explicit "RESCHEDULED" status - rescheduling is done by updating scheduledAt
+        const originalDate = new Date('2026-09-17T21:05:00.000Z'); // 00:05 Asia/Kuwait on 18 Sep
+        const rescheduledDate = new Date('2026-09-18T21:05:00.000Z'); // 00:05 Asia/Kuwait on 19 Sep
+
+        const appointment = await prisma.appointment.create({
+          data: {
+            patientId: testPatientId,
+            scheduledAt: originalDate,
+            status: 'CONFIRMED',
+            createdById: adminUserId,
+          },
+        });
+
+        const visit = await prisma.visit.create({
+          data: {
+            patientId: testPatientId,
+            appointmentId: appointment.id,
+            type: 'OTHER',
+            visitDate: originalDate,
+            createdById: adminUserId,
+          },
+        });
+
+        const invoice = await prisma.invoice.create({
+          data: {
+            invoiceNumber: 'INV-reschedule-test',
+            visitId: visit.id,
+            patientId: testPatientId,
+            status: 'ISSUED',
+            subtotal: 100,
+            total: 100,
+            paid: 0,
+            remaining: 100,
+            paymentStatus: 'UNPAID',
+            issuedAt: originalDate,
+            createdById: adminUserId,
+            issuedById: adminUserId,
+          },
+        });
+
+        // Check original day (18 Sep) - invoice should be counted
+        const responseOriginal = await request(app.getHttpServer())
+          .get('/api/reports/daily-closing?date=2026-09-18')
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .expect(200);
+
+        expect(responseOriginal.body.paymentExceptions).toBe(1);
+
+        // Reschedule appointment to 19 Sep (simulating reschedule/postpone)
+        await prisma.appointment.update({
+          where: { id: appointment.id },
+          data: { scheduledAt: rescheduledDate },
+        });
+
+        // Invoice issuedAt is still 18 Sep, so it should still be counted on 18 Sep
+        // This confirms payment exceptions follow invoice date, not appointment date
+        const responseAfterReschedule = await request(app.getHttpServer())
+          .get('/api/reports/daily-closing?date=2026-09-18')
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .expect(200);
+
+        expect(responseAfterReschedule.body.paymentExceptions).toBe(1);
+
+        // Clean up
+        await prisma.invoice.delete({ where: { id: invoice.id } });
+        await prisma.appointment.delete({ where: { id: appointment.id } });
+        await prisma.visit.delete({ where: { id: visit.id } });
+      });
+    });
   });
 });

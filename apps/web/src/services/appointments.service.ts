@@ -1,6 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
-import { ApiError } from './api-error';
+import { parseApiError } from './api-error';
 
 export interface Appointment {
   id: string;
@@ -81,7 +81,7 @@ class AppointmentsService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch appointments');
+      throw await parseApiError(response, 'Failed to fetch appointments');
     }
 
     return response.json();
@@ -93,7 +93,7 @@ class AppointmentsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch appointment');
+      throw await parseApiError(response, 'Failed to fetch appointment');
     }
 
     return response.json();
@@ -107,8 +107,7 @@ class AppointmentsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create appointment');
+      throw await parseApiError(response, 'Failed to create appointment');
     }
 
     return response.json();
@@ -122,8 +121,7 @@ class AppointmentsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update appointment');
+      throw await parseApiError(response, 'Failed to update appointment');
     }
 
     return response.json();
@@ -137,8 +135,7 @@ class AppointmentsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update appointment status');
+      throw await parseApiError(response, 'Failed to update appointment status');
     }
 
     return response.json();
@@ -152,8 +149,7 @@ class AppointmentsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to cancel appointment');
+      throw await parseApiError(response, 'Failed to cancel appointment');
     }
 
     return response.json();
@@ -165,8 +161,7 @@ class AppointmentsService {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new ApiError(Array.isArray(error.message) ? error.message.join(', ') : error.message || 'Failed to permanently delete appointment', response.status);
+      throw await parseApiError(response, 'Failed to permanently delete appointment');
     }
     return response.json();
   }

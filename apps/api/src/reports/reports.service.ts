@@ -230,9 +230,25 @@ export class ReportsService {
       where: {
         status: 'ISSUED',
         issuedAt: { gte: fromDate, lte: toDate },
-        OR: [
-          { remaining: { gt: 0 } },
-          { paymentStatus: { not: 'PAID' } },
+        AND: [
+          {
+            OR: [
+              { remaining: { gt: 0 } },
+              { paymentStatus: { not: 'PAID' } },
+            ],
+          },
+          {
+            OR: [
+              { visit: { appointment: { is: null } } },
+              {
+                visit: {
+                  appointment: {
+                    is: { status: { notIn: ['CANCELLED', 'NO_SHOW'] } },
+                  },
+                },
+              },
+            ],
+          },
         ],
       },
       select: {
@@ -403,6 +419,7 @@ export class ReportsService {
           remaining: true,
           paymentStatus: true,
           issuedAt: true,
+          visit: { select: { appointment: { select: { status: true } } } },
           patient: { select: { fullNameAr: true, civilId: true } },
         },
       }),
@@ -466,9 +483,12 @@ export class ReportsService {
     // Calculate reconciliation difference
     const reconciliationDifference = totalInvoiced - totalCollected;
 
-    // Count payment exceptions
+    // Payment exceptions are issued invoices that still need collection. A
+    // cancelled/no-show appointment is no longer actionable, even if legacy
+    // data happens to retain an invoice linked through its visit.
     const paymentExceptions = invoicesToday.filter(
-      inv => inv.remaining.gt(0) || inv.paymentStatus !== 'PAID'
+      inv => (inv.remaining.gt(0) || inv.paymentStatus !== 'PAID')
+        && !['CANCELLED', 'NO_SHOW'].includes(inv.visit.appointment?.status || ''),
     ).length;
 
     return {

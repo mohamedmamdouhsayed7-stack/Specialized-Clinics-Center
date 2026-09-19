@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
+import { parseApiError } from './api-error';
 
 export interface InvoiceItem {
   id: string;
@@ -124,7 +125,7 @@ class InvoicesService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch invoices');
+      throw await parseApiError(response, 'Failed to fetch invoices');
     }
 
     return response.json();
@@ -136,7 +137,7 @@ class InvoicesService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch invoice');
+      throw await parseApiError(response, 'Failed to fetch invoice');
     }
 
     return response.json();
@@ -146,7 +147,7 @@ class InvoicesService {
     const response = await fetch(`${apiBaseUrl}/invoices/${id}/pdf?lang=${language}`, {
       headers: this.getAuthHeaders(),
     });
-    if (!response.ok) throw new Error('Failed to download invoice PDF');
+    if (!response.ok) throw await parseApiError(response, 'Failed to download invoice PDF');
     return response.blob();
   }
 
@@ -175,8 +176,7 @@ class InvoicesService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create invoice');
+      throw await parseApiError(response, 'Failed to create invoice');
     }
 
     return response.json();
@@ -190,8 +190,7 @@ class InvoicesService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update invoice status');
+      throw await parseApiError(response, 'Failed to update invoice status');
     }
 
     return response.json();
@@ -205,8 +204,7 @@ class InvoicesService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to add charge');
+      throw await parseApiError(response, 'Failed to add charge');
     }
 
     return response.json();
@@ -220,8 +218,7 @@ class InvoicesService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create replacement');
+      throw await parseApiError(response, 'Failed to create replacement');
     }
 
     return response.json();

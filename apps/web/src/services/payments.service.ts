@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
+import { parseApiError } from './api-error';
 
 export type PaymentMethod = 'KNET' | 'LINK' | 'OTHER';
 
@@ -39,7 +40,7 @@ class PaymentsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch payments');
+      throw await parseApiError(response, 'Failed to fetch payments');
     }
 
     return response.json();
@@ -53,8 +54,7 @@ class PaymentsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to record payment');
+      throw await parseApiError(response, 'Failed to record payment');
     }
 
     return response.json();
@@ -68,8 +68,7 @@ class PaymentsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to reverse payment');
+      throw await parseApiError(response, 'Failed to reverse payment');
     }
 
     return response.json();
