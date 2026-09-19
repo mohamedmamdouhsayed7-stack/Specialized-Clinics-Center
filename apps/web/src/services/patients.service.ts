@@ -1,6 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
-import { ApiError } from './api-error';
+import { ApiError, parseApiError } from './api-error';
 
 export interface Patient {
   id: string;
@@ -78,7 +78,7 @@ class PatientsService {
     );
 
     if (!response.ok) {
-      throw new Error('Failed to fetch patients');
+      throw await parseApiError(response, 'Failed to fetch patients');
     }
 
     return response.json();
@@ -90,7 +90,7 @@ class PatientsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch patient');
+      throw await parseApiError(response, 'Failed to fetch patient');
     }
 
     return response.json();
@@ -104,8 +104,7 @@ class PatientsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create patient');
+      throw await parseApiError(response, 'Failed to create patient');
     }
 
     return response.json();
@@ -119,8 +118,7 @@ class PatientsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update patient');
+      throw await parseApiError(response, 'Failed to update patient');
     }
 
     return response.json();
@@ -133,7 +131,7 @@ class PatientsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to archive patient');
+      throw await parseApiError(response, 'Failed to archive patient');
     }
 
     return response.json();
@@ -146,7 +144,7 @@ class PatientsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to restore patient');
+      throw await parseApiError(response, 'Failed to restore patient');
     }
 
     return response.json();
@@ -158,11 +156,7 @@ class PatientsService {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: response.statusText }));
-      throw new ApiError(
-        Array.isArray(error.message) ? error.message.join(', ') : error.message || 'Failed to permanently delete patient',
-        response.status,
-      );
+      throw await parseApiError(response, 'Failed to permanently delete patient');
     }
     return response.json();
   }

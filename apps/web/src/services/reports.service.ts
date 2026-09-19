@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
+import { parseApiError } from './api-error';
 
 export interface ReportsSummary {
   range: { from: string; to: string };
@@ -87,6 +88,7 @@ export interface DailyClosingInvoiceRow {
   remaining: number;
   paymentStatus: 'UNPAID' | 'PARTIALLY_PAID' | 'PAID';
   issuedAt: string | null;
+  isException?: boolean;
 }
 
 export interface DailyClosingPaymentRow {
@@ -128,7 +130,7 @@ class ReportsService {
 
   private async get<T>(path: string): Promise<T> {
     const response = await fetch(`${apiBaseUrl}${path}`, { headers: this.getAuthHeaders() });
-    if (!response.ok) throw new Error('Failed to fetch report data');
+    if (!response.ok) throw await parseApiError(response, 'Failed to fetch report data');
     return response.json();
   }
 
@@ -198,15 +200,7 @@ class ReportsService {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
-      let message = `Failed to export report (${response.status})`;
-      try {
-        const error = await response.json();
-        message = Array.isArray(error.message) ? error.message.join(', ') : error.message || message;
-      } catch {
-        const text = await response.text();
-        if (text) message = text;
-      }
-      throw new Error(message);
+      throw await parseApiError(response, `Failed to export report (${response.status})`);
     }
 
     const blob = await response.blob();

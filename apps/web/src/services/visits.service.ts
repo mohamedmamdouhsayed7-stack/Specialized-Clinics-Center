@@ -1,6 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
-import { ApiError } from './api-error';
+import { ApiError, parseApiError } from './api-error';
 
 export type VisitStatus = 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
 
@@ -124,7 +124,7 @@ class VisitsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch visits');
+      throw await parseApiError(response, 'Failed to fetch visits');
     }
 
     return response.json();
@@ -135,7 +135,7 @@ class VisitsService {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
-      throw new Error('Failed to fetch today visit counts');
+      throw await parseApiError(response, 'Failed to fetch today visit counts');
     }
     return response.json();
   }
@@ -146,7 +146,7 @@ class VisitsService {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to fetch visit');
+      throw await parseApiError(response, 'Failed to fetch visit');
     }
 
     return response.json();
@@ -160,8 +160,7 @@ class VisitsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to create visit');
+      throw await parseApiError(response, 'Failed to create visit');
     }
 
     return response.json();
@@ -175,8 +174,7 @@ class VisitsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update visit');
+      throw await parseApiError(response, 'Failed to update visit');
     }
 
     return response.json();
@@ -188,8 +186,7 @@ class VisitsService {
       headers: this.getAuthHeaders(),
     });
     if (!response.ok) {
-      const error = await response.json();
-      throw new ApiError(Array.isArray(error.message) ? error.message.join(', ') : error.message || 'Failed to permanently delete visit', response.status);
+      throw await parseApiError(response, 'Failed to permanently delete visit');
     }
     return response.json();
   }
@@ -202,8 +199,7 @@ class VisitsService {
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to update visit status');
+      throw await parseApiError(response, 'Failed to update visit status');
     }
 
     return response.json();

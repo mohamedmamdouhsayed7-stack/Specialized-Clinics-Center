@@ -10,6 +10,7 @@ import { formatMoney, formatNumber, moneyToCents, normalizeMoneyInput } from '..
 import { getReturnTo } from '../utils/listState';
 import { preserveListState } from '../utils/listState';
 import {
+  buildWhatsAppUrl,
   canShareInvoiceFile,
   isValidWhatsAppPhone,
   normalizeWhatsAppPhone,
@@ -24,9 +25,11 @@ import {
   Download,
   FileText,
   Link as LinkIcon,
+  MessageCircle,
   Printer,
   Share2,
   Smartphone,
+  X,
 } from 'lucide-react';
 
 export default function InvoiceDetail() {
@@ -174,8 +177,10 @@ export default function InvoiceDetail() {
   const [confirmReversePayment, setConfirmReversePayment] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
 
+  const [whatsappOpening, setWhatsappOpening] = useState(false);
   const [shareMenuOpen, setShareMenuOpen] = useState(false);
   const [shareActionPending, setShareActionPending] = useState(false);
+  const [whatsappModalOpen, setWhatsappModalOpen] = useState(false);
 
   const [messageShareChannel, setMessageShareChannel] = useState<'sms' | null>(null);
   const [messageSharePhone, setMessageSharePhone] = useState('');
@@ -184,9 +189,10 @@ export default function InvoiceDetail() {
 
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const messageShareDialogRef = useRef<HTMLDivElement>(null);
+  const whatsappModalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!shareMenuOpen && !messageShareChannel) return;
+    if (!shareMenuOpen && !messageShareChannel && !whatsappModalOpen) return;
 
     const handlePointerDown = (event: { target: object | null }) => {
       const target = event.target as Node;
@@ -204,12 +210,20 @@ export default function InvoiceDetail() {
       ) {
         setMessageShareChannel(null);
       }
+
+      if (
+        whatsappModalOpen &&
+        !whatsappModalRef.current?.contains(target)
+      ) {
+        setWhatsappModalOpen(false);
+      }
     };
 
     const handleKeyDown = (event: { key?: string }) => {
       if (event.key === 'Escape') {
         setShareMenuOpen(false);
         setMessageShareChannel(null);
+        setWhatsappModalOpen(false);
       }
     };
 
@@ -220,7 +234,7 @@ export default function InvoiceDetail() {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [messageShareChannel, shareMenuOpen]);
+  }, [messageShareChannel, shareMenuOpen, whatsappModalOpen]);
 
   const downloadInvoicePdf = async () => {
     setShareMenuOpen(false);
@@ -453,6 +467,237 @@ export default function InvoiceDetail() {
         const url = `sms:${phone}?body=${encodedMessage}`;
 
         window.location.assign(url);
+      } catch (error) {
+        if (
+          error instanceof globalThis.DOMException &&
+          error.name === 'AbortError'
+        ) {
+          showToast({
+            type: 'info',
+            message: t('invoices.shareCancelled'),
+          });
+        } else {
+          showToast({
+            type: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : t('invoices.pdfShareFailed'),
+          });
+        }
+      } finally {
+        setShareActionPending(false);
+      }
+    })();
+  };
+
+  const sendWhatsAppMessage = () => {
+    if (!invoice || shareActionPending) return;
+
+    const rawPhone = invoice.patient.phone || '';
+
+    const normalizedPhone = rawPhone
+      ? normalizeWhatsAppPhone(rawPhone)
+      : '';
+
+    const hasValidPhone =
+      !!rawPhone &&
+      isValidWhatsAppPhone(normalizedPhone);
+
+    if (!hasValidPhone) {
+      showToast({
+        type: 'error',
+        message: t('invoices.whatsappMissingPhone'),
+      });
+      return;
+    }
+
+    setWhatsappOpening(true);
+    setShareActionPending(true);
+
+    try {
+      const message = buildShareMessage();
+
+      const url = buildWhatsAppUrl(
+        normalizedPhone,
+        message
+      );
+
+      showToast({
+        type: 'info',
+        message: t('invoices.whatsappOpening'),
+      });
+
+      window.location.assign(url);
+    } catch (error) {
+      showToast({
+        type: 'error',
+        message:
+          error instanceof Error
+            ? error.message
+            : t('invoices.pdfShareFailed'),
+      });
+    } finally {
+      setWhatsappOpening(false);
+      setShareActionPending(false);
+    }
+  };
+
+  const shareInvoicePdfOnWhatsApp = () => {
+    if (!invoice || shareActionPending) return;
+
+    setShareMenuOpen(false);
+    setShareActionPending(true);
+
+    void (async () => {
+      try {
+        const language = i18n.language.startsWith('ar')
+          ? 'ar'
+          : 'en';
+
+        showToast({
+          type: 'info',
+          message: t('invoices.preparingInvoice'),
+        });
+
+        const file = await invoicesService.getPdfFile(
+          id!,
+          language,
+          invoice.invoiceNumber
+        );
+
+        const shareNavigator =
+          navigator as globalThis.Navigator & {
+            share?: (
+              data?: globalThis.ShareData
+            ) => Promise<void>;
+            canShare?: (
+              data?: globalThis.ShareData
+            ) => boolean;
+          };
+
+        if (
+          shareNavigator.share &&
+          canShareInvoiceFile(file)
+        ) {
+          await shareNavigator.share({
+            files: [file],
+          });
+
+          showToast({
+            type: 'success',
+            message: t('invoices.invoiceShared'),
+          });
+
+          return;
+        }
+
+        const downloadUrl =
+          window.URL.createObjectURL(file);
+
+        const downloadAnchor =
+          document.createElement('a');
+
+        downloadAnchor.href = downloadUrl;
+        downloadAnchor.download = file.name;
+
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+
+        window.setTimeout(() => {
+          window.URL.revokeObjectURL(downloadUrl);
+        }, 60_000);
+
+        showToast({
+          type: 'info',
+          message: t(
+            'invoices.pdfDownloadedAttachManually'
+          ),
+        });
+      } catch (error) {
+        if (
+          error instanceof globalThis.DOMException &&
+          error.name === 'AbortError'
+        ) {
+          showToast({
+            type: 'info',
+            message: t('invoices.shareCancelled'),
+          });
+        } else {
+          showToast({
+            type: 'error',
+            message:
+              error instanceof Error
+                ? error.message
+                : t('invoices.pdfShareFailed'),
+          });
+        }
+      } finally {
+        setShareActionPending(false);
+      }
+    })();
+  };
+
+  const shareViaWebShare = () => {
+    if (shareActionPending || !invoice) return;
+
+    setShareMenuOpen(false);
+    setShareActionPending(true);
+
+    void (async () => {
+      try {
+        const language = i18n.language.startsWith('ar')
+          ? 'ar'
+          : 'en';
+        const message = buildShareMessage();
+
+        const shareNavigator =
+          navigator as globalThis.Navigator & {
+            share?: (
+              data?: globalThis.ShareData
+            ) => Promise<void>;
+            canShare?: (
+              data?: globalThis.ShareData
+            ) => boolean;
+          };
+
+        if (!shareNavigator.share) {
+          showToast({
+            type: 'error',
+            message: t('invoices.pdfShareFailed'),
+          });
+          return;
+        }
+
+        showToast({
+          type: 'info',
+          message: t('invoices.preparingInvoice'),
+        });
+
+        const file = await invoicesService.getPdfFile(
+          id!,
+          language,
+          invoice.invoiceNumber
+        );
+
+        if (shareNavigator.canShare && canShareInvoiceFile(file)) {
+          await shareNavigator.share({
+            title: t('invoices.shareInvoiceTitle'),
+            text: message,
+            files: [file],
+          });
+        } else {
+          await shareNavigator.share({
+            title: t('invoices.shareInvoiceTitle'),
+            text: message,
+          });
+        }
+
+        showToast({
+          type: 'success',
+          message: t('invoices.invoiceShared'),
+        });
       } catch (error) {
         if (
           error instanceof globalThis.DOMException &&
@@ -741,12 +986,62 @@ export default function InvoiceDetail() {
                       <button
                         type="button"
                         role="menuitem"
+                        onClick={() => {
+                          setShareMenuOpen(false);
+                          setWhatsappModalOpen(true);
+                        }}
+                        disabled={
+                          whatsappOpening ||
+                          shareActionPending
+                        }
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50 text-[#128C7E]"
+                      >
+                        <MessageCircle size={16} />
+
+                        <span className="flex-1">
+                          {whatsappOpening
+                            ? t('invoices.whatsappOpening')
+                            : t('invoices.sendViaWhatsApp')}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setShareMenuOpen(false);
+                          shareInvoicePdfOnWhatsApp();
+                        }}
+                        disabled={shareActionPending}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50 text-[#128C7E]"
+                      >
+                        <FileText size={16} />
+
+                        <span className="flex-1">
+                          {t('invoices.sendInvoicePdf')}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
                         onClick={shareViaSms}
                         disabled={shareActionPending}
                         className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50 text-[#4B5694]"
                       >
                         <Smartphone size={16} />
                         {t('invoices.shareSms')}
+                      </button>
+
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={shareViaWebShare}
+                        disabled={shareActionPending}
+                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50 text-[#102F63]"
+                      >
+                        <Share2 size={16} />
+                        {t('invoices.webShare')}
                       </button>
 
                       <div className="my-1 border-t border-[#EEF1F6]" />
@@ -1952,6 +2247,96 @@ export default function InvoiceDetail() {
             }
           }}
         />
+
+        {/* WhatsApp Mobile Modal */}
+        {whatsappModalOpen && (
+          <div
+            ref={whatsappModalRef}
+            className="fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-4"
+            style={{ maxHeight: '90dvh' }}
+          >
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => setWhatsappModalOpen(false)}
+            />
+
+            {/* Modal Content */}
+            <div className="relative w-full max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl max-h-[90dvh] overflow-hidden flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {t('invoices.shareWhatsApp')}
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setWhatsappModalOpen(false)}
+                  className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* Scrollable Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWhatsappModalOpen(false);
+                    sendWhatsAppMessage();
+                  }}
+                  disabled={shareActionPending}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#128C7E]/10 flex items-center justify-center">
+                    <MessageCircle size={24} className="text-[#128C7E]" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-medium text-gray-900">
+                      {t('invoices.sendViaWhatsApp')}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {t('invoices.whatsappLimitation')}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWhatsappModalOpen(false);
+                    shareInvoicePdfOnWhatsApp();
+                  }}
+                  disabled={shareActionPending}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                >
+                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-[#173B78]/10 flex items-center justify-center">
+                    <FileText size={24} className="text-[#173B78]" />
+                  </div>
+                  <div className="flex-1 text-left">
+                    <div className="font-medium text-gray-900">
+                      {t('invoices.sendInvoicePdf')}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {t('invoices.whatsappLimitation')}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setWhatsappModalOpen(false)}
+                  className="w-full px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
