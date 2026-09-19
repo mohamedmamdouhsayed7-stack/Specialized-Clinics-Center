@@ -83,6 +83,14 @@ export default function ReportsPage() {
     CASH: t('payments.methodCash'),
     VISA: t('payments.methodVisa'),
   };
+
+  // For the main report payment-method summary UI, display only: Cash, KNET, Link
+  const REPORT_PAYMENT_METHOD_LABELS: Record<string, string> = {
+    KNET: 'KNET',
+    LINK: 'Link',
+    CASH: 'Cash',
+  };
+  const reportPaymentMethods = new Set(['CASH', 'KNET', 'LINK']);
   const VISIT_TYPE_LABELS: Record<string, string> = {
     CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'),
   };
@@ -274,7 +282,9 @@ export default function ReportsPage() {
           ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
             <>
               {(() => {
-                const validMethods = paymentMethods.data.filter(row => row.amount > 0 || row.count > 0);
+                const validMethods = paymentMethods.data.filter(
+                  (row) => (row.amount > 0 || row.count > 0) && reportPaymentMethods.has(row.method),
+                );
                 if (validMethods.length === 0) {
                   return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
                 }
@@ -294,7 +304,7 @@ export default function ReportsPage() {
                         <div key={row.method} className="flex items-center justify-between text-xs">
                           <span className="flex items-center gap-1.5">
                             <span className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                            {PAYMENT_METHOD_LABELS[row.method] || row.method}
+                            {REPORT_PAYMENT_METHOD_LABELS[row.method] || PAYMENT_METHOD_LABELS[row.method] || row.method}
                           </span>
                           <div className="text-right">
                             <span className="font-medium text-[#1F2430]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>

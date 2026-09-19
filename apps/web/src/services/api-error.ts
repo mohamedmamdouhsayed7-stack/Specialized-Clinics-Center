@@ -6,80 +6,55 @@ export class ApiError extends Error {
   ) {
     super(message);
     this.name = 'ApiError';
+    Object.setPrototypeOf(this, ApiError.prototype);
   }
 }
 
 export function formatErrorMessage(data: unknown, fallbackMessage: string): string {
-  if (!data) return fallbackMessage;
+  const genericMessages = new Set(['bad request', 'bad request exception']);
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
 
-  if (typeof data === 'string') {
-    const trimmed = data.trim();
-    if (trimmed && trimmed.toLowerCase() !== 'bad request exception' && trimmed.toLowerCase() !== 'bad request') {
-      return trimmed;
+  const collect = (value: unknown): void => {
+    if (!value || seen.has(value)) return;
+    if (typeof value === 'string') {
+      const message = value.trim();
+      if (message && !genericMessages.has(message.toLowerCase())) messages.push(message);
+      return;
     }
-    return fallbackMessage;
-  }
-
-  if (typeof data === 'object') {
-    const errObj = data as Record<string, unknown>;
-
-    // Case 1: NestJS validation pipe array of error strings
-    if (Array.isArray(errObj.message)) {
-      const messages = errObj.message
-        .map((m) => (typeof m === 'string' ? m.trim() : JSON.stringify(m)))
-        .filter(Boolean);
-      if (messages.length > 0) {
-        return messages.join(', ');
-      }
+    if (Array.isArray(value)) {
+      seen.add(value);
+      value.forEach(collect);
+      return;
     }
-
-    // Case 2: Specific string message
-    if (typeof errObj.message === 'string') {
-      const trimmed = errObj.message.trim();
-      const lower = trimmed.toLowerCase();
-      if (lower && lower !== 'bad request exception' && lower !== 'bad request') {
-        return trimmed;
-      }
-      // If message is generic "Bad Request Exception", check if error field has more details
-      if (typeof errObj.error === 'string') {
-        const errTrimmed = errObj.error.trim();
-        const errLower = errTrimmed.toLowerCase();
-        if (errLower && errLower !== 'bad request' && errLower !== 'bad request exception') {
-          return errTrimmed;
-        }
-      }
-      return fallbackMessage;
+    if (typeof value === 'object') {
+      seen.add(value);
+      const record = value as Record<string, unknown>;
+      // NestJS commonly puts the useful detail in message, but proxies and
+      // validation libraries may wrap it one level deeper.
+      collect(record.message);
+      collect(record.messages);
+      collect(record.details);
+      collect(record.errors);
+      collect(record.error);
+      collect(record.response);
     }
+  };
 
-    // Case 3: error property is a specific string
-    if (typeof errObj.error === 'string') {
-      const errTrimmed = errObj.error.trim();
-      const errLower = errTrimmed.toLowerCase();
-      if (errLower && errLower !== 'bad request' && errLower !== 'bad request exception') {
-        return errTrimmed;
-      }
-    }
-  }
-
-  return fallbackMessage;
+  collect(data);
+  return [...new Set(messages)].join(', ') || fallbackMessage;
 }
 
-export async function parseApiError(response: Response, fallbackMessage: string): Promise<ApiError> {
+export async function parseApiError(response: globalThis.Response, fallbackMessage: string): Promise<ApiError> {
   const status = response.status;
+  const body = await response.text();
+  if (!body.trim()) return new ApiError(fallbackMessage, status);
+
   try {
-    const data = await response.json();
+    const data: unknown = JSON.parse(body);
     const message = formatErrorMessage(data, fallbackMessage);
     return new ApiError(message, status, data);
   } catch {
-    try {
-      const text = await response.text();
-      if (text && text.trim()) {
-        const message = formatErrorMessage(text, fallbackMessage);
-        return new ApiError(message, status);
-      }
-    } catch {
-      // ignore
-    }
-    return new ApiError(fallbackMessage, status);
+    return new ApiError(formatErrorMessage(body, fallbackMessage), status);
   }
 }

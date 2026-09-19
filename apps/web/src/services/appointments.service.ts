@@ -1,6 +1,6 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
-import { ApiError, parseApiError } from './api-error';
+import { parseApiError } from './api-error';
 
 export interface Appointment {
   id: string;

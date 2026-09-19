@@ -445,6 +445,23 @@ describe('Invoices Module Tests (E2E)', () => {
   });
 
   describe('Invoice Retrieval', () => {
+    it('should generate a real Arabic invoice PDF', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/invoices/${testInvoiceId}/pdf?lang=ar`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200)
+        .expect('Content-Type', /application\/pdf/);
+
+      expect(response.headers['content-disposition']).toContain('.pdf');
+      expect(response.body.subarray(0, 4).toString()).toBe('%PDF');
+    }, 30_000);
+
     it('should get invoice by ID as admin', async () => {
       const response = await request(app.getHttpServer())
         .get(`/api/invoices/${testInvoiceId}`)

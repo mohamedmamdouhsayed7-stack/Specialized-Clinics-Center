@@ -19,6 +19,14 @@ const PAYMENT_METHOD_KEYS: Record<string, string> = {
   VISA: 'payments.methodVisa',
 };
 
+// For the main report payment-method summary UI, display only: Cash, KNET, Link
+const REPORT_PAYMENT_METHOD_LABELS: Record<string, string> = {
+  KNET: 'KNET',
+  LINK: 'Link',
+  CASH: 'Cash',
+};
+const REPORT_PAYMENT_METHODS = new Set(['CASH', 'KNET', 'LINK']);
+
 // Get local calendar date (YYYY-MM-DD) in Asia/Kuwait for the current day
 function getLocalToday(): string {
   const formatter = new Intl.DateTimeFormat('en-US', {
@@ -197,7 +205,9 @@ export default function DailyClosingPage() {
             <div className="ui-card p-5">
               <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.paymentMethods')}</h2>
               {(() => {
-                const validMethods = data.paymentMethods.filter(m => m.amount > 0 || m.count > 0);
+                const validMethods = data.paymentMethods.filter(
+                  (m) => (m.amount > 0 || m.count > 0) && REPORT_PAYMENT_METHODS.has(m.method),
+                );
                 if (validMethods.length === 0) {
                   return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
                 }
@@ -205,7 +215,7 @@ export default function DailyClosingPage() {
                   <div className="space-y-2">
                     {validMethods.map((m) => (
                       <div key={m.method} className="flex items-center justify-between text-sm border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
-                        <span className="text-[#1F2430]">{t(PAYMENT_METHOD_KEYS[m.method] || m.method)}</span>
+                        <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[m.method]}</span>
                         <span className="font-medium text-[#102F63]">{formatMoney(m.amount, i18n.language)} {t('common.currency')} ({m.count})</span>
                       </div>
                     ))}

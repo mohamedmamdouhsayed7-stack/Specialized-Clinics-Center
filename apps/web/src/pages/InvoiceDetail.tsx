@@ -424,10 +424,7 @@ export default function InvoiceDetail() {
             ) => boolean;
           };
 
-        if (
-          shareNavigator.share &&
-          canShareInvoiceFile(file)
-        ) {
+        if (shareNavigator.share && canShareInvoiceFile(file)) {
           await shareNavigator.share(shareData);
 
           setMessageShareChannel(null);
@@ -566,21 +563,8 @@ export default function InvoiceDetail() {
           invoice.invoiceNumber
         );
 
-        const shareNavigator =
-          navigator as globalThis.Navigator & {
-            share?: (
-              data?: globalThis.ShareData
-            ) => Promise<void>;
-            canShare?: (
-              data?: globalThis.ShareData
-            ) => boolean;
-          };
-
-        if (
-          shareNavigator.share &&
-          canShareInvoiceFile(file)
-        ) {
-          await shareNavigator.share({
+        if (navigator.share && canShareInvoiceFile(file)) {
+          await navigator.share({
             files: [file],
           });
 
@@ -681,7 +665,7 @@ export default function InvoiceDetail() {
           invoice.invoiceNumber
         );
 
-        if (shareNavigator.canShare && canShareInvoiceFile(file)) {
+        if (canShareInvoiceFile(file)) {
           await shareNavigator.share({
             title: t('invoices.shareInvoiceTitle'),
             text: message,
