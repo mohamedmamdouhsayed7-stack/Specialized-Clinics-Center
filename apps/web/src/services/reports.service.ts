@@ -59,14 +59,6 @@ export interface NewPatientsPoint {
   count: number;
 }
 
-export interface TodayAppointmentException {
-  id: string;
-  patientNameAr: string;
-  patientNameEn: string;
-  scheduledAt: string;
-  status: 'CANCELLED' | 'NO_SHOW';
-}
-
 export interface OutstandingInvoiceRow {
   id: string;
   invoiceNumber: string;
@@ -172,10 +164,6 @@ class ReportsService {
 
   getNewPatientsTimeseries(from?: string, to?: string) {
     return this.get<NewPatientsPoint[]>(`/reports/new-patients-timeseries${this.rangeQuery(from, to)}`);
-  }
-
-  getTodayAppointmentExceptions() {
-    return this.get<TodayAppointmentException[]>(`/reports/today-appointment-exceptions`);
   }
 
   async getOutstandingInvoices(page: number = 1, limit: number = 10) {

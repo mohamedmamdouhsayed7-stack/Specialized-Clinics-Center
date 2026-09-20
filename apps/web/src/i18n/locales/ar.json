@@ -513,6 +513,8 @@
     "todayAppointmentExceptions": "استثناءات مواعيد اليوم",
     "noTodayExceptions": "لا توجد استثناءات في مواعيد اليوم",
     "requiresAttention": "يتطلب انتباهًا",
+    "outstandingInvoicesCount": "{{amount}} مستحق",
+    "viewInvoices": "عرض الفواتير",
     "paymentDetails": "تفاصيل الدفع",
     "viewAllAppointments": "عرض كل المواعيد",
     "viewAllServices": "عرض جميع الخدمات",

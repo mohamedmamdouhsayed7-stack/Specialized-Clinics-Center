@@ -513,6 +513,8 @@
     "todayAppointmentExceptions": "Today's Appointment Exceptions",
     "noTodayExceptions": "No appointment exceptions today",
     "requiresAttention": "Requires Attention",
+    "outstandingInvoicesCount": "{{amount}} outstanding",
+    "viewInvoices": "View Invoices",
     "paymentDetails": "Payment Details",
     "viewAllAppointments": "View all appointments",
     "viewAllServices": "View all services",
