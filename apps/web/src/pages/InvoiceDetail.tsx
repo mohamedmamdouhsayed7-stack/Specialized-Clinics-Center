@@ -931,6 +931,19 @@ export default function InvoiceDetail() {
               </div>
 
               <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                {invoice.status === 'ISSUED' && isAdmin && (
+                  <button
+                    onClick={() =>
+                      setShowReplacementForm(
+                        !showReplacementForm
+                      )
+                    }
+                    className="px-4 py-2 border border-[#4B5694] text-[#4B5694] rounded-md hover:bg-blue-50 transition-colors"
+                  >
+                    {t('invoices.createReplacement')}
+                  </button>
+                )}
+
                 <div
                   className="relative"
                   ref={shareMenuRef}
@@ -1107,19 +1120,6 @@ export default function InvoiceDetail() {
                     className="px-4 py-2 border border-[#C4362B] text-[#C4362B] rounded-md hover:bg-red-50 transition-colors disabled:opacity-50"
                   >
                     {t('invoices.voidInvoice')}
-                  </button>
-                )}
-
-                {invoice.status === 'ISSUED' && isAdmin && (
-                  <button
-                    onClick={() =>
-                      setShowReplacementForm(
-                        !showReplacementForm
-                      )
-                    }
-                    className="px-4 py-2 border border-[#4B5694] text-[#4B5694] rounded-md hover:bg-blue-50 transition-colors"
-                  >
-                    {t('invoices.createReplacement')}
                   </button>
                 )}
               </div>

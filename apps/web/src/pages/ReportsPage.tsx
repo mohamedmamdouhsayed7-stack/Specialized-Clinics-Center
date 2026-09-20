@@ -236,120 +236,119 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Secondary widgets row */}
-      <div className="grid lg:grid-cols-3 gap-4 mb-4">
-        {/* Today's Appointment Exceptions */}
-        <div className="ui-card p-4">
-          <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.todayAppointmentExceptions')}</h2>
-          {todayAppointmentExceptions.isLoading ? (
-            <Skeleton className="h-36 rounded-lg" />
-          ) : todayAppointmentExceptions.data && todayAppointmentExceptions.data.length > 0 ? (
-            <>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {todayAppointmentExceptions.data.map((apt) => (
-                  <div key={apt.id} className="flex items-center justify-between text-xs border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-[#1F2430] truncate">
-                        {i18n.language === 'ar' ? apt.patientNameAr : apt.patientNameEn || apt.patientNameAr}
-                      </div>
-                      <div className="text-[#64748B]">{formatAppointmentTime(apt.scheduledAt)}</div>
-                    </div>
-                    <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-medium ${
-                      apt.status === 'CANCELLED' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
-                    }`}>
-                      {apt.status === 'CANCELLED' ? t('appointments.statusCancelled') : t('appointments.statusNoShow')}
-                    </span>
+      {/* Requires Attention - only shows when there are actionable items */}
+      {todayAppointmentExceptions.data && todayAppointmentExceptions.data.length > 0 && (
+        <div className="ui-card p-4 mb-4">
+          <h2 className="text-[14px] font-bold text-[#C4362B] mb-3">{t('reports.requiresAttention')}</h2>
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {todayAppointmentExceptions.data.map((apt) => (
+              <div key={apt.id} className="flex items-center justify-between text-xs border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-[#1F2430] truncate">
+                    {i18n.language === 'ar' ? apt.patientNameAr : apt.patientNameEn || apt.patientNameAr}
                   </div>
-                ))}
+                  <div className="text-[#64748B]">{formatAppointmentTime(apt.scheduledAt)}</div>
+                </div>
+                <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-medium ${
+                  apt.status === 'CANCELLED' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
+                }`}>
+                  {apt.status === 'CANCELLED' ? t('appointments.statusCancelled') : t('appointments.statusNoShow')}
+                </span>
               </div>
-              <button
-                onClick={() => navigate('/appointments')}
-                className="mt-3 text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
-              >
-                {t('reports.viewAllAppointments')} →
-              </button>
-            </>
-          ) : (
-            <div className="text-xs text-[#94A3B8] text-center py-6">{t('reports.noTodayExceptions')}</div>
-          )}
+            ))}
+          </div>
+          <button
+            onClick={() => navigate('/appointments')}
+            className="mt-3 text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
+          >
+            {t('reports.viewAllAppointments')} →
+          </button>
         </div>
+      )}
 
-        {/* Payment Methods */}
-        <div className="ui-card p-4">
-          <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.paymentMethods')}</h2>
-          {paymentMethods.isLoading ? (
-            <Skeleton className="h-36 rounded-lg" />
-          ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
-            <>
-              {(() => {
-                const validMethods = paymentMethods.data.filter(
-                  (row) => (row.amount > 0 || row.count > 0) && reportPaymentMethods.has(row.method),
-                );
-                if (validMethods.length === 0) {
-                  return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
-                }
-                const totalPayments = validMethods.reduce((sum, m) => sum + m.amount, 0);
-                return (
-                  <>
-                    <ResponsiveContainer width="100%" height={150}>
-                      <PieChart>
-                        <Pie data={validMethods} dataKey="amount" nameKey="method" innerRadius={35} outerRadius={60}>
-                          {validMethods.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                        </Pie>
-                        <Tooltip formatter={(v: number) => `${formatMoney(v, i18n.language)} ${t('common.currency')}`} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="space-y-1 mt-2">
-                      {validMethods.map((row, i) => (
-                        <div key={row.method} className="flex items-center justify-between text-xs">
-                          <span className="flex items-center gap-1.5">
-                            <span className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                            {REPORT_PAYMENT_METHOD_LABELS[row.method] || PAYMENT_METHOD_LABELS[row.method] || row.method}
-                          </span>
-                          <div className="text-right">
-                            <span className="font-medium text-[#1F2430]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>
-                            <span className="text-[#94A3B8] ml-1">({totalPayments > 0 ? ((row.amount / totalPayments) * 100).toFixed(1) : 0}%)</span>
-                          </div>
+      {/* Payment Details - secondary section with link to Daily Closing */}
+      <div className="ui-card p-4 mb-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-[14px] font-bold text-[#102F63]">{t('reports.paymentDetails')}</h2>
+          <button
+            onClick={() => navigate('/reports/daily-closing')}
+            className="text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
+          >
+            {t('dailyClosing.title')} →
+          </button>
+        </div>
+        {paymentMethods.isLoading ? (
+          <Skeleton className="h-36 rounded-lg" />
+        ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
+          <>
+            {(() => {
+              const validMethods = paymentMethods.data.filter(
+                (row) => (row.amount > 0 || row.count > 0) && reportPaymentMethods.has(row.method),
+              );
+              if (validMethods.length === 0) {
+                return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
+              }
+              const totalPayments = validMethods.reduce((sum, m) => sum + m.amount, 0);
+              return (
+                <>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <PieChart>
+                      <Pie data={validMethods} dataKey="amount" nameKey="method" innerRadius={35} outerRadius={60}>
+                        {validMethods.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => `${formatMoney(v, i18n.language)} ${t('common.currency')}`} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="space-y-1 mt-2">
+                    {validMethods.map((row, i) => (
+                      <div key={row.method} className="flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
+                          {REPORT_PAYMENT_METHOD_LABELS[row.method] || PAYMENT_METHOD_LABELS[row.method] || row.method}
+                        </span>
+                        <div className="text-right">
+                          <span className="font-medium text-[#1F2430]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>
+                          <span className="text-[#94A3B8] ml-1">({totalPayments > 0 ? ((row.amount / totalPayments) * 100).toFixed(1) : 0}%)</span>
                         </div>
-                      ))}
-                    </div>
-                  </>
-                );
-              })()}
-            </>
-          ) : (
-            <EmptyState title={t('reports.noPaymentsInPeriod')} />
-          )}
-        </div>
-
-        {/* Visit Types */}
-        <div className="ui-card p-4">
-          <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.visitTypesTitle')}</h2>
-          {visitTypes.data && visitTypes.data.length > 0 ? (
-            <div className="space-y-2">
-              {visitTypes.data.map((row) => {
-                const maxCount = Math.max(...visitTypes.data.map(r => r.count));
-                const percentage = maxCount > 0 ? (row.count / maxCount) * 100 : 0;
-                return (
-                  <div key={row.type} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-[#1F2430]">{VISIT_TYPE_LABELS[row.type] || row.type}</span>
-                      <span className="font-medium text-[#102F63]">{row.count}</span>
-                    </div>
-                    <div className="h-1.5 bg-[#E2E8F0] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#102F63] rounded-full transition-all"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
+                      </div>
+                    ))}
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState title={t('reports.noVisitsInPeriod')} />
-          )}
-        </div>
+                </>
+              );
+            })()}
+          </>
+        ) : (
+          <EmptyState title={t('reports.noPaymentsInPeriod')} />
+        )}
+      </div>
+
+      {/* Visit Types */}
+      <div className="ui-card p-4 mb-4">
+        <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.visitTypesTitle')}</h2>
+        {visitTypes.data && visitTypes.data.length > 0 ? (
+          <div className="space-y-2">
+            {visitTypes.data.map((row) => {
+              const maxCount = Math.max(...visitTypes.data.map(r => r.count));
+              const percentage = maxCount > 0 ? (row.count / maxCount) * 100 : 0;
+              return (
+                <div key={row.type} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[#1F2430]">{VISIT_TYPE_LABELS[row.type] || row.type}</span>
+                    <span className="font-medium text-[#102F63]">{row.count}</span>
+                  </div>
+                  <div className="h-1.5 bg-[#E2E8F0] rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-[#102F63] rounded-full transition-all"
+                      style={{ width: `${percentage}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <EmptyState title={t('reports.noVisitsInPeriod')} />
+        )}
       </div>
 
       {/* Top Services table */}
