@@ -42,13 +42,13 @@ export class InvoicesService {
   private readonly VALID_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
     DRAFT: ['ISSUED', 'VOID'],
     ISSUED: ['VOID'],
-    VOID: [], // Terminal state
+    VOID: [],
   };
 
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
-  ) {}
+  ) { }
 
   private validateStatusTransition(currentStatus: InvoiceStatus, newStatus: InvoiceStatus): void {
     if (currentStatus === newStatus) {
@@ -75,7 +75,9 @@ export class InvoicesService {
   }
 
   async create(createInvoiceDto: CreateInvoiceDto, userId: string, ipAddress?: string, userAgent?: string) {
-    // Use transaction for atomic invoice creation with audit logging
+    // Normal invoices are created directly as ISSUED and fully PAID.
+    // Replacement invoices are handled separately by createReplacement()
+    // and remain DRAFT until explicitly issued.
     return this.prisma.$transaction(async (tx) => {
       // Lock the visit row to prevent concurrent invoice creation using SELECT ... FOR UPDATE
       await tx.$queryRaw`SELECT * FROM "Visit" WHERE id = ${createInvoiceDto.visitId}::uuid FOR UPDATE`;
@@ -94,11 +96,11 @@ export class InvoicesService {
       }
 
       // Check for existing active invoices (DRAFT or ISSUED) for this visit
-      // Historical VOID invoices are allowed to coexist
+      // Historical VOID invoices are allowed to coexist.
       const existingActiveInvoice = await tx.invoice.findFirst({
         where: {
           visitId: createInvoiceDto.visitId,
-          status: { in: ['DRAFT', 'ISSUED'] }
+          status: { in: ['DRAFT', 'ISSUED'] },
         },
       });
 
@@ -106,19 +108,15 @@ export class InvoicesService {
         throw new ConflictException('This visit already has an active invoice');
       }
 
-      // Validate payment method - only KNET, LINK, and OTHER are allowed
-      const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
-      if (!validPaymentMethods.includes(createInvoiceDto.paymentMethod)) {
-        throw new BadRequestException(`Invalid payment method. Only ${validPaymentMethods.join(' and ')} are allowed.`);
-      }
-
       // Validate and price every requested service, snapshotting name + price
       const serviceIds = createInvoiceDto.items.map((item) => item.serviceId);
+
       const services = await tx.service.findMany({
         where: { id: { in: serviceIds } },
       });
 
       const serviceMap = new Map(services.map((s) => [s.id, s]));
+
       const invoiceItemsData = createInvoiceDto.items.map((item) => {
         const service = serviceMap.get(item.serviceId);
 
@@ -127,13 +125,15 @@ export class InvoicesService {
         }
 
         if (!service.isActive) {
-          throw new BadRequestException(`Service "${service.name}" is not active and cannot be invoiced`);
+          throw new BadRequestException(
+            `Service "${service.name}" is not active and cannot be invoiced`,
+          );
         }
 
         const quantity = item.quantity ?? 1;
+
         // Use the per-item override if provided, otherwise fall back to the
-        // service's current default price. The service's own price is never
-        // written to here — this only affects this one invoice's snapshot.
+        // service's current default price.
         const unitPrice = item.unitPrice !== undefined
           ? new Decimal(item.unitPrice)
           : service.currentPrice;
@@ -151,7 +151,10 @@ export class InvoicesService {
       });
 
       // Calculate subtotal using Decimal arithmetic
-      const subtotal = invoiceItemsData.reduce((sum, i) => sum.add(i.lineTotal), new Decimal(0)).toDecimalPlaces(2);
+      const subtotal = invoiceItemsData.reduce(
+        (sum, i) => sum.add(i.lineTotal),
+        new Decimal(0),
+      ).toDecimalPlaces(2);
 
       // Calculate additional charges
       const additionalChargesData = (createInvoiceDto.additionalCharges || []).map(charge => {
@@ -159,32 +162,49 @@ export class InvoicesService {
         let calculatedAmount: Decimal;
 
         if (charge.chargeType === 'PERCENTAGE') {
-          // Percentage of subtotal
-          calculatedAmount = subtotal.mul(chargeValue.div(100)).toDecimalPlaces(2);
+          calculatedAmount = subtotal
+            .mul(chargeValue.div(100))
+            .toDecimalPlaces(2);
         } else {
-          // Fixed amount
           calculatedAmount = chargeValue.toDecimalPlaces(2);
         }
 
         return {
           chargeType: charge.chargeType,
-          chargeValue: chargeValue,
-          calculatedAmount: calculatedAmount,
+          chargeValue,
+          calculatedAmount,
           description: charge.description,
         };
       });
 
       // Calculate total from subtotal + additional charges
-      const totalCharges = additionalChargesData.reduce((sum, charge) => sum.add(charge.calculatedAmount), new Decimal(0)).toDecimalPlaces(2);
+      const totalCharges = additionalChargesData.reduce(
+        (sum, charge) => sum.add(charge.calculatedAmount),
+        new Decimal(0),
+      ).toDecimalPlaces(2);
+
       const total = subtotal.add(totalCharges).toDecimalPlaces(2);
 
-      // Generate final invoice number using PostgreSQL sequence
-      const finalInvoiceNumber = await this.generateInvoiceNumber(tx);
+      // The DTO already restricts new invoice payments to:
+      // KNET, LINK, OTHER.
+      // Keep a defensive validation here as well.
+      const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
 
-      // Create the invoice as ISSUED with full payment in one transaction
+      if (!validPaymentMethods.includes(createInvoiceDto.paymentMethod)) {
+        throw new BadRequestException(
+          'Invalid payment method. Only KNET, LINK, and OTHER are allowed.',
+        );
+      }
+
+      // Generate the final invoice number inside the same transaction.
+      // This guarantees that a successful normal invoice gets an INV-XXXXXX
+      // number immediately.
+      const invoiceNumber = await this.generateInvoiceNumber(tx);
+
+      // Normal invoices are immediately ISSUED and fully PAID.
       const invoice = await tx.invoice.create({
         data: {
-          invoiceNumber: finalInvoiceNumber,
+          invoiceNumber,
           visitId: visit.id,
           patientId: visit.patientId,
           status: 'ISSUED',
@@ -196,25 +216,31 @@ export class InvoicesService {
           remaining: new Decimal(0),
           paymentStatus: 'PAID',
           createdById: userId,
+
           invoiceItems: {
             create: invoiceItemsData,
           },
+
           additionalCharges: {
             create: additionalChargesData,
-          },
-          payments: {
-            create: {
-              amount: total,
-              method: createInvoiceDto.paymentMethod,
-              status: 'RECORDED',
-              paymentDate: new Date(),
-              recordedById: userId,
-            },
           },
         },
         include: INVOICE_ITEM_INCLUDE,
       });
 
+      // Record the full payment for the normal invoice.
+      const payment = await tx.payment.create({
+        data: {
+          invoiceId: invoice.id,
+          amount: total,
+          method: createInvoiceDto.paymentMethod,
+          status: 'RECORDED',
+          paymentDate: new Date(),
+          recordedById: userId,
+        },
+      });
+
+      // Complete the visit when its normal invoice is issued.
       if (visit.status !== 'COMPLETED') {
         await tx.visit.update({
           where: { id: visit.id },
@@ -228,7 +254,10 @@ export class InvoicesService {
             entityType: 'Visit',
             entityId: visit.id,
             beforeState: { status: visit.status },
-            afterState: { status: 'COMPLETED', invoiceId: invoice.id },
+            afterState: {
+              status: 'COMPLETED',
+              invoiceId: invoice.id,
+            },
             ipAddress,
             userAgent,
           },
@@ -250,32 +279,39 @@ export class InvoicesService {
             total: invoice.total,
             status: invoice.status,
             paymentMethod: createInvoiceDto.paymentMethod,
+            paymentId: payment.id,
           },
           ipAddress,
           userAgent,
         },
       });
 
-      // Audit log for payment recording
+      // Audit log for the recorded payment
       await tx.auditLog.create({
         data: {
           userId,
           action: 'CREATE',
           entityType: 'Payment',
-          entityId: invoice.payments[0].id,
+          entityId: payment.id,
           beforeState: null,
           afterState: {
             invoiceId: invoice.id,
-            amount: invoice.payments[0].amount,
-            method: invoice.payments[0].method,
+            amount: total.toString(),
+            method: createInvoiceDto.paymentMethod,
             status: 'RECORDED',
+            context: 'Normal invoice creation',
           },
           ipAddress,
           userAgent,
         },
       });
 
-      return invoice;
+      // Re-fetch so the returned invoice contains the payment that was
+      // created after the invoice itself.
+      return tx.invoice.findUniqueOrThrow({
+        where: { id: invoice.id },
+        include: INVOICE_ITEM_INCLUDE,
+      });
     });
   }
 
@@ -292,6 +328,7 @@ export class InvoicesService {
     if (status) {
       where.status = status;
     }
+
     if (normalizedSearch) {
       where.OR = [
         { invoiceNumber: { contains: normalizedSearch } },
@@ -336,7 +373,14 @@ export class InvoicesService {
     return invoice;
   }
 
-  async updateStatus(id: string, updateStatusDto: UpdateInvoiceStatusDto, userId: string, userRole: UserRole, ipAddress?: string, userAgent?: string) {
+  async updateStatus(
+    id: string,
+    updateStatusDto: UpdateInvoiceStatusDto,
+    userId: string,
+    userRole: UserRole,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     // Only ADMIN can void invoices
     if (updateStatusDto.status === 'VOID' && userRole !== 'ADMIN') {
       throw new ForbiddenException('Only admin can void invoices');
@@ -346,6 +390,7 @@ export class InvoicesService {
     return this.prisma.$transaction(async (tx) => {
       // The state check and sequence allocation must be serialized on this row.
       await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${id}::uuid FOR UPDATE`;
+
       const invoice = await tx.invoice.findUnique({
         where: { id },
         include: INVOICE_ITEM_INCLUDE,
@@ -378,16 +423,21 @@ export class InvoicesService {
         }
       }
 
-      const data: { status: InvoiceStatus; issuedAt?: Date; issuedById?: string; invoiceNumber?: string; paid?: Decimal; remaining?: Decimal; paymentStatus?: InvoicePaymentStatus } = {
+      const data: {
+        status: InvoiceStatus;
+        issuedAt?: Date | null;
+        issuedById?: string | null;
+        invoiceNumber?: string;
+        paid?: Decimal;
+        remaining?: Decimal;
+        paymentStatus?: InvoicePaymentStatus;
+      } = {
         status: updateStatusDto.status,
       };
 
       if (updateStatusDto.status === 'ISSUED') {
         data.issuedAt = new Date();
         data.issuedById = userId;
-        
-        // Assign final invoice number using PostgreSQL sequence within transaction
-        data.invoiceNumber = await this.generateInvoiceNumber(tx);
 
         // Handle payment for DRAFT invoices being issued
         if (invoice.status === 'DRAFT') {
@@ -415,18 +465,28 @@ export class InvoicesService {
             .reduce((sum, payment) => sum.add(payment.amount), new Decimal(0));
 
           const totalExistingCredit = allocatedCredit.add(directCredit);
-          const remainingBalance = Decimal.max(invoice.total.sub(totalExistingCredit), new Decimal(0)).toDecimalPlaces(2);
+
+          const remainingBalance = Decimal.max(
+            invoice.total.sub(totalExistingCredit),
+            new Decimal(0),
+          ).toDecimalPlaces(2);
 
           if (remainingBalance.gt(0)) {
-            // Need additional payment
+            // Payment method is required when issuing a DRAFT invoice
+            // that still has a remaining balance.
             if (!updateStatusDto.paymentMethod) {
-              throw new BadRequestException('Payment method is required when issuing a DRAFT invoice with remaining balance');
+              throw new BadRequestException(
+                'Payment method is required when issuing a DRAFT invoice with remaining balance',
+              );
             }
 
             // Validate payment method
             const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
+
             if (!validPaymentMethods.includes(updateStatusDto.paymentMethod)) {
-              throw new BadRequestException('Invalid payment method. Only KNET, LINK, and OTHER are allowed.');
+              throw new BadRequestException(
+                'Invalid payment method. Only KNET, LINK, and OTHER are allowed.',
+              );
             }
 
             // Create payment for remaining balance
@@ -472,6 +532,11 @@ export class InvoicesService {
             data.paymentStatus = 'PAID';
           }
         }
+
+        // Validate payment method BEFORE consuming a final invoice number.
+        // This prevents the invoice number sequence from advancing when
+        // issuance fails because payment method is missing or invalid.
+        data.invoiceNumber = await this.generateInvoiceNumber(tx);
       }
 
       const updated = await tx.invoice.update({
@@ -480,6 +545,37 @@ export class InvoicesService {
         include: INVOICE_ITEM_INCLUDE,
       });
 
+      // When a DRAFT invoice is issued, complete its visit.
+      if (
+        updateStatusDto.status === 'ISSUED' &&
+        invoice.status === 'DRAFT'
+      ) {
+        const visit = await tx.visit.findUnique({
+          where: { id: invoice.visitId },
+          select: { id: true, status: true },
+        });
+
+        if (visit && visit.status !== 'COMPLETED') {
+          await tx.visit.update({
+            where: { id: visit.id },
+            data: { status: 'COMPLETED' },
+          });
+
+          await tx.auditLog.create({
+            data: {
+              userId,
+              action: 'UPDATE_STATUS',
+              entityType: 'Visit',
+              entityId: visit.id,
+              beforeState: { status: visit.status },
+              afterState: { status: 'COMPLETED', invoiceId: id },
+              ipAddress,
+              userAgent,
+            },
+          });
+        }
+      }
+
       // Audit log within transaction
       await tx.auditLog.create({
         data: {
@@ -487,8 +583,14 @@ export class InvoicesService {
           action: 'STATUS_CHANGE',
           entityType: 'Invoice',
           entityId: id,
-          beforeState: { status: invoice.status, invoiceNumber: invoice.invoiceNumber },
-          afterState: { status: updated.status, invoiceNumber: updated.invoiceNumber },
+          beforeState: {
+            status: invoice.status,
+            invoiceNumber: invoice.invoiceNumber,
+          },
+          afterState: {
+            status: updated.status,
+            invoiceNumber: updated.invoiceNumber,
+          },
           ipAddress,
           userAgent,
         },
@@ -498,7 +600,14 @@ export class InvoicesService {
     });
   }
 
-  async addCharge(invoiceId: string, addChargeDto: AddChargeDto, userId: string, userRole: UserRole, ipAddress?: string, userAgent?: string) {
+  async addCharge(
+    invoiceId: string,
+    addChargeDto: AddChargeDto,
+    userId: string,
+    userRole: UserRole,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     // Admin and Receptionist can add charges
     if (userRole !== 'ADMIN' && userRole !== 'RECEPTIONIST') {
       throw new ForbiddenException('Only admin and receptionist can add charges');
@@ -508,7 +617,7 @@ export class InvoicesService {
     return this.prisma.$transaction(async (tx) => {
       // Lock the invoice row FIRST to prevent concurrent modifications
       await tx.$queryRaw`SELECT * FROM "Invoice" WHERE id = ${invoiceId}::uuid FOR UPDATE`;
-      
+
       // Re-read invoice with authoritative state after lock
       const invoice = await tx.invoice.findUnique({
         where: { id: invoiceId },
@@ -527,7 +636,7 @@ export class InvoicesService {
       // Calculate charge based on fresh invoice state
       const chargeValue = new Decimal(addChargeDto.chargeValue);
       let calculatedAmount: Decimal;
-      
+
       if (addChargeDto.chargeType === 'PERCENTAGE') {
         // Percentage of subtotal
         calculatedAmount = invoice.subtotal.mul(chargeValue.div(100)).toDecimalPlaces(2);
@@ -552,12 +661,17 @@ export class InvoicesService {
         where: { invoiceId },
       });
 
-      const totalCharges = allCharges.reduce((sum, charge) => sum.add(charge.calculatedAmount), new Decimal(0)).toDecimalPlaces(2);
+      const totalCharges = allCharges.reduce(
+        (sum, charge) => sum.add(charge.calculatedAmount),
+        new Decimal(0),
+      ).toDecimalPlaces(2);
+
       const newTotal = invoice.subtotal.add(totalCharges).toDecimalPlaces(2);
       const newRemaining = newTotal.sub(invoice.paid).toDecimalPlaces(2);
 
       // Recalculate payment status based on new total and existing paid amount
       let newPaymentStatus: InvoicePaymentStatus = 'UNPAID';
+
       if (newRemaining.equals(0)) {
         newPaymentStatus = 'PAID';
       } else if (newRemaining.lessThan(newTotal)) {
@@ -597,7 +711,14 @@ export class InvoicesService {
     });
   }
 
-  async createReplacement(originalInvoiceId: string, createReplacementDto: CreateReplacementDto, userId: string, userRole: UserRole, ipAddress?: string, userAgent?: string) {
+  async createReplacement(
+    originalInvoiceId: string,
+    createReplacementDto: CreateReplacementDto,
+    userId: string,
+    userRole: UserRole,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
     // Only ADMIN can create invoice replacements
     if (userRole !== 'ADMIN') {
       throw new ForbiddenException('Only admin can create invoice replacements');
@@ -648,6 +769,7 @@ export class InvoicesService {
       });
 
       const serviceMap = new Map(services.map((s) => [s.id, s]));
+
       const invoiceItemsData = createReplacementDto.items.map((item) => {
         const service = serviceMap.get(item.serviceId);
 
@@ -660,10 +782,11 @@ export class InvoicesService {
         }
 
         const quantity = item.quantity ?? 1;
-        const unitPrice = item.unitPrice !== undefined 
-          ? new Decimal(item.unitPrice) 
+
+        const unitPrice = item.unitPrice !== undefined
+          ? new Decimal(item.unitPrice)
           : service.currentPrice;
-        
+
         const lineTotal = unitPrice.mul(quantity).toDecimalPlaces(2);
 
         return {
@@ -676,19 +799,22 @@ export class InvoicesService {
       });
 
       // Calculate subtotal
-      const subtotal = invoiceItemsData.reduce((sum, i) => sum.add(i.lineTotal), new Decimal(0)).toDecimalPlaces(2);
-      
+      const subtotal = invoiceItemsData.reduce(
+        (sum, i) => sum.add(i.lineTotal),
+        new Decimal(0),
+      ).toDecimalPlaces(2);
+
       // Calculate additional charges
       const additionalChargesData = (createReplacementDto.additionalCharges || []).map(charge => {
         const chargeValue = new Decimal(charge.chargeValue);
         let calculatedAmount: Decimal;
-        
+
         if (charge.chargeType === 'PERCENTAGE') {
           calculatedAmount = subtotal.mul(chargeValue.div(100)).toDecimalPlaces(2);
         } else {
           calculatedAmount = chargeValue.toDecimalPlaces(2);
         }
-        
+
         return {
           chargeType: charge.chargeType,
           chargeValue: chargeValue,
@@ -698,9 +824,13 @@ export class InvoicesService {
       });
 
       // Calculate total
-      const totalCharges = additionalChargesData.reduce((sum, charge) => sum.add(charge.calculatedAmount), new Decimal(0)).toDecimalPlaces(2);
+      const totalCharges = additionalChargesData.reduce(
+        (sum, charge) => sum.add(charge.calculatedAmount),
+        new Decimal(0),
+      ).toDecimalPlaces(2);
+
       const total = subtotal.add(totalCharges).toDecimalPlaces(2);
-      
+
       // A predecessor invoice may have:
       // 1. Payment allocations from earlier invoices it replaced
       // 2. Direct payments recorded directly on it
@@ -739,24 +869,39 @@ export class InvoicesService {
       // order, capped at this replacement's total, so remaining can never be
       // negative and no payment can create phantom credit on this invoice.
       let allocatable = total;
+
       const validAllocations = sourceCredits.flatMap((credit) => {
-        const amount = Decimal.min(credit.amount, allocatable).toDecimalPlaces(2);
+        const amount = Decimal.min(
+          credit.amount,
+          allocatable,
+        ).toDecimalPlaces(2);
+
         allocatable = allocatable.sub(amount);
-        return amount.gt(0) ? [{ paymentId: credit.paymentId, amount }] : [];
+
+        return amount.gt(0)
+          ? [{ paymentId: credit.paymentId, amount }]
+          : [];
       });
-      
+
       // Calculate the total credit from allocations
-      const replacementPaid = validAllocations.reduce((sum, allocation) => sum.add(allocation.amount), new Decimal(0)).toDecimalPlaces(2);
-      const replacementRemaining = total.sub(replacementPaid).toDecimalPlaces(2);
-      
+      const replacementPaid = validAllocations.reduce(
+        (sum, allocation) => sum.add(allocation.amount),
+        new Decimal(0),
+      ).toDecimalPlaces(2);
+
+      const replacementRemaining = total
+        .sub(replacementPaid)
+        .toDecimalPlaces(2);
+
       // Determine payment status based on remaining balance
       let replacementPaymentStatus: InvoicePaymentStatus = 'UNPAID';
+
       if (replacementRemaining.equals(0)) {
         replacementPaymentStatus = 'PAID';
       } else if (replacementRemaining.lessThan(total)) {
         replacementPaymentStatus = 'PARTIALLY_PAID';
       }
-      
+
       // Check if an optional payment method was provided for remaining balance
       const needsAdditionalPayment = replacementRemaining.gt(0);
       const additionalPaymentMethod = createReplacementDto.paymentMethod;
@@ -764,13 +909,18 @@ export class InvoicesService {
       if (needsAdditionalPayment && additionalPaymentMethod) {
         // Validate payment method
         const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
+
         if (!validPaymentMethods.includes(additionalPaymentMethod)) {
-          throw new BadRequestException('Invalid payment method. Only KNET, LINK, and OTHER are allowed.');
+          throw new BadRequestException(
+            'Invalid payment method. Only KNET, LINK, and OTHER are allowed.',
+          );
         }
       }
-      
+
       // Replacement invoices start as DRAFT with temporary number
-      const replacementInvoiceNumber = `DRAFT-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+      const replacementInvoiceNumber = `DRAFT-${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 8)}`;
 
       // Create payment allocations for the replacement invoice
       const allocationData = validAllocations.map(allocation => ({
@@ -793,7 +943,7 @@ export class InvoicesService {
           invoiceNumber: replacementInvoiceNumber,
           visitId: visit.id,
           patientId: visit.patientId,
-          status: 'DRAFT', // Start as draft, can be issued later
+          status: 'DRAFT',
           subtotal,
           total,
           paid: replacementPaid,
@@ -806,9 +956,11 @@ export class InvoicesService {
           additionalCharges: {
             create: additionalChargesData,
           },
-          paymentAllocations: allocationData.length > 0 ? {
-            create: allocationData,
-          } : undefined,
+          paymentAllocations: allocationData.length > 0
+            ? {
+              create: allocationData,
+            }
+            : undefined,
         },
         include: INVOICE_ITEM_INCLUDE,
       });
@@ -872,13 +1024,13 @@ export class InvoicesService {
           action: 'INVOICE_REPLACED',
           entityType: 'Invoice',
           entityId: originalInvoiceId,
-          beforeState: { 
-            status: originalInvoice.status, 
+          beforeState: {
+            status: originalInvoice.status,
             invoiceNumber: originalInvoice.invoiceNumber,
             total: originalInvoice.total.toString(),
           },
-          afterState: { 
-            status: 'VOID', 
+          afterState: {
+            status: 'VOID',
             replacedByInvoiceId: replacementInvoice.id,
             replacementInvoiceNumber: replacementInvoice.invoiceNumber,
           },

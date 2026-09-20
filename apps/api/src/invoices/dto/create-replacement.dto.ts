@@ -1,12 +1,24 @@
-import { IsArray, ArrayMinSize, ValidateNested, IsOptional, IsEnum } from 'class-validator';
+import {
+  IsArray,
+  ArrayMinSize,
+  ValidateNested,
+  IsOptional,
+  IsEnum,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+import { PaymentMethod } from '@prisma/client';
 import { CreateInvoiceItemDto } from './create-invoice-item.dto';
 import { CreateInvoiceChargeDto } from './create-invoice-charge.dto';
 
-// Restrict new payments to KNET, LINK, and OTHER only
-// Historical CASH, VISA, and OTHER values are preserved in the database
-// but should not be selectable for new payments
-const ALLOWED_PAYMENT_METHODS = ['KNET', 'LINK', 'OTHER'] as const;
+// Restrict new payments to KNET, LINK, and OTHER only.
+// CASH and VISA remain valid historical database values,
+// but are not selectable for new payments.
+const ALLOWED_PAYMENT_METHODS = [
+  PaymentMethod.KNET,
+  PaymentMethod.LINK,
+  PaymentMethod.OTHER,
+] as const;
+
 type AllowedPaymentMethod = (typeof ALLOWED_PAYMENT_METHODS)[number];
 
 export class CreateReplacementDto {
@@ -28,3 +40,5 @@ export class CreateReplacementDto {
   @IsOptional()
   paymentMethod?: AllowedPaymentMethod;
 }
+
+

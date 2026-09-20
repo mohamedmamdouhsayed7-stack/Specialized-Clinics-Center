@@ -77,32 +77,32 @@ export default function DailyClosingPage() {
         breadcrumbs={[{ label: t('sidebar.reports'), href: '/reports' }, { label: t('dailyClosing.title') }]}
         className="print:hidden"
         actions={
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Calendar size={16} strokeWidth={1.75} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" />
-            <DateInput
-              value={date}
-              onChange={setDate}
-              className="ui-input pr-10 w-auto"
-            />
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Calendar size={16} strokeWidth={1.75} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none" />
+              <DateInput
+                value={date}
+                onChange={setDate}
+                className="ui-input pr-10 w-auto"
+              />
+            </div>
+            <button
+              onClick={handleExportExcel}
+              disabled={isExporting || !data}
+              className="btn-secondary flex items-center gap-2 px-4 disabled:opacity-50"
+            >
+              <FileSpreadsheet size={17} strokeWidth={1.75} />
+              {isExporting ? t('dailyClosing.exporting') : t('reports.exportExcel')}
+            </button>
+            <button
+              onClick={() => window.print()}
+              disabled={!data}
+              className="btn-primary flex items-center gap-2 px-4 disabled:opacity-50"
+            >
+              <Printer size={17} strokeWidth={1.75} />
+              {t('common.print')}
+            </button>
           </div>
-          <button
-            onClick={handleExportExcel}
-            disabled={isExporting || !data}
-            className="btn-secondary flex items-center gap-2 px-4 disabled:opacity-50"
-          >
-            <FileSpreadsheet size={17} strokeWidth={1.75} />
-            {isExporting ? t('dailyClosing.exporting') : t('reports.exportExcel')}
-          </button>
-          <button
-            onClick={() => window.print()}
-            disabled={!data}
-            className="btn-primary flex items-center gap-2 px-4 disabled:opacity-50"
-          >
-            <Printer size={17} strokeWidth={1.75} />
-            {t('common.print')}
-          </button>
-        </div>
         }
       />
 
@@ -200,44 +200,27 @@ export default function DailyClosingPage() {
             )}
           </div>
 
-          <div className="grid md:grid-cols-2 gap-5 mb-6">
-            {/* Payment methods breakdown */}
-            <div className="ui-card p-5">
-              <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.paymentMethods')}</h2>
-              {(() => {
-                const validMethods = data.paymentMethods.filter(
-                  (m) => (m.amount > 0 || m.count > 0) && REPORT_PAYMENT_METHODS.has(m.method),
-                );
-                if (validMethods.length === 0) {
-                  return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
-                }
-                return (
-                  <div className="space-y-2">
-                    {validMethods.map((m) => (
-                      <div key={m.method} className="flex items-center justify-between text-sm border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
-                        <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[m.method]}</span>
-                        <span className="font-medium text-[#102F63]">{formatMoney(m.amount, i18n.language)} {t('common.currency')} ({m.count})</span>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Payment exceptions */}
-            <div className="ui-card p-5">
-              <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('dailyClosing.paymentExceptions')}</h2>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-[#1F2430]">{t('dailyClosing.normalInvoices')}</span>
-                  <span className="font-medium text-[var(--success)]">{data.paymentStatusCounts.PAID}</span>
+          {/* Payment methods breakdown */}
+          <div className="ui-card p-5 mb-6">
+            <h2 className="text-[15px] font-bold text-[#102F63] mb-4">{t('reports.paymentMethods')}</h2>
+            {(() => {
+              const validMethods = data.paymentMethods.filter(
+                (m) => (m.amount > 0 || m.count > 0) && REPORT_PAYMENT_METHODS.has(m.method),
+              );
+              if (validMethods.length === 0) {
+                return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
+              }
+              return (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {validMethods.map((m) => (
+                    <div key={m.method} className="flex items-center justify-between text-sm border border-[#E2E8F0] rounded-lg px-3 py-2.5">
+                      <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[m.method]}</span>
+                      <span className="font-medium text-[#102F63]">{formatMoney(m.amount, i18n.language)} {t('common.currency')} ({m.count})</span>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-[#1F2430]">{t('dailyClosing.exceptionInvoices')}</span>
-                  <span className="font-medium text-[#C4362B]">{data.paymentExceptions}</span>
-                </div>
-              </div>
-            </div>
+              );
+            })()}
           </div>
 
           {/* Invoices list */}
@@ -249,40 +232,40 @@ export default function DailyClosingPage() {
               <EmptyState title={t('common.noDataAvailable')} />
             ) : (
               <div className="overflow-x-auto">
-              <table className="ui-table min-w-[680px]">
-                <thead>
-                  <tr>
-                    <th>{t('invoices.number')}</th>
-                    <th>{t('visits.patient')}</th>
-                    <th>{t('invoices.total')}</th>
-                    <th>{t('invoices.paid')}</th>
-                    <th>{t('invoices.status')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.invoices.map((inv) => {
-                    const isException = inv.remaining > 0 || inv.paymentStatus !== 'PAID';
-                    return (
-                      <tr key={inv.id} className={isException ? 'bg-[#FEF2F2]' : ''}>
-                        <td className="font-mono text-[#64748B]">{inv.invoiceNumber}</td>
-                        <td className="text-[#1F2430]">{inv.patientName}</td>
-                        <td>{formatMoney(inv.total, i18n.language)} {t('common.currency')}</td>
-                        <td>{formatMoney(inv.paid, i18n.language)} {t('common.currency')}</td>
-                        <td>
-                          {isException ? (
-                            <span className="text-[#C4362B] font-medium">
-                              {inv.paymentStatus === 'UNPAID' ? t('dailyClosing.unpaid') : t('dailyClosing.partiallyPaid')}
-                              {inv.remaining > 0 && ` (${formatMoney(inv.remaining, i18n.language)} ${t('common.currency')})`}
-                            </span>
-                          ) : (
-                            <span className="text-[var(--success)]">{t('invoices.paidInFull')}</span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                <table className="ui-table min-w-[680px]">
+                  <thead>
+                    <tr>
+                      <th>{t('invoices.number')}</th>
+                      <th>{t('visits.patient')}</th>
+                      <th>{t('invoices.total')}</th>
+                      <th>{t('invoices.paid')}</th>
+                      <th>{t('invoices.status')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.invoices.map((inv) => {
+                      const isException = inv.remaining > 0 || inv.paymentStatus !== 'PAID';
+                      return (
+                        <tr key={inv.id} className={isException ? 'bg-[#FEF2F2]' : ''}>
+                          <td className="font-mono text-[#64748B]">{inv.invoiceNumber}</td>
+                          <td className="text-[#1F2430]">{inv.patientName}</td>
+                          <td>{formatMoney(inv.total, i18n.language)} {t('common.currency')}</td>
+                          <td>{formatMoney(inv.paid, i18n.language)} {t('common.currency')}</td>
+                          <td>
+                            {isException ? (
+                              <span className="text-[#C4362B] font-medium">
+                                {inv.paymentStatus === 'UNPAID' ? t('dailyClosing.unpaid') : t('dailyClosing.partiallyPaid')}
+                                {inv.remaining > 0 && ` (${formatMoney(inv.remaining, i18n.language)} ${t('common.currency')})`}
+                              </span>
+                            ) : (
+                              <span className="text-[var(--success)]">{t('invoices.paidInFull')}</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -296,18 +279,18 @@ export default function DailyClosingPage() {
               <EmptyState title={t('payments.noPayments')} />
             ) : (
               <div className="overflow-x-auto">
-              <table className="ui-table min-w-[620px]">
-                <thead>
-                  <tr>
-                    <th>{t('invoices.number')}</th>
-                    <th>{t('visits.patient')}</th>
-                    <th>{t('payments.amount')}</th>
-                    <th>{t('payments.method')}</th>
-                    <th>{t('visits.time')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.payments.map((p) => (
+                <table className="ui-table min-w-[620px]">
+                  <thead>
+                    <tr>
+                      <th>{t('invoices.number')}</th>
+                      <th>{t('visits.patient')}</th>
+                      <th>{t('payments.amount')}</th>
+                      <th>{t('payments.method')}</th>
+                      <th>{t('visits.time')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.payments.map((p) => (
                       <tr key={p.id}>
                         <td className="font-mono text-[#64748B]">{p.invoiceNumber}</td>
                         <td className="text-[#1F2430]">{p.patientName}</td>
@@ -318,7 +301,7 @@ export default function DailyClosingPage() {
                     ))}
                   </tbody>
                 </table>
-                </div>
+              </div>
             )}
           </div>
         </>
@@ -326,3 +309,5 @@ export default function DailyClosingPage() {
     </div>
   );
 }
+
+

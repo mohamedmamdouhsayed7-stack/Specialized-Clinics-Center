@@ -1,12 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  UsersRound, Bell, ShieldCheck, FileClock, Server, Lock, DatabaseBackup,
-  CheckCircle2, XCircle, Loader2, Plus,
+  UsersRound, ShieldCheck, Server, Lock, DatabaseBackup,
+  CheckCircle2, XCircle, Loader2, Plus, Eye, EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { usersService, AppUser } from '../services/users.service';
-import { auditService } from '../services/audit.service';
 import { backupService, BackupStatus, BackupEntry } from '../services/backup.service';
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
@@ -19,16 +18,6 @@ import EmptyState from '../components/EmptyState';
 import ModalDialog from '../components/ModalDialog';
 
 const APP_VERSION = 'v1.0.0';
-
-const NOTIFICATION_PREFS_KEY = 'clinic_notification_prefs';
-const DEFAULT_NOTIFICATION_PREFS = {
-  appointmentReminders: true,
-  newAppointment: true,
-  appointmentCancellation: true,
-  invoicePayment: true,
-  lowStorage: true,
-  backupStatus: true,
-};
 
 function formatDateTime(dateString: string): string {
   return new Date(dateString).toLocaleString('ar-KW', {
@@ -55,14 +44,6 @@ export default function SettingsPage() {
           onClick={() => setActiveSection(activeSection === 'roles' ? null : 'roles')}
         />
         <SettingsCard
-          icon={Bell}
-          color="#C98200"
-          title={t('settings.notificationsTitle')}
-          description={t('settings.notificationsDesc')}
-          active={activeSection === 'notifications'}
-          onClick={() => setActiveSection(activeSection === 'notifications' ? null : 'notifications')}
-        />
-        <SettingsCard
           icon={ShieldCheck}
           color="#173B78"
           title={t('settings.securityTitle')}
@@ -79,14 +60,6 @@ export default function SettingsPage() {
           onClick={() => setActiveSection(activeSection === 'backup' ? null : 'backup')}
         />
         <SettingsCard
-          icon={FileClock}
-          color="#4B5694"
-          title={t('settings.activityTitle')}
-          description={t('settings.activityDesc')}
-          active={activeSection === 'activity'}
-          onClick={() => setActiveSection(activeSection === 'activity' ? null : 'activity')}
-        />
-        <SettingsCard
           icon={Server}
           color="#C4362B"
           title={t('settings.systemTitle')}
@@ -97,10 +70,8 @@ export default function SettingsPage() {
       </div>
 
       {activeSection === 'roles' && <RolesSection currentUserId={user?.id} />}
-      {activeSection === 'notifications' && <NotificationsSection />}
       {activeSection === 'security' && <SecuritySection />}
       {activeSection === 'backup' && <BackupSection />}
-      {activeSection === 'activity' && <ActivitySection />}
       {activeSection === 'system' && <SystemInfoSection />}
 
       {!activeSection && <SystemOverviewGrid />}
@@ -375,68 +346,20 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
   return (
     <ModalDialog open title={t('settings.addNewUser')} labelledBy="create-user-title" onClose={onClose}>
-        {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-100 text-[#C4362B] rounded-lg text-sm">{error}</div>}
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('settings.userName')} required className="ui-input" />
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('settings.email')} required className="ui-input" />
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('settings.passwordMinLength')} required minLength={6} className="ui-input" />
-          <select value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'RECEPTIONIST')} className="ui-input">
-            <option value="RECEPTIONIST">{t('roles.receptionist')}</option>
-            <option value="ADMIN">{t('roles.admin')}</option>
-          </select>
-          <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
-            {submitting ? t('settings.creatingUser') : t('settings.createUser')}
-          </button>
-        </form>
+      {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-100 text-[#C4362B] rounded-lg text-sm">{error}</div>}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('settings.userName')} required className="ui-input" />
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('settings.email')} required className="ui-input" />
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('settings.passwordMinLength')} required minLength={6} className="ui-input" />
+        <select value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'RECEPTIONIST')} className="ui-input">
+          <option value="RECEPTIONIST">{t('roles.receptionist')}</option>
+          <option value="ADMIN">{t('roles.admin')}</option>
+        </select>
+        <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
+          {submitting ? t('settings.creatingUser') : t('settings.createUser')}
+        </button>
+      </form>
     </ModalDialog>
-  );
-}
-
-// ---------- الإشعارات والتنبيهات ----------
-function NotificationsSection() {
-  const { t } = useTranslation();
-  const [prefs, setPrefs] = useState(DEFAULT_NOTIFICATION_PREFS);
-
-  useEffect(() => {
-    const saved = localStorage.getItem(NOTIFICATION_PREFS_KEY);
-    if (saved) {
-      try { setPrefs({ ...DEFAULT_NOTIFICATION_PREFS, ...JSON.parse(saved) }); } catch { /* ignore */ }
-    }
-  }, []);
-
-  const toggle = (key: keyof typeof DEFAULT_NOTIFICATION_PREFS) => {
-    const updated = { ...prefs, [key]: !prefs[key] };
-    setPrefs(updated);
-    localStorage.setItem(NOTIFICATION_PREFS_KEY, JSON.stringify(updated));
-  };
-
-  const items: Array<{ key: keyof typeof DEFAULT_NOTIFICATION_PREFS; label: string }> = [
-    { key: 'appointmentReminders', label: t('settings.notifAppointmentReminders') },
-    { key: 'newAppointment', label: t('settings.notifNewAppointment') },
-    { key: 'appointmentCancellation', label: t('settings.notifAppointmentCancellation') },
-    { key: 'invoicePayment', label: t('settings.notifInvoicePayment') },
-    { key: 'lowStorage', label: t('settings.notifLowStorage') },
-    { key: 'backupStatus', label: t('settings.notifBackupStatus') },
-  ];
-
-  return (
-    <div className="ui-card p-5">
-      <h2 className="text-[16px] font-bold text-[#102F63] mb-1">{t('settings.notificationPrefs')}</h2>
-      <p className="text-xs text-[#94A3B8] mb-4">{t('settings.notificationPrefsNote')}</p>
-      <div className="space-y-3">
-        {items.map((item) => (
-          <label key={item.key} className="flex items-center justify-between py-2 border-b border-[#E2E8F0] last:border-0 cursor-pointer">
-            <span className="text-sm text-[#1F2430]">{item.label}</span>
-            <input
-              type="checkbox"
-              checked={prefs[item.key]}
-              onChange={() => toggle(item.key)}
-              className="w-4.5 h-4.5 rounded border-[#E2E8F0] text-[#173B78] focus:ring-[#173B78]"
-            />
-          </label>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -449,6 +372,9 @@ function SecuritySection() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -488,59 +414,66 @@ function SecuritySection() {
       {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-100 text-[#C4362B] rounded-lg text-sm">{error}</div>}
       {success && <div className="mb-3 px-3 py-2 bg-green-50 border border-green-100 text-[var(--success)] rounded-lg text-sm">{success}</div>}
       <form onSubmit={handleSubmit} className="space-y-3">
-        <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder={t('settings.currentPassword')} required className="ui-input" />
-        <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder={t('settings.newPassword')} required minLength={6} className="ui-input" />
-        <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder={t('settings.confirmNewPassword')} required minLength={6} className="ui-input" />
+        <div className="relative">
+          <input
+            type={showCurrent ? 'text' : 'password'}
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            placeholder={t('settings.currentPassword')}
+            required
+            className="ui-input pe-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowCurrent((v) => !v)}
+            aria-label={showCurrent ? t('common.hidePassword') : t('common.showPassword')}
+            className="absolute inset-y-0 end-0 flex items-center px-3 text-[#94A3B8] hover:text-[#173B78]"
+          >
+            {showCurrent ? <EyeOff size={17} strokeWidth={1.75} /> : <Eye size={17} strokeWidth={1.75} />}
+          </button>
+        </div>
+        <div className="relative">
+          <input
+            type={showNew ? 'text' : 'password'}
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            placeholder={t('settings.newPassword')}
+            required
+            minLength={6}
+            className="ui-input pe-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowNew((v) => !v)}
+            aria-label={showNew ? t('common.hidePassword') : t('common.showPassword')}
+            className="absolute inset-y-0 end-0 flex items-center px-3 text-[#94A3B8] hover:text-[#173B78]"
+          >
+            {showNew ? <EyeOff size={17} strokeWidth={1.75} /> : <Eye size={17} strokeWidth={1.75} />}
+          </button>
+        </div>
+        <div className="relative">
+          <input
+            type={showConfirm ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder={t('settings.confirmNewPassword')}
+            required
+            minLength={6}
+            className="ui-input pe-10"
+          />
+          <button
+            type="button"
+            onClick={() => setShowConfirm((v) => !v)}
+            aria-label={showConfirm ? t('common.hidePassword') : t('common.showPassword')}
+            className="absolute inset-y-0 end-0 flex items-center px-3 text-[#94A3B8] hover:text-[#173B78]"
+          >
+            {showConfirm ? <EyeOff size={17} strokeWidth={1.75} /> : <Eye size={17} strokeWidth={1.75} />}
+          </button>
+        </div>
         <button type="submit" disabled={submitting} className="btn-primary px-4 py-2.5 text-sm">
           {submitting ? t('settings.savingPassword') : t('settings.saveNewPassword')}
         </button>
       </form>
-    </div>
-  );
-}
-
-// ---------- سجل التغييرات ----------
-function ActivitySection() {
-  const [page, setPage] = useState(1);
-  const { t } = useTranslation();
-  const { data, isLoading } = useQuery({ queryKey: ['audit-logs', page], queryFn: () => auditService.getLogs(page, 20) });
-
-  return (
-    <div className="ui-card p-5">
-      <h2 className="text-[16px] font-bold text-[#102F63] mb-4">{t('settings.activityTitle')}</h2>
-      {isLoading && <Skeleton className="h-40 rounded-lg" />}
-      {data && data.data.length === 0 && <div className="ui-empty-state">{t('settings.noActivityYet')}</div>}
-      {data && data.data.length > 0 && (
-        <>
-          <table className="ui-table">
-            <thead>
-              <tr>
-                <th>{t('settings.userName')}</th>
-                <th>{t('settings.action')}</th>
-                <th>{t('settings.module')}</th>
-                <th>{t('appointments.dateTime')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.data.map((entry) => (
-                <tr key={entry.id}>
-                  <td className="text-[#1F2430]">{entry.user?.name || '—'}</td>
-                  <td className="text-[#64748B]">{t(`settings.action${entry.action === 'CREATE' ? 'Create' : entry.action === 'UPDATE' ? 'Update' : 'UpdateStatus'}`, { defaultValue: entry.action })}</td>
-                  <td className="text-[#64748B]">{t(`settings.entity${entry.entityType}`, { defaultValue: entry.entityType })}</td>
-                  <td className="text-[#94A3B8] text-sm">{formatDateTime(entry.createdAt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {data.meta.totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-4">
-              <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1.5 rounded-md border border-[#E2E8F0] text-sm disabled:opacity-40">{t('common.previous')}</button>
-              <span className="text-sm text-[#102F63] font-medium">{page} / {data.meta.totalPages}</span>
-              <button onClick={() => setPage((p) => Math.min(data.meta.totalPages, p + 1))} disabled={page === data.meta.totalPages} className="px-3 py-1.5 rounded-md border border-[#E2E8F0] text-sm disabled:opacity-40">{t('common.next')}</button>
-            </div>
-          )}
-        </>
-      )}
     </div>
   );
 }
@@ -623,3 +556,4 @@ function SystemOverviewGrid() {
     </div>
   );
 }
+

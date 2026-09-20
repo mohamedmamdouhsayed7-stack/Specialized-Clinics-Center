@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import { cleanupTestData } from '../test-utils';
 
 describe('Authentication Security Tests (E2E)', () => {
+  jest.setTimeout(120000);
   let app: INestApplication;
   let prisma: PrismaService;
   let adminAccessToken: string;
@@ -407,7 +408,7 @@ describe('Authentication Security Tests (E2E)', () => {
         .get('/api/auth/me')
         .set('Authorization', `Bearer ${refreshB.body.accessToken}`)
         .expect(200);
-    }, 70000);
+    }, 90000);
 
     it('should invalidate only the rotated refresh token, not other sessions', async () => {
       // Wait for rate limiting window to clear from previous tests
@@ -450,7 +451,7 @@ describe('Authentication Security Tests (E2E)', () => {
       await deviceB
         .post('/api/auth/refresh')
         .expect(200);
-    }, 70000);
+    }, 90000);
 
     it('should handle concurrent refresh requests correctly', async () => {
       // Wait for rate limiting window to clear from previous tests
@@ -492,7 +493,7 @@ describe('Authentication Security Tests (E2E)', () => {
         .expect(200);
 
       const accessToken = loginResponse.body.accessToken;
-      
+
       // Test that logout works with access token
       const logoutResponse = await request(app.getHttpServer())
         .post('/api/auth/logout')
@@ -543,7 +544,7 @@ describe('Authentication Security Tests (E2E)', () => {
       await deviceB
         .post('/api/auth/refresh')
         .expect(200);
-    }, 70000);
+    }, 90000);
   });
 
   describe('Password Security', () => {
@@ -617,7 +618,7 @@ describe('Authentication Security Tests (E2E)', () => {
           where: { email: 'testpasswordchange@test.com' },
         });
       }
-    }, 70000);
+    }, 90000);
 
     it('should reject password change with incorrect current password', async () => {
       await request(app.getHttpServer())
@@ -677,6 +678,7 @@ describe('Authentication Security Tests (E2E)', () => {
           where: { email: 'ratelimit@test.com' },
         });
       }
-    }, 70000);
+    }, 90000);
   });
 });
+

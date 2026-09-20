@@ -1,3 +1,4 @@
+
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
 import { parseApiError } from './api-error';
@@ -68,7 +69,6 @@ export interface CreateInvoiceDto {
     chargeValue: number;
     description?: string;
   }[];
-  paymentMethod: 'KNET' | 'LINK' | 'OTHER';
 }
 
 export interface AddChargeDto {
@@ -182,11 +182,18 @@ class InvoicesService {
     return response.json();
   }
 
-  async updateInvoiceStatus(id: string, status: 'DRAFT' | 'ISSUED' | 'VOID', paymentMethod?: 'KNET' | 'LINK' | 'OTHER'): Promise<Invoice> {
+  async updateInvoiceStatus(
+    id: string,
+    status: 'DRAFT' | 'ISSUED' | 'VOID',
+    paymentMethod?: 'KNET' | 'LINK' | 'OTHER',
+  ): Promise<Invoice> {
     const response = await fetch(`${apiBaseUrl}/invoices/${id}/status`, {
       method: 'PATCH',
       headers: this.getAuthHeaders(),
-      body: JSON.stringify({ status, ...(paymentMethod && { paymentMethod }) }),
+      body: JSON.stringify({
+        status,
+        ...(paymentMethod && { paymentMethod }),
+      }),
     });
 
     if (!response.ok) {

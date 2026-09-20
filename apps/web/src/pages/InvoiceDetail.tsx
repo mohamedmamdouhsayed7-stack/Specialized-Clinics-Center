@@ -992,23 +992,6 @@ export default function InvoiceDetail() {
                       <button
                         type="button"
                         role="menuitem"
-                        onClick={() => {
-                          setShareMenuOpen(false);
-                          shareInvoicePdfOnWhatsApp();
-                        }}
-                        disabled={shareActionPending}
-                        className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50 text-[#128C7E]"
-                      >
-                        <FileText size={16} />
-
-                        <span className="flex-1">
-                          {t('invoices.sendInvoicePdf')}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        role="menuitem"
                         onClick={shareViaSms}
                         disabled={shareActionPending}
                         className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start font-medium transition hover:bg-[#F6F8FC] focus:bg-[#F6F8FC] focus:outline-none disabled:cursor-wait disabled:opacity-50 text-[#4B5694]"
@@ -1610,8 +1593,8 @@ export default function InvoiceDetail() {
 
               <span
                 className={`font-bold ${remainingIsPaid
-                    ? 'text-[var(--success)]'
-                    : 'text-[#C4362B]'
+                  ? 'text-[var(--success)]'
+                  : 'text-[#C4362B]'
                   }`}
               >
                 {formatMoney(
@@ -2279,9 +2262,6 @@ export default function InvoiceDetail() {
                     <div className="font-medium text-gray-900">
                       {t('invoices.sendViaWhatsApp')}
                     </div>
-                    <div className="text-sm text-gray-500">
-                      {t('invoices.whatsappLimitation')}
-                    </div>
                   </div>
                 </button>
 
@@ -2300,9 +2280,6 @@ export default function InvoiceDetail() {
                   <div className="flex-1 text-left">
                     <div className="font-medium text-gray-900">
                       {t('invoices.sendInvoicePdf')}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {t('invoices.whatsappLimitation')}
                     </div>
                   </div>
                 </button>
@@ -2325,3 +2302,4 @@ export default function InvoiceDetail() {
     </div>
   );
 }
+
