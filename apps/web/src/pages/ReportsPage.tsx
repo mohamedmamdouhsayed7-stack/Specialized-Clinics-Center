@@ -46,17 +46,6 @@ function todayMinus(days: number): string {
   return `${year}-${month}-${day}`;
 }
 
-function formatAppointmentTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Kuwait',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  });
-  return formatter.format(d);
-}
-
 function KpiCard({ icon: Icon, label, value, suffix }: { icon: typeof TrendingUp; label: string; value: string | number; suffix?: string }) {
   return (
     <div className="ui-card p-3">
@@ -106,7 +95,6 @@ export default function ReportsPage() {
   const serviceUsage = useQuery({ queryKey: ['reports-service-usage', from, to], queryFn: () => reportsService.getServiceUsage(from, to) });
   const visitTypes = useQuery({ queryKey: ['reports-visit-types', from, to], queryFn: () => reportsService.getVisitTypes(from, to) });
   const newPatientsTimeseries = useQuery({ queryKey: ['reports-new-patients-ts', from, to], queryFn: () => reportsService.getNewPatientsTimeseries(from, to) });
-  const todayAppointmentExceptions = useQuery({ queryKey: ['today-appt-exceptions'], queryFn: () => reportsService.getTodayAppointmentExceptions() });
 
   const handleExportPdf = async () => {
     setExportingPdf(true);
@@ -236,33 +224,23 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* Requires Attention - only shows when there are actionable items */}
-      {todayAppointmentExceptions.data && todayAppointmentExceptions.data.length > 0 && (
-        <div className="ui-card p-4 mb-4">
-          <h2 className="text-[14px] font-bold text-[#C4362B] mb-3">{t('reports.requiresAttention')}</h2>
-          <div className="space-y-2 max-h-48 overflow-y-auto">
-            {todayAppointmentExceptions.data.map((apt) => (
-              <div key={apt.id} className="flex items-center justify-between text-xs border-b border-[#E2E8F0] last:border-0 pb-2 last:pb-0">
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-[#1F2430] truncate">
-                    {i18n.language === 'ar' ? apt.patientNameAr : apt.patientNameEn || apt.patientNameAr}
-                  </div>
-                  <div className="text-[#64748B]">{formatAppointmentTime(apt.scheduledAt)}</div>
-                </div>
-                <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-medium ${
-                  apt.status === 'CANCELLED' ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#FEE2E2] text-[#991B1B]'
-                }`}>
-                  {apt.status === 'CANCELLED' ? t('appointments.statusCancelled') : t('appointments.statusNoShow')}
-                </span>
-              </div>
-            ))}
+      {/* Requires Attention - only shows when there are outstanding invoices */}
+      {summary.data && summary.data.outstandingAmount > 0 && (
+        <div className="ui-card p-3 mb-4 border-l-4 border-l-[#C4362B]">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-[13px] font-bold text-[#C4362B]">{t('reports.requiresAttention')}</h3>
+              <p className="text-[11px] text-[#64748B] mt-0.5">
+                {t('reports.outstandingInvoicesCount', { amount: formatMoney(summary.data.outstandingAmount) })}
+              </p>
+            </div>
+            <button
+              onClick={() => navigate('/invoices')}
+              className="text-[11px] text-[#102F63] hover:text-[#173B78] font-medium"
+            >
+              {t('reports.viewInvoices')} →
+            </button>
           </div>
-          <button
-            onClick={() => navigate('/appointments')}
-            className="mt-3 text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
-          >
-            {t('reports.viewAllAppointments')} →
-          </button>
         </div>
       )}
 
