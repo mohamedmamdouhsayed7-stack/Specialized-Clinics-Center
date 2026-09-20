@@ -18,6 +18,12 @@ export interface CreateUserDto {
   role: AppUserRole;
 }
 
+export interface UpdateUserDto {
+  name: string;
+  email: string;
+  role: AppUserRole;
+}
+
 class UsersService {
   private getAuthHeaders() {
     const token = getAccessToken();
@@ -57,6 +63,19 @@ class UsersService {
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Failed to update user status');
+    }
+    return response.json();
+  }
+
+  async updateUser(id: string, data: UpdateUserDto): Promise<AppUser> {
+    const response = await fetch(`${apiBaseUrl}/users/${id}`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to update user');
     }
     return response.json();
   }

@@ -282,6 +282,7 @@ function RolesSection({ currentUserId }: { currentUserId?: string }) {
 
 function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const { t } = useTranslation();
   const { showToast } = useToast();
 
@@ -312,10 +313,16 @@ function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; 
         </span>
       </td>
       <td>
-        <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
-          {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowEdit(true)} className="text-sm text-[#173B78] hover:underline">
+            {t('common.edit')}
+          </button>
+          <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
+            {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
+          </button>
+        </div>
       </td>
+      {showEdit && <EditUserModal user={user} isSelf={isSelf} onClose={() => setShowEdit(false)} onUpdated={onChanged} />}
     </tr>
   );
 }
@@ -357,6 +364,48 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </select>
         <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
           {submitting ? t('settings.creatingUser') : t('settings.createUser')}
+        </button>
+      </form>
+    </ModalDialog>
+  );
+}
+
+function EditUserModal({ user, isSelf, onClose, onUpdated }: { user: AppUser; isSelf: boolean; onClose: () => void; onUpdated: () => void }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [role, setRole] = useState<'ADMIN' | 'RECEPTIONIST'>(user.role as 'ADMIN' | 'RECEPTIONIST');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      await usersService.updateUser(user.id, { name, email, role });
+      onUpdated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.updateUserError'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalDialog open title={t('settings.editUser')} labelledBy="edit-user-title" onClose={onClose}>
+      {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-100 text-[#C4362B] rounded-lg text-sm">{error}</div>}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('settings.userName')} required className="ui-input" />
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('settings.email')} required className="ui-input" />
+        <select value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'RECEPTIONIST')} disabled={isSelf} className="ui-input">
+          <option value="RECEPTIONIST">{t('roles.receptionist')}</option>
+          <option value="ADMIN">{t('roles.admin')}</option>
+        </select>
+        {isSelf && <p className="text-xs text-[#94A3B8]">{t('settings.cannotEditOwnRole')}</p>}
+        <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
+          {submitting ? t('settings.updatingUser') : t('settings.updateUser')}
         </button>
       </form>
     </ModalDialog>
