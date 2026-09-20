@@ -493,8 +493,9 @@ export default function InvoiceDetail() {
 
     const rawPhone = invoice.patient.phone || '';
 
+    // Default to Kuwait country code since patients don't have a stored country code
     const normalizedPhone = rawPhone
-      ? normalizeWhatsAppPhone(rawPhone)
+      ? normalizeWhatsAppPhone(rawPhone, '965')
       : '';
 
     const hasValidPhone =

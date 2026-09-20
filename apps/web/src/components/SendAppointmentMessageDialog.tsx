@@ -131,7 +131,10 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
     };
 
     const rawPhone = selectedAppointment?.patient.phone || '';
-    const normalizedPhone = rawPhone ? normalizeWhatsAppPhone(rawPhone) : '';
+    // For appointment reminders, we need a country code. Since patients don't have
+    // a stored country code, we default to Kuwait's country code (+965) for now.
+    // This should be improved by adding a country code field to the Patient model.
+    const normalizedPhone = rawPhone ? normalizeWhatsAppPhone(rawPhone, '965') : '';
     const hasValidPhone = !!rawPhone && isValidWhatsAppPhone(normalizedPhone);
 
     const handleSend = () => {
