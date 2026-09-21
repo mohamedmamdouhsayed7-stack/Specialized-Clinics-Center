@@ -69,6 +69,7 @@ export interface CreateInvoiceDto {
     chargeValue: number;
     description?: string;
   }[];
+  paymentMethod: 'KNET' | 'LINK' | 'OTHER';
 }
 
 export interface AddChargeDto {

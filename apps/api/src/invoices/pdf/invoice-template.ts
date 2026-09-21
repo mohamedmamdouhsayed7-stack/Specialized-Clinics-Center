@@ -399,9 +399,34 @@ export function renderInvoiceHtml(
   .sheet {
     width: 210mm;
     height: 297mm;
-    padding: 10mm 12mm;
+    margin: 0 auto;
+    background: #FFFFFF;
     display: flex;
     flex-direction: column;
+  }
+
+  .invoice-copy {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10mm 12mm;
+  }
+
+  .cut-line {
+    border-top: 1px dashed #CCCCCC;
+    margin: 2px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 8px;
+  }
+
+  .cut-line::after {
+    content: '${isArabic ? '✂' : '✂'}';
+    font-size: 8px;
+    color: #999999;
+    background: #FFFFFF;
+    padding: 0 4px;
   }
 
   .copy {
@@ -754,7 +779,13 @@ export function renderInvoiceHtml(
 
 <body>
   <div class="sheet">
-    ${copyHtml}
+    <div class="invoice-copy">
+      ${copyHtml}
+    </div>
+    <div class="cut-line"></div>
+    <div class="invoice-copy">
+      ${copyHtml}
+    </div>
   </div>
 </body>
 </html>`;

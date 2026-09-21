@@ -7,9 +7,14 @@ import { AppointmentStatus, VisitStatus } from '@prisma/client';
 function transactionClient() {
   const client = {
     patient: { findUnique: jest.fn(), delete: jest.fn() },
-    appointment: { findUnique: jest.fn(), delete: jest.fn() },
-    visit: { findUnique: jest.fn(), delete: jest.fn() },
+    appointment: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
+    visit: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
     service: { findUnique: jest.fn(), delete: jest.fn() },
+    invoice: { findUnique: jest.fn(), deleteMany: jest.fn() },
+    invoiceItem: { findUnique: jest.fn(), deleteMany: jest.fn(), updateMany: jest.fn() },
+    invoiceAdditionalCharge: { findUnique: jest.fn(), deleteMany: jest.fn() },
+    payment: { findUnique: jest.fn(), deleteMany: jest.fn() },
+    paymentAllocation: { findUnique: jest.fn(), deleteMany: jest.fn() },
     auditLog: { create: jest.fn() },
   };
   return {
@@ -31,7 +36,6 @@ describe('focused permanent-delete safety', () => {
       fullNameAr: 'Test Patient',
       fullNameEn: null,
       isArchived: true,
-      _count: { appointments: 0, visits: 0, invoices: 0 },
     });
     const result = await new PatientsService(prisma as never, auditService as never).hardDelete(
       'patient-id',
@@ -46,16 +50,31 @@ describe('focused permanent-delete safety', () => {
     }));
   });
 
-  it('blocks patients with protected history before deleting', async () => {
+  it('deletes a patient with appointments, visits, and invoices', async () => {
     const { prisma, client } = transactionClient();
     client.patient.findUnique.mockResolvedValue({
       id: 'patient-id',
-      _count: { appointments: 1, visits: 2, invoices: 1 },
+      civilId: '123',
+      fullNameAr: 'Test Patient',
+      fullNameEn: null,
     });
-    await expect(new PatientsService(prisma as never, auditService as never).hardDelete('patient-id', 'user-id'))
-      .rejects.toThrow('protected history');
-    expect(client.patient.delete).not.toHaveBeenCalled();
-    expect(client.auditLog.create).not.toHaveBeenCalled();
+    const result = await new PatientsService(prisma as never, auditService as never).hardDelete(
+      'patient-id',
+      'user-id',
+      '127.0.0.1',
+      'focused-test',
+    );
+    expect(result).toEqual({ id: 'patient-id', deleted: true });
+    // Verify deletion order: payment allocations, payments, invoice items, additional charges, invoices, visits, appointments, patient
+    expect(client.paymentAllocation.deleteMany).toHaveBeenCalled();
+    expect(client.payment.deleteMany).toHaveBeenCalled();
+    expect(client.invoiceItem.deleteMany).toHaveBeenCalled();
+    expect(client.invoiceAdditionalCharge.deleteMany).toHaveBeenCalled();
+    expect(client.invoice.deleteMany).toHaveBeenCalled();
+    expect(client.visit.deleteMany).toHaveBeenCalled();
+    expect(client.appointment.deleteMany).toHaveBeenCalled();
+    expect(client.patient.delete).toHaveBeenCalledWith({ where: { id: 'patient-id' } });
+    expect(client.auditLog.create).toHaveBeenCalled();
   });
 
   it('blocks appointments linked to visits and deletes unlinked appointments', async () => {
@@ -107,24 +126,23 @@ describe('focused permanent-delete safety', () => {
     expect(completed.client.visit.delete).not.toHaveBeenCalled();
   });
 
-  it('blocks referenced services and deletes unreferenced services', async () => {
-    const referenced = transactionClient();
-    referenced.client.service.findUnique.mockResolvedValue({ id: 'service-id', _count: { invoiceItems: 1 } });
-    await expect(new ServicesService(referenced.prisma as never, auditService as never).hardDelete('service-id', 'user-id'))
-      .rejects.toThrow('referenced by');
-    expect(referenced.client.service.delete).not.toHaveBeenCalled();
-
-    const eligible = transactionClient();
-    eligible.client.service.findUnique.mockResolvedValue({
+  it('deletes a service referenced by invoice items (sets serviceId to NULL)', async () => {
+    const { prisma, client } = transactionClient();
+    client.service.findUnique.mockResolvedValue({
       id: 'service-id',
       name: 'Test service',
       code: 'TEST',
       currentPrice: '10.00',
       isActive: true,
-      _count: { invoiceItems: 0 },
     });
-    await expect(new ServicesService(eligible.prisma as never, auditService as never).hardDelete('service-id', 'user-id'))
-      .resolves.toEqual({ id: 'service-id', deleted: true });
-    expect(eligible.client.auditLog.create).toHaveBeenCalled();
+    const result = await new ServicesService(prisma as never, auditService as never).hardDelete('service-id', 'user-id');
+    expect(result).toEqual({ id: 'service-id', deleted: true });
+    // Verify that invoiceItem.serviceId is set to NULL before deletion
+    expect(client.invoiceItem.updateMany).toHaveBeenCalledWith({
+      where: { serviceId: 'service-id' },
+      data: { serviceId: null },
+    });
+    expect(client.service.delete).toHaveBeenCalledWith({ where: { id: 'service-id' } });
+    expect(client.auditLog.create).toHaveBeenCalled();
   });
 });

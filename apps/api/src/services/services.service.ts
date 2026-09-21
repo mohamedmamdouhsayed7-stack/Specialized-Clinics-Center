@@ -196,14 +196,14 @@ export class ServicesService {
     return this.prisma.$transaction(async (tx) => {
       const service = await tx.service.findUnique({
         where: { id },
-        include: { _count: { select: { invoiceItems: true } } },
       });
       if (!service) throw new NotFoundException('Service not found');
-      if (service._count.invoiceItems) {
-        throw new ConflictException(
-          `Service cannot be permanently deleted because it is referenced by ${service._count.invoiceItems} invoice item(s). Deactivate it instead to preserve invoice history.`,
-        );
-      }
+
+      // Update InvoiceItem.serviceId to NULL to preserve invoice history
+      await tx.invoiceItem.updateMany({
+        where: { serviceId: id },
+        data: { serviceId: null },
+      });
 
       await tx.service.delete({ where: { id } });
       await tx.auditLog.create({

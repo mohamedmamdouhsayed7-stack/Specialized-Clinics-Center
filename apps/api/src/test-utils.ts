@@ -118,7 +118,7 @@ export async function cleanupTestData(prisma: PrismaService, emailPattern?: stri
     });
   }
 
-  // Invoice depends on Visit and Patient
+  // Invoice depends on Visit and Patient (both have RESTRICT FK)
   if (testInvoiceIds.length > 0) {
     await prisma.invoice.deleteMany({
       where: { id: { in: testInvoiceIds } },
@@ -287,7 +287,7 @@ export async function cleanupReportsTestData(prisma: PrismaService, emailPattern
     });
   }
 
-  // Invoice depends on Visit and Patient
+  // Invoice depends on Visit and Patient (both have RESTRICT FK)
   if (testInvoiceIds.length > 0) {
     await prisma.invoice.deleteMany({
       where: { id: { in: testInvoiceIds } },
