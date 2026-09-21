@@ -12,6 +12,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { AuditService } from '../audit/audit.service';
 import { MaintenanceService } from '../common/maintenance/maintenance.service';
+import { PrismaService } from '../database/prisma.service';
+import * as ExcelJS from 'exceljs';
 
 export interface BackupManifestEntry {
   filename: string;
@@ -50,6 +52,7 @@ export class BackupService implements OnModuleInit {
 
   constructor(
     private auditService: AuditService,
+    private prisma: PrismaService,
     @Optional() private maintenanceService: MaintenanceService = new MaintenanceService(),
   ) {}
 
@@ -71,7 +74,7 @@ export class BackupService implements OnModuleInit {
     // Validate backup directory
     const backupDir = process.env.BACKUP_DIR || '/app/backups';
     if (!path.isAbsolute(backupDir)) {
-      throw new Error('BACKUP_DIR must be an absolute path for security');
+      this.logger.error('BACKUP_DIR must be an absolute path for security');
     }
 
     // Verify pg_dump and psql are available in PATH
@@ -84,10 +87,10 @@ export class BackupService implements OnModuleInit {
         pgDumpAvailable = true;
         this.logger.log('pg_dump is available in PATH');
       } else {
-        this.logger.error('pg_dump not found in PATH. PostgreSQL client tools must be installed for backup operations.');
+        this.logger.warn('pg_dump not found in PATH. PostgreSQL client tools must be installed for backup operations.');
       }
     } catch (err) {
-      this.logger.error(`Failed to check pg_dump availability: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(`Failed to check pg_dump availability: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     try {
@@ -96,14 +99,14 @@ export class BackupService implements OnModuleInit {
         psqlAvailable = true;
         this.logger.log('psql is available in PATH');
       } else {
-        this.logger.error('psql not found in PATH. PostgreSQL client tools must be installed for backup operations.');
+        this.logger.warn('psql not found in PATH. PostgreSQL client tools must be installed for backup operations.');
       }
     } catch (err) {
-      this.logger.error(`Failed to check psql availability: ${err instanceof Error ? err.message : String(err)}`);
+      this.logger.warn(`Failed to check psql availability: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     if (!pgDumpAvailable || !psqlAvailable) {
-      this.logger.error('CRITICAL: Backup service cannot function without pg_dump and psql. PostgreSQL client tools must be installed in the runtime environment.');
+      this.logger.warn('WARNING: Backup service cannot create PostgreSQL backups without pg_dump and psql. PostgreSQL client tools must be installed in the runtime environment.');
     }
 
     this.logger.log(`Backup service initialized with directory: ${backupDir}`);
@@ -221,7 +224,12 @@ export class BackupService implements OnModuleInit {
   }
 
   private async ensureBackupDir() {
-    await fs.mkdir(this.backupDir, { recursive: true });
+    try {
+      await fs.mkdir(this.backupDir, { recursive: true });
+    } catch (err) {
+      this.logger.error(`Failed to create backup directory ${this.backupDir}: ${err instanceof Error ? err.message : String(err)}`);
+      throw new InternalServerErrorException(`Failed to create backup directory: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private async readManifest(): Promise<BackupManifest> {
@@ -569,31 +577,41 @@ export class BackupService implements OnModuleInit {
   }
 
   async listBackups() {
-    await this.ensureBackupDir();
-    const manifest = await this.readManifest();
-    const existing: BackupManifestEntry[] = [];
-    for (const entry of manifest.entries) {
-      try {
-        await this.validateRecoveryPoint(entry.filename, manifest);
-        existing.push(entry);
-      } catch {
-        this.logger.warn(`Skipping invalid backup recovery point: ${entry.filename}`);
+    try {
+      await this.ensureBackupDir();
+      const manifest = await this.readManifest();
+      const existing: BackupManifestEntry[] = [];
+      for (const entry of manifest.entries) {
+        try {
+          await this.validateRecoveryPoint(entry.filename, manifest);
+          existing.push(entry);
+        } catch {
+          this.logger.warn(`Skipping invalid backup recovery point: ${entry.filename}`);
+        }
       }
+      return existing.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    } catch (err) {
+      this.logger.error(`Failed to list backups: ${err instanceof Error ? err.message : String(err)}`);
+      throw new InternalServerErrorException(`Failed to list backups: ${err instanceof Error ? err.message : String(err)}`);
     }
-    return existing.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   async getStatus() {
-    const backups = await this.listBackups();
-    const last = backups[0] || null;
-    const totalSizeBytes = backups.reduce((sum, b) => sum + b.sizeBytes, 0);
-    return {
-      lastBackup: last,
-      totalBackups: backups.length,
-      totalSizeBytes,
-      retentionDays: this.retentionDays,
-      remoteStorageConfigured: this.isRemoteStorageConfigured(),
-    };
+    try {
+      const backups = await this.listBackups();
+      const last = backups[0] || null;
+      const totalSizeBytes = backups.reduce((sum, b) => sum + b.sizeBytes, 0);
+      return {
+        lastBackup: last,
+        totalBackups: backups.length,
+        totalSizeBytes,
+        retentionDays: this.retentionDays,
+        remoteStorageConfigured: this.isRemoteStorageConfigured(),
+      };
+    } catch (err) {
+      this.logger.error(`Failed to get backup status: ${err instanceof Error ? err.message : String(err)}`);
+      throw new InternalServerErrorException(`Failed to get backup status: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private sanitizeFilename(filename: string): string {
@@ -727,5 +745,252 @@ export class BackupService implements OnModuleInit {
         Body: createReadStream(filepath),
       }),
     );
+  }
+
+  async downloadBackup(filename: string, userId: string, ipAddress?: string, userAgent?: string): Promise<string> {
+    this.logger.log(`Downloading backup: ${filename}`);
+    const manifest = await this.readManifest();
+    const entry = await this.validateRecoveryPoint(filename, manifest);
+    const filepath = this.resolveSafePath(entry.filename);
+
+    await this.auditService.logUserAction(userId, 'BACKUP_DOWNLOADED', 'System', filename, ipAddress, userAgent);
+
+    this.logger.log(`Backup download completed: ${filename}`);
+    return filepath;
+  }
+
+  async exportToExcel(userId: string, ipAddress?: string, userAgent?: string): Promise<Buffer> {
+    this.logger.log('Starting Excel data export');
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Clinic Management System';
+    workbook.created = new Date();
+
+    // Export patients
+    const patientsSheet = workbook.addWorksheet('Patients');
+    const patients = await this.prisma.patient.findMany({
+      select: {
+        id: true,
+        civilId: true,
+        fullNameAr: true,
+        fullNameEn: true,
+        phone: true,
+        dateOfBirth: true,
+        address: true,
+        isArchived: true,
+        createdAt: true,
+        updatedAt: true,
+        createdById: true,
+      },
+    });
+    patientsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Civil ID', key: 'civilId' },
+      { header: 'Full Name (Arabic)', key: 'fullNameAr' },
+      { header: 'Full Name (English)', key: 'fullNameEn' },
+      { header: 'Phone', key: 'phone' },
+      { header: 'Date of Birth', key: 'dateOfBirth' },
+      { header: 'Address', key: 'address' },
+      { header: 'Archived', key: 'isArchived' },
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Updated At', key: 'updatedAt' },
+      { header: 'Created By', key: 'createdById' },
+    ];
+    patientsSheet.addRows(patients);
+
+    // Export appointments
+    const appointmentsSheet = workbook.addWorksheet('Appointments');
+    const appointments = await this.prisma.appointment.findMany({
+      select: {
+        id: true,
+        patientId: true,
+        scheduledAt: true,
+        status: true,
+        notes: true,
+        createdAt: true,
+        updatedAt: true,
+        createdById: true,
+      },
+    });
+    appointmentsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Patient ID', key: 'patientId' },
+      { header: 'Scheduled At', key: 'scheduledAt' },
+      { header: 'Status', key: 'status' },
+      { header: 'Notes', key: 'notes' },
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Updated At', key: 'updatedAt' },
+      { header: 'Created By', key: 'createdById' },
+    ];
+    appointmentsSheet.addRows(appointments);
+
+    // Export visits
+    const visitsSheet = workbook.addWorksheet('Visits');
+    const visits = await this.prisma.visit.findMany({
+      select: {
+        id: true,
+        patientId: true,
+        appointmentId: true,
+        type: true,
+        diagnosis: true,
+        status: true,
+        visitDate: true,
+        createdAt: true,
+        updatedAt: true,
+        createdById: true,
+      },
+    });
+    visitsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Patient ID', key: 'patientId' },
+      { header: 'Appointment ID', key: 'appointmentId' },
+      { header: 'Type', key: 'type' },
+      { header: 'Diagnosis', key: 'diagnosis' },
+      { header: 'Status', key: 'status' },
+      { header: 'Visit Date', key: 'visitDate' },
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Updated At', key: 'updatedAt' },
+      { header: 'Created By', key: 'createdById' },
+    ];
+    visitsSheet.addRows(visits);
+
+    // Export services
+    const servicesSheet = workbook.addWorksheet('Services');
+    const services = await this.prisma.service.findMany({
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        currentPrice: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        createdById: true,
+      },
+    });
+    servicesSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Name', key: 'name' },
+      { header: 'Code', key: 'code' },
+      { header: 'Current Price', key: 'currentPrice' },
+      { header: 'Active', key: 'isActive' },
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Updated At', key: 'updatedAt' },
+      { header: 'Created By', key: 'createdById' },
+    ];
+    servicesSheet.addRows(services);
+
+    // Export invoices
+    const invoicesSheet = workbook.addWorksheet('Invoices');
+    const invoices = await this.prisma.invoice.findMany({
+      select: {
+        id: true,
+        invoiceNumber: true,
+        patientId: true,
+        visitId: true,
+        status: true,
+        subtotal: true,
+        total: true,
+        paid: true,
+        remaining: true,
+        paymentStatus: true,
+        issuedAt: true,
+        createdAt: true,
+        updatedAt: true,
+        createdById: true,
+        issuedById: true,
+      },
+    });
+    invoicesSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Invoice Number', key: 'invoiceNumber' },
+      { header: 'Patient ID', key: 'patientId' },
+      { header: 'Visit ID', key: 'visitId' },
+      { header: 'Status', key: 'status' },
+      { header: 'Subtotal', key: 'subtotal' },
+      { header: 'Total', key: 'total' },
+      { header: 'Paid', key: 'paid' },
+      { header: 'Remaining', key: 'remaining' },
+      { header: 'Payment Status', key: 'paymentStatus' },
+      { header: 'Issued At', key: 'issuedAt' },
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Updated At', key: 'updatedAt' },
+      { header: 'Created By', key: 'createdById' },
+      { header: 'Issued By', key: 'issuedById' },
+    ];
+    invoicesSheet.addRows(invoices);
+
+    // Export invoice items
+    const invoiceItemsSheet = workbook.addWorksheet('Invoice Items');
+    const invoiceItems = await this.prisma.invoiceItem.findMany({
+      select: {
+        id: true,
+        invoiceId: true,
+        serviceId: true,
+        serviceNameSnapshot: true,
+        unitPriceSnapshot: true,
+        quantity: true,
+        lineTotal: true,
+      },
+    });
+    invoiceItemsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Invoice ID', key: 'invoiceId' },
+      { header: 'Service ID', key: 'serviceId' },
+      { header: 'Service Name', key: 'serviceNameSnapshot' },
+      { header: 'Unit Price', key: 'unitPriceSnapshot' },
+      { header: 'Quantity', key: 'quantity' },
+      { header: 'Line Total', key: 'lineTotal' },
+    ];
+    invoiceItemsSheet.addRows(invoiceItems);
+
+    // Export payments
+    const paymentsSheet = workbook.addWorksheet('Payments');
+    const payments = await this.prisma.payment.findMany({
+      select: {
+        id: true,
+        invoiceId: true,
+        amount: true,
+        method: true,
+        paymentDate: true,
+        status: true,
+        notes: true,
+        reversedAt: true,
+        reversedBy: true,
+        reversalNotes: true,
+        createdAt: true,
+        recordedById: true,
+      },
+    });
+    paymentsSheet.columns = [
+      { header: 'ID', key: 'id' },
+      { header: 'Invoice ID', key: 'invoiceId' },
+      { header: 'Amount', key: 'amount' },
+      { header: 'Method', key: 'method' },
+      { header: 'Payment Date', key: 'paymentDate' },
+      { header: 'Status', key: 'status' },
+      { header: 'Notes', key: 'notes' },
+      { header: 'Reversed At', key: 'reversedAt' },
+      { header: 'Reversed By', key: 'reversedBy' },
+      { header: 'Reversal Notes', key: 'reversalNotes' },
+      { header: 'Created At', key: 'createdAt' },
+      { header: 'Recorded By', key: 'recordedById' },
+    ];
+    paymentsSheet.addRows(payments);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+
+    // Audit log
+    await this.auditService.logUserAction(
+      userId,
+      'DATA_EXPORT',
+      'Backup',
+      'excel-export',
+      ipAddress,
+      userAgent,
+    );
+
+    this.logger.log('Excel data export completed');
+    return buffer as unknown as Buffer;
   }
 }
