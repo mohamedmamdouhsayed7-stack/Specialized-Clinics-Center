@@ -33,7 +33,14 @@ export class PdfBrowserService implements OnModuleDestroy {
     const page = await browser.newPage();
 
     try {
+      // Allow loading external fonts from Google Fonts
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
+      });
+
       await page.setContent(html, { waitUntil: 'load' });
+      // Add a small delay to allow fonts to load
+      await new Promise(resolve => setTimeout(resolve, 1000));
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
