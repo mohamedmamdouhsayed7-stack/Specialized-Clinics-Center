@@ -74,7 +74,7 @@ export class BackupService implements OnModuleInit {
     // Validate backup directory
     const backupDir = process.env.BACKUP_DIR || '/app/backups';
     if (!path.isAbsolute(backupDir)) {
-      this.logger.error('BACKUP_DIR must be an absolute path for security');
+      throw new Error('BACKUP_DIR must be an absolute path for security');
     }
 
     // Verify pg_dump and psql are available in PATH
