@@ -241,7 +241,7 @@ model InvoiceItem {
 
   // Relations
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  service Service? @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
 }

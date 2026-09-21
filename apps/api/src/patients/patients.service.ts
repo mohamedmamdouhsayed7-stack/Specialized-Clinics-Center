@@ -250,24 +250,68 @@ export class PatientsService {
     return this.prisma.$transaction(async (tx) => {
       const patient = await tx.patient.findUnique({
         where: { id },
-        include: {
-          _count: { select: { appointments: true, visits: true, invoices: true } },
-        },
       });
       if (!patient) throw new NotFoundException('Patient not found');
 
-      const dependencies = [
-        patient._count.appointments ? `${patient._count.appointments} appointment(s)` : '',
-        patient._count.visits ? `${patient._count.visits} visit(s)` : '',
-        patient._count.invoices ? `${patient._count.invoices} invoice(s)` : '',
-      ].filter(Boolean);
-      if (dependencies.length) {
-        throw new ConflictException(
-          `Patient cannot be permanently deleted because it has protected history: ${dependencies.join(', ')}. Archive the patient instead.`,
-        );
-      }
+      // Delete all dependent records in the correct order to respect foreign key constraints
+      // 1. Delete payment allocations (links payments to invoices)
+      await tx.paymentAllocation.deleteMany({
+        where: {
+          payment: {
+            invoice: {
+              visit: { patientId: id },
+            },
+          },
+        },
+      });
 
+      // 2. Delete payments
+      await tx.payment.deleteMany({
+        where: {
+          invoice: {
+            visit: { patientId: id },
+          },
+        },
+      });
+
+      // 3. Delete invoice items
+      await tx.invoiceItem.deleteMany({
+        where: {
+          invoice: {
+            visit: { patientId: id },
+          },
+        },
+      });
+
+      // 4. Delete additional charges
+      await tx.invoiceAdditionalCharge.deleteMany({
+        where: {
+          invoice: {
+            visit: { patientId: id },
+          },
+        },
+      });
+
+      // 5. Delete invoices
+      await tx.invoice.deleteMany({
+        where: {
+          visit: { patientId: id },
+        },
+      });
+
+      // 6. Delete visits
+      await tx.visit.deleteMany({
+        where: { patientId: id },
+      });
+
+      // 7. Delete appointments
+      await tx.appointment.deleteMany({
+        where: { patientId: id },
+      });
+
+      // 8. Finally delete the patient
       await tx.patient.delete({ where: { id } });
+
       await tx.auditLog.create({
         data: {
           userId,

@@ -154,26 +154,50 @@ export class BackupService implements OnModuleInit {
   }
 
   private getDbConnectionParams() {
-    // Extract database name from DATABASE_URL if POSTGRES_DB not explicitly set
+    // Extract connection parameters from DATABASE_URL if explicit DB_* vars not set
     // DATABASE_URL format: postgresql://user:password@host:port/database
+    let host = process.env.DB_HOST;
+    let port = process.env.DB_PORT;
+    let user = process.env.POSTGRES_USER;
+    let password = process.env.POSTGRES_PASSWORD;
     let database = process.env.POSTGRES_DB;
-    if (!database && process.env.DATABASE_URL) {
-      try {
-        // Parse DATABASE_URL manually to extract database name
-        // Format: postgresql://user:password@host:port/database
-        const urlParts = process.env.DATABASE_URL.split('/');
-        if (urlParts.length >= 4) {
-          database = urlParts[3].split('?')[0]; // Get database name, remove query params
-        } else {
-          throw new Error('DATABASE_URL format is invalid');
+
+    // If any explicit var is missing, try to parse from DATABASE_URL
+    if (!host || !port || !user || !password || !database) {
+      if (process.env.DATABASE_URL) {
+        try {
+          const url = process.env.DATABASE_URL;
+          // Format: postgresql://user:password@host:port/database
+          const match = url.match(/^postgresql:\/\/([^:]+):([^@]+)@([^:]+):(\d+)\/([^?]+)/);
+          if (match) {
+            host = host || match[3];
+            port = port || match[4];
+            user = user || match[1];
+            password = password || match[2];
+            database = database || match[5];
+          } else {
+            throw new Error('DATABASE_URL format is invalid');
+          }
+        } catch {
+          throw new Error('Could not parse DATABASE_URL. Please set DB_HOST, DB_PORT, POSTGRES_USER, POSTGRES_PASSWORD, and POSTGRES_DB explicitly.');
         }
-      } catch {
-        throw new Error('Could not extract database name from DATABASE_URL. Please set POSTGRES_DB explicitly.');
       }
     }
 
     if (!database) {
       throw new Error('POSTGRES_DB environment variable is required for backup operations');
+    }
+    if (!host) {
+      throw new Error('DB_HOST environment variable is required for backup operations');
+    }
+    if (!port) {
+      throw new Error('DB_PORT environment variable is required for backup operations');
+    }
+    if (!user) {
+      throw new Error('POSTGRES_USER environment variable is required for backup operations');
+    }
+    if (!password) {
+      throw new Error('POSTGRES_PASSWORD environment variable is required for backup operations');
     }
 
     // CRITICAL: Validate that we're not accidentally targeting production during test verification
@@ -181,11 +205,17 @@ export class BackupService implements OnModuleInit {
       throw new Error('Cannot target production database (clinic_db) during test verification. Use clinic_test_db instead.');
     }
 
+    // Log connection source safely (without credentials)
+    const source = process.env.DATABASE_URL && (!process.env.DB_HOST || !process.env.DB_PORT || !process.env.POSTGRES_USER || !process.env.POSTGRES_PASSWORD || !process.env.POSTGRES_DB)
+      ? 'DATABASE_URL'
+      : 'environment variables';
+    this.logger.log(`Database connection parameters sourced from: ${source}`);
+
     return {
-      host: process.env.DB_HOST || 'postgres',
-      port: process.env.DB_PORT || '5432',
-      user: process.env.POSTGRES_USER || 'clinic_user',
-      password: process.env.POSTGRES_PASSWORD,
+      host,
+      port,
+      user,
+      password,
       database,
     };
   }

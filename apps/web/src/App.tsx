@@ -20,7 +20,6 @@ const ServiceForm = lazy(() => import('./pages/ServiceForm'))
 const InvoicesList = lazy(() => import('./pages/InvoicesList'))
 const InvoiceForm = lazy(() => import('./pages/InvoiceForm'))
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
-const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const DailyClosingPage = lazy(() => import('./pages/DailyClosingPage'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage'))
 import ProtectedRoute from './components/ProtectedRoute'
@@ -188,7 +187,7 @@ function App() {
               path="/reports"
               element={
                 <ProtectedRoute allowedRoles={['ADMIN']}>
-                  <ReportsPage />
+                  <DailyClosingPage />
                 </ProtectedRoute>
               }
             />

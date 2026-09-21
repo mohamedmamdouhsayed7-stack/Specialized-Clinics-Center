@@ -37,6 +37,7 @@ export default function InvoiceForm() {
 
   const [items, setItems] = useState<LineItem[]>([{ serviceId: '', quantity: 1, unitPrice: null }]);
   const [additionalCharges, setAdditionalCharges] = useState<AdditionalCharge[]>([]);
+  const [paymentMethod, setPaymentMethod] = useState<'KNET' | 'LINK' | 'OTHER'>('KNET');
   const [error, setError] = useState<string | null>(null);
 
   const { confirmOpen, requestNavigation, stay, leave } = useUnsavedChanges(
@@ -173,6 +174,7 @@ export default function InvoiceForm() {
         additionalCharges.length > 0
           ? additionalCharges
           : undefined,
+      paymentMethod,
     });
   };
 
@@ -532,6 +534,50 @@ export default function InvoiceForm() {
             >
               + {t('invoices.addCharge')}
             </button>
+          </div>
+
+          <div className="border-t border-gray-200 pt-4 mb-6">
+            <h3 className="text-lg font-bold text-[#111844] mb-4">
+              {t('invoices.paymentMethod')}
+            </h3>
+
+            <div className="grid grid-cols-3 gap-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="KNET"
+                  checked={paymentMethod === 'KNET'}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK' | 'OTHER')}
+                  className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                />
+                <span className="text-sm text-gray-700">KNET</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="LINK"
+                  checked={paymentMethod === 'LINK'}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK' | 'OTHER')}
+                  className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                />
+                <span className="text-sm text-gray-700">LINK</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="paymentMethod"
+                  value="OTHER"
+                  checked={paymentMethod === 'OTHER'}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'KNET' | 'LINK' | 'OTHER')}
+                  className="w-4 h-4 text-[#111844] focus:ring-[#111844]"
+                />
+                <span className="text-sm text-gray-700">{t('invoices.other')}</span>
+              </label>
+            </div>
           </div>
 
           <div className="border-t border-gray-200 pt-4 space-y-2 mb-6">
