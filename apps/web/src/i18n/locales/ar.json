@@ -93,7 +93,11 @@
     "backupCreated": "تم إنشاء النسخة الاحتياطية بنجاح.",
     "backupFailed": "فشل إنشاء النسخة الاحتياطية.",
     "backupRestored": "تمت استعادة النسخة الاحتياطية بنجاح.",
-    "restoreFailed": "فشل استعادة النسخة الاحتياطية."
+    "restoreFailed": "فشل استعادة النسخة الاحتياطية.",
+    "backupDownloaded": "تم تحميل النسخة الاحتياطية بنجاح.",
+    "backupDownloadFailed": "فشل تحميل النسخة الاحتياطية.",
+    "excelExported": "تم تصدير Excel بنجاح.",
+    "excelExportFailed": "فشل تصدير Excel."
   },
   "roles": {
     "admin": "مدير النظام",
@@ -660,6 +664,7 @@
     "triggerScheduled": "تلقائي",
     "triggerPreRestore": "نسخة أمان قبل استعادة",
     "uploadedRemotely": "مرفوعة خارجيًا",
+    "download": "تحميل",
     "restore": "استعادة",
     "confirmRestoreTitle": "تأكيد الاستعادة",
     "confirmRestoreBody": "هيتم استبدال كل البيانات الحالية بنسخة {{date}}. هنعمل نسخة أمان من الوضع الحالي تلقائيًا قبل الاستعادة، لكن العملية دي مهمة وبتغيّر بيانات حقيقية. متأكدة؟",
@@ -667,7 +672,11 @@
     "confirmRestoreBtn": "تأكيد الاستعادة",
     "backupLoadError": "فشل تحميل بيانات النسخ الاحتياطي",
     "backupCreateError": "فشل إنشاء النسخة الاحتياطية",
-    "backupRestoreError": "فشل استعادة النسخة الاحتياطية"
+    "backupRestoreError": "فشل استعادة النسخة الاحتياطية",
+    "backupDownloadError": "فشل تحميل النسخة الاحتياطية",
+    "downloadExcel": "تحميل Excel",
+    "exportingExcel": "جارِ التصدير...",
+    "excelExportError": "فشل تصدير Excel"
   },
   "dailyClosing": {
     "title": "الإغلاق اليومي",

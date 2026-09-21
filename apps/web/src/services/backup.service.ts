@@ -59,6 +59,24 @@ class BackupService {
     }
     return response.json();
   }
+
+  async exportExcel(): Promise<Blob> {
+    const response = await fetch(`${apiBaseUrl}/backup/export-excel`, { headers: this.getAuthHeaders() });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to export Excel');
+    }
+    return response.blob();
+  }
+
+  async downloadBackup(filename: string): Promise<Blob> {
+    const response = await fetch(`${apiBaseUrl}/backup/download/${encodeURIComponent(filename)}`, { headers: this.getAuthHeaders() });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to download backup');
+    }
+    return response.blob();
+  }
 }
 
 export const backupService = new BackupService();

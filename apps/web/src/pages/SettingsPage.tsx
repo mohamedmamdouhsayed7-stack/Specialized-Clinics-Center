@@ -87,6 +87,7 @@ function BackupSection() {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [confirmRestore, setConfirmRestore] = useState<BackupEntry | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -121,6 +122,31 @@ function BackupSection() {
     }
   };
 
+  const handleExportExcel = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const blob = await backupService.exportExcel();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '-');
+      a.download = `clinic-data-backup-${dateStr}-${timeStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: t('feedback.excelExported') });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.excelExportError'));
+      showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.excelExportFailed') });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleRestore = async () => {
     if (!confirmRestore) return;
     setRestoring(true);
@@ -135,6 +161,24 @@ function BackupSection() {
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.restoreFailed') });
     } finally {
       setRestoring(false);
+    }
+  };
+
+  const handleDownloadBackup = async (filename: string) => {
+    try {
+      const blob = await backupService.downloadBackup(filename);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: t('feedback.backupDownloaded') });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.backupDownloadError'));
+      showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.backupDownloadFailed') });
     }
   };
 
@@ -180,10 +224,16 @@ function BackupSection() {
         </div>
       )}
 
-      <button onClick={handleRunBackup} disabled={running} className="btn-primary px-4 py-2.5 text-sm mb-5 flex items-center gap-2">
-        {running ? <Loader2 size={16} className="animate-spin" /> : null}
-        {running ? t('settings.creatingBackup') : t('settings.createBackupNow')}
-      </button>
+      <div className="flex gap-3 mb-5">
+        <button onClick={handleRunBackup} disabled={running} className="btn-primary px-4 py-2.5 text-sm flex items-center gap-2">
+          {running ? <Loader2 size={16} className="animate-spin" /> : null}
+          {running ? t('settings.creatingBackup') : t('settings.createBackupNow')}
+        </button>
+        <button onClick={handleExportExcel} disabled={exporting} className="btn-secondary px-4 py-2.5 text-sm flex items-center gap-2">
+          {exporting ? <Loader2 size={16} className="animate-spin" /> : null}
+          {exporting ? t('settings.exportingExcel') : t('settings.downloadExcel')}
+        </button>
+      </div>
 
       <h3 className="text-sm font-bold text-[#102F63] mb-3">{t('settings.availableBackups')}</h3>
       {backups.length === 0 && !loading && <EmptyState title={t('settings.noBackupsYet')} />}
@@ -195,7 +245,10 @@ function BackupSection() {
                 <div className="text-[#1F2430]">{new Date(b.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW')}</div>
                 <div className="text-xs text-[#94A3B8]">{formatSize(b.sizeBytes)} · {b.triggeredBy === 'manual' ? t('settings.triggerManual') : b.triggeredBy === 'scheduled' ? t('settings.triggerScheduled') : t('settings.triggerPreRestore')}{b.uploadedToRemote ? ` · ${t('settings.uploadedRemotely')}` : ''}</div>
               </div>
-              <button onClick={() => setConfirmRestore(b)} className="text-[#C4362B] hover:underline">{t('settings.restore')}</button>
+              <div className="flex gap-2">
+                <button onClick={() => handleDownloadBackup(b.filename)} className="text-[#173B78] hover:underline text-xs">{t('settings.download')}</button>
+                <button onClick={() => setConfirmRestore(b)} className="text-[#C4362B] hover:underline text-xs">{t('settings.restore')}</button>
+              </div>
             </div>
           ))}
         </div>

@@ -39,7 +39,7 @@ describe('Backup PostgreSQL integration', () => {
       ...process.env,
       PGPASSWORD: process.env.POSTGRES_PASSWORD,
     });
-    backupService = new BackupService({ logUserAction: jest.fn() } as any);
+    backupService = new BackupService({ logUserAction: jest.fn() } as any, source as any);
     backupService.onModuleInit();
   });
 

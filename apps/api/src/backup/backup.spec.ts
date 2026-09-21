@@ -3,6 +3,7 @@ import { BackupService } from './backup.service';
 import { BackupController } from './backup.controller';
 import { BackupModule } from './backup.module';
 import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../database/prisma.service';
 import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { EventEmitter } from 'events';
 import { PassThrough, Readable, Writable } from 'stream';
@@ -26,6 +27,18 @@ function fakeProcess() {
   process.stdin = new PassThrough();
   process.kill = jest.fn();
   return process;
+}
+
+function createMockPrismaService() {
+  return {
+    patient: { findMany: jest.fn() },
+    appointment: { findMany: jest.fn() },
+    visit: { findMany: jest.fn() },
+    service: { findMany: jest.fn() },
+    invoice: { findMany: jest.fn() },
+    invoiceItem: { findMany: jest.fn() },
+    payment: { findMany: jest.fn() },
+  } as any;
 }
 
 describe('BackupModule', () => {
@@ -60,7 +73,7 @@ describe('BackupModule', () => {
       delete process.env.POSTGRES_DB;
       process.env.DATABASE_URL = 'postgresql://user:pass@host:5432/my_database';
       process.env.BACKUP_DIR = '/app/backups';
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(() => service.onModuleInit()).not.toThrow();
       const params = service['getDbConnectionParams']();
       expect(params.database).toBe('my_database');
@@ -70,7 +83,7 @@ describe('BackupModule', () => {
       delete process.env.POSTGRES_DB;
       delete process.env.DATABASE_URL;
       process.env.BACKUP_DIR = '/app/backups';
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       // Don't call onModuleInit() in this test since we're testing getDbConnectionParams
       expect(() => service['getDbConnectionParams']()).toThrow('POSTGRES_DB environment variable is required');
     });
@@ -79,7 +92,7 @@ describe('BackupModule', () => {
       process.env.POSTGRES_DB = 'clinic_test_db';
       process.env.BACKUP_DIR = 'relative/path';
       expect(() => {
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         service.onModuleInit();
       }).toThrow('BACKUP_DIR must be an absolute path');
     });
@@ -87,14 +100,14 @@ describe('BackupModule', () => {
     it('should prevent targeting production DB during test', () => {
       process.env.NODE_ENV = 'test';
       process.env.POSTGRES_DB = 'clinic_db';
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(() => service['getDbConnectionParams']()).toThrow('Cannot target production database');
     });
 
     it('should allow targeting clinic_test_db during test', () => {
       process.env.NODE_ENV = 'test';
       process.env.POSTGRES_DB = 'clinic_test_db';
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(() => service['getDbConnectionParams']()).not.toThrow();
     });
   });
@@ -106,31 +119,31 @@ describe('BackupModule', () => {
     });
 
     it('should accept valid backup filename', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const filename = 'clinic_backup_2024-01-01T12-00-00-000Z.sql.gz';
       expect(() => service['sanitizeFilename'](filename)).not.toThrow();
     });
 
     it('should reject invalid filename format', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const filename = 'malicious.txt';
       expect(() => service['sanitizeFilename'](filename)).toThrow(BadRequestException);
     });
 
     it('should reject path traversal attempts', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const filename = '../../../etc/passwd';
       expect(() => service['sanitizeFilename'](filename)).toThrow(BadRequestException);
     });
 
     it('should reject filename with path separators', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const filename = 'clinic_backup_2024.sql.gz/extra';
       expect(() => service['sanitizeFilename'](filename)).toThrow(BadRequestException);
     });
 
     it('should reject Windows-style path traversal', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const filename = '..\\..\\Windows\\System32';
       expect(() => service['sanitizeFilename'](filename)).toThrow(BadRequestException);
     });
@@ -143,25 +156,25 @@ describe('BackupModule', () => {
     });
 
     it('should reject manifest entry with path traversal', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const maliciousFilename = '../../../etc/passwd';
       expect(() => service['resolveSafePath'](maliciousFilename)).toThrow(BadRequestException);
     });
 
     it('should reject manifest entry with relative path', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const maliciousFilename = '../target';
       expect(() => service['resolveSafePath'](maliciousFilename)).toThrow(BadRequestException);
     });
 
     it('should reject manifest entry with absolute path', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const maliciousFilename = '/tmp/target';
       expect(() => service['resolveSafePath'](maliciousFilename)).toThrow(BadRequestException);
     });
 
     it('should accept valid manifest entry', () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const validFilename = 'clinic_backup_2024-01-01T12-00-00-000Z.sql.gz';
       expect(() => service['resolveSafePath'](validFilename)).not.toThrow();
     });
@@ -178,7 +191,7 @@ describe('BackupModule', () => {
       process.env.BACKUP_S3_BUCKET = 'my-bucket';
       process.env.BACKUP_S3_ACCESS_KEY = 'key';
       process.env.BACKUP_S3_SECRET_KEY = 'secret';
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['isRemoteStorageConfigured']()).toBe(true);
     });
 
@@ -187,7 +200,7 @@ describe('BackupModule', () => {
       delete process.env.BACKUP_S3_BUCKET;
       delete process.env.BACKUP_S3_ACCESS_KEY;
       delete process.env.BACKUP_S3_SECRET_KEY;
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['isRemoteStorageConfigured']()).toBe(false);
     });
   });
@@ -204,7 +217,7 @@ describe('BackupModule', () => {
         const filepath = `${directory}/clinic_backup_2024.sql.gz`;
         const content = gzipSync(Buffer.from('SELECT 1;'));
         await writeFile(filepath, content);
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
 
         await expect(service['calculateSha256'](filepath)).resolves.toBe(
           require('crypto').createHash('sha256').update(content).digest('hex'),
@@ -219,14 +232,14 @@ describe('BackupModule', () => {
         const filepath = `${directory}/clinic_backup_2024.sql.gz`;
         const content = gzipSync(Buffer.from('SELECT 1;'));
         await writeFile(filepath, failure === 'corrupt gzip' ? Buffer.from('not gzip') : content.subarray(0, 5));
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
 
         await expect(service['verifyGzip'](filepath)).rejects.toThrow();
         await rm(directory, { recursive: true, force: true });
       });
 
       it('should require pg_dump exit code 0 after all output completes', async () => {
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const pgDump = fakeProcess();
         const gzip = new PassThrough();
         const output = new PassThrough();
@@ -244,7 +257,7 @@ describe('BackupModule', () => {
       });
 
       it.each(['non-zero exit', 'spawn error', 'stdout error', 'gzip error', 'output error'])('should reject backup on %s', async (failure) => {
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const pgDump = fakeProcess();
         const gzip = new PassThrough();
         const output = new PassThrough();
@@ -264,7 +277,7 @@ describe('BackupModule', () => {
         const previousBackupDir = process.env.BACKUP_DIR;
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const pgDump = fakeProcess();
         (spawn as jest.Mock).mockReturnValueOnce(pgDump);
         jest.spyOn(service as any, 'completeBackupProcess').mockRejectedValue(new Error('pipeline failed'));
@@ -280,7 +293,7 @@ describe('BackupModule', () => {
       });
 
       it('should restore successfully only after gunzip, stdin, and psql complete', async () => {
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const psql = fakeProcess();
         const input = Readable.from(gzipSync(Buffer.from('SELECT 1;')));
         const gunzip = new (require('zlib').Gunzip)();
@@ -292,7 +305,7 @@ describe('BackupModule', () => {
       });
 
       it.each(['non-zero exit', 'spawn error', 'input read error', 'gunzip error', 'stdin error', 'truncated input'])('should reject restore on %s', async (failure) => {
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const psql = fakeProcess();
         const input = new PassThrough();
         const gunzip = new (require('zlib').Gunzip)();
@@ -312,7 +325,7 @@ describe('BackupModule', () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const pgDump = fakeProcess();
         (spawn as jest.Mock).mockReturnValueOnce(pgDump);
         jest.spyOn(service as any, 'completeBackupProcess').mockImplementation(async (_process, _gzip, output: Writable) => {
@@ -338,7 +351,7 @@ describe('BackupModule', () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const pgDump = fakeProcess();
         (spawn as jest.Mock).mockReturnValueOnce(pgDump);
         jest.spyOn(service as any, 'completeBackupProcess').mockImplementation(async (_process, _gzip, output: Writable) => {
@@ -360,7 +373,7 @@ describe('BackupModule', () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const content = gzipSync(Buffer.from('SELECT 1;'));
         const filename = 'clinic_backup_2024.sql.gz';
         await writeFile(`${directory}/${filename}`, content);
@@ -388,7 +401,7 @@ describe('BackupModule', () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const filename = 'clinic_backup_2024.sql.gz';
         const content = gzipSync(Buffer.from('SELECT 1;'));
         await writeFile(`${directory}/${filename}`, content);
@@ -417,7 +430,7 @@ describe('BackupModule', () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const filename = 'clinic_backup_2024.sql.gz';
         const content = gzipSync(Buffer.from('SELECT 1;'));
         await writeFile(`${directory}/${filename}`, content);
@@ -446,7 +459,7 @@ describe('BackupModule', () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
         process.env.POSTGRES_DB = 'clinic_test_db';
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         await service['writeManifest']({
           version: 2,
           database: 'clinic_test_db',
@@ -475,7 +488,7 @@ describe('BackupModule', () => {
       it('should fail closed for malformed or unsupported manifests', async () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
 
         await writeFile(`${directory}/manifest.json`, '{not-json');
         await expect(service['readManifest']()).rejects.toThrow('Backup manifest is corrupt');
@@ -487,7 +500,7 @@ describe('BackupModule', () => {
       it('should atomically write a versioned manifest without exposing temporary files', async () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const manifest = { version: 2 as const, database: 'clinic_test_db', entries: [] };
 
         await service['writeManifest'](manifest);
@@ -499,7 +512,7 @@ describe('BackupModule', () => {
       it('should preserve the previous manifest when manifest serialization fails', async () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const previousManifest = { version: 2 as const, database: 'clinic_test_db', entries: [] };
         await service['writeManifest'](previousManifest);
         const previousContents = await readFile(`${directory}/manifest.json`, 'utf8');
@@ -515,7 +528,7 @@ describe('BackupModule', () => {
       it('should fail closed when the manifest cannot be read', async () => {
         const directory = await mkdtemp(`${tmpdir()}/clinic-backup-`);
         process.env.BACKUP_DIR = directory;
-        const service = new BackupService({ logUserAction: jest.fn() } as any);
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         await mkdir(`${directory}/manifest.json`);
 
         await expect(service['readManifest']()).rejects.toThrow('unreadable or invalid');
@@ -554,7 +567,7 @@ describe('BackupModule', () => {
     });
 
     it('should serialize backup operations', async () => {
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       // Mock backup operation to take time
       jest.spyOn(service, 'runBackup').mockImplementation(async () => {
         await new Promise(resolve => setTimeout(resolve, 100));
