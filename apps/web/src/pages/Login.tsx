@@ -144,9 +144,8 @@ export default function Login() {
               </label>
               <button
                 type="button"
-                className="text-[13px] text-[#64748B] cursor-not-allowed opacity-50"
-                disabled={true}
-                title="Password reset is not yet available"
+                onClick={() => navigate('/forgot-password')}
+                className="text-[13px] text-[#64748B] hover:text-[#102F63]"
               >
                 {t('login.forgotPassword')}
               </button>

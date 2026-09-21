@@ -267,7 +267,7 @@ export default function PatientProfile() {
             <ConfirmDialog
               open={showDeleteDialog}
               title={t('patients.deletePermanently')}
-              message={t('patients.deletePatientWarning', { name: patient.fullNameAr })}
+              message={t('patients.deleteWarning')}
               confirmLabel={deleteMutation.isPending ? t('common.loading') : t('patients.confirmPermanentDelete')}
               cancelLabel={t('common.cancel')}
               destructive

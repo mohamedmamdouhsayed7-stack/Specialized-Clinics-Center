@@ -56,8 +56,7 @@ export class BackupService implements OnModuleInit {
   private async withOperationLock<T>(operation: () => Promise<T>): Promise<T> {
     // Wait for current operation to complete
     while (this.operationInProgress) {
-      // eslint-disable-next-line no-undef
-      await new Promise<void>(resolve => setTimeout(resolve, 100));
+      await new Promise<void>(resolve => globalThis.setTimeout(resolve, 100));
     }
 
     this.operationInProgress = true;
@@ -76,17 +75,35 @@ export class BackupService implements OnModuleInit {
     }
 
     // Verify pg_dump and psql are available in PATH
+    let pgDumpAvailable = false;
+    let psqlAvailable = false;
+
     try {
       const pgDumpCheck = spawnSync('which', ['pg_dump']);
-      if (pgDumpCheck.status !== 0) {
-        throw new Error('pg_dump not found in PATH. PostgreSQL client tools must be installed for backup operations.');
+      if (pgDumpCheck.status === 0) {
+        pgDumpAvailable = true;
+        this.logger.log('pg_dump is available in PATH');
+      } else {
+        this.logger.error('pg_dump not found in PATH. PostgreSQL client tools must be installed for backup operations.');
       }
+    } catch (err) {
+      this.logger.error(`Failed to check pg_dump availability: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    try {
       const psqlCheck = spawnSync('which', ['psql']);
-      if (psqlCheck.status !== 0) {
-        throw new Error('psql not found in PATH. PostgreSQL client tools must be installed for backup operations.');
+      if (psqlCheck.status === 0) {
+        psqlAvailable = true;
+        this.logger.log('psql is available in PATH');
+      } else {
+        this.logger.error('psql not found in PATH. PostgreSQL client tools must be installed for backup operations.');
       }
-    } catch {
-      this.logger.warn('Could not verify pg_dump/psql availability');
+    } catch (err) {
+      this.logger.error(`Failed to check psql availability: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    if (!pgDumpAvailable || !psqlAvailable) {
+      this.logger.error('CRITICAL: Backup service cannot function without pg_dump and psql. PostgreSQL client tools must be installed in the runtime environment.');
     }
 
     this.logger.log(`Backup service initialized with directory: ${backupDir}`);
@@ -142,9 +159,14 @@ export class BackupService implements OnModuleInit {
     let database = process.env.POSTGRES_DB;
     if (!database && process.env.DATABASE_URL) {
       try {
-        // eslint-disable-next-line no-undef
-        const url = new URL(process.env.DATABASE_URL);
-        database = url.pathname.substring(1); // Remove leading slash
+        // Parse DATABASE_URL manually to extract database name
+        // Format: postgresql://user:password@host:port/database
+        const urlParts = process.env.DATABASE_URL.split('/');
+        if (urlParts.length >= 4) {
+          database = urlParts[3].split('?')[0]; // Get database name, remove query params
+        } else {
+          throw new Error('DATABASE_URL format is invalid');
+        }
       } catch {
         throw new Error('Could not extract database name from DATABASE_URL. Please set POSTGRES_DB explicitly.');
       }

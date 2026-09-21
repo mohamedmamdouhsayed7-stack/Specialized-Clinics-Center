@@ -34,6 +34,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
     const [messageType, setMessageType] = useState<MessageType>('CONFIRMED');
     const [message, setMessage] = useState('');
     const [sending, setSending] = useState(false);
+    const [countryCode, setCountryCode] = useState('965');
 
     // Reset all local state whenever the dialog is (re)opened, so a previous
     // selection never leaks into a fresh run.
@@ -131,7 +132,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
     };
 
     const rawPhone = selectedAppointment?.patient.phone || '';
-    const normalizedPhone = rawPhone ? normalizeWhatsAppPhone(rawPhone) : '';
+    const normalizedPhone = rawPhone ? normalizeWhatsAppPhone(rawPhone, countryCode) : '';
     const hasValidPhone = !!rawPhone && isValidWhatsAppPhone(normalizedPhone);
 
     const handleSend = () => {
@@ -260,6 +261,26 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
                                 {t('appointmentMessages.missingPhone')}
                             </div>
                         )}
+
+                        <div className="mb-4">
+                            <label className="block text-sm font-semibold text-[#344054]">
+                                {t('invoices.countryCode')}
+                            </label>
+                            <select
+                                value={countryCode}
+                                onChange={(event) => setCountryCode(event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-[#DCE3EF] px-3 py-2 font-normal text-[#1F2430] outline-none focus:border-[#4B5694] focus:ring-2 focus:ring-[#4B5694]/20"
+                                dir="ltr"
+                            >
+                                <option value="965">Kuwait (+965)</option>
+                                <option value="20">Egypt (+20)</option>
+                                <option value="966">Saudi Arabia (+966)</option>
+                                <option value="971">United Arab Emirates (+971)</option>
+                                <option value="974">Qatar (+974)</option>
+                                <option value="973">Bahrain (+973)</option>
+                                <option value="968">Oman (+968)</option>
+                            </select>
+                        </div>
 
                         <div className="mb-4">
                             <p className="mb-2 text-sm font-semibold text-[#344054]">{t('appointmentMessages.messageTypeLabel')}</p>

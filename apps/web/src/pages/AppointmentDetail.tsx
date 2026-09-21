@@ -167,7 +167,7 @@ export default function AppointmentDetail() {
         <ConfirmDialog
           open={showDeleteDialog}
           title={t('appointments.deletePermanently')}
-          message={t('appointments.deleteAppointmentWarning')}
+          message={t('appointments.deleteWarning')}
           confirmLabel={deleteMutation.isPending ? t('common.loading') : t('common.confirm')}
           cancelLabel={t('common.cancel')}
           destructive

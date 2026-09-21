@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend,
+  Legend,
 } from 'recharts';
-import { TrendingUp, Wallet, ReceiptText, ClipboardList, UsersRound, CalendarDays, FileSpreadsheet, FileText, ClipboardCheck } from 'lucide-react';
+import { TrendingUp, Wallet, ClipboardList, FileSpreadsheet, FileText, ClipboardCheck, ReceiptText } from 'lucide-react';
 import { reportsService } from '../services/reports.service';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -14,8 +14,6 @@ import { useToast } from '../contexts/ToastContext';
 import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
-
-const COLORS = ['#102F63', '#173B78', '#4B5694', '#8991A6', '#C4362B', '#C98200'];
 
 // Get local calendar date (YYYY-MM-DD) in Asia/Kuwait for the current day
 function getLocalToday(): string {
@@ -73,13 +71,13 @@ export default function ReportsPage() {
     VISA: t('payments.methodVisa'),
   };
 
-  // For the main report payment-method summary UI, display only: Cash, KNET, Link
+  // For the main report payment-method summary UI, display only: KNET, Link, OTHER
   const REPORT_PAYMENT_METHOD_LABELS: Record<string, string> = {
     KNET: 'KNET',
     LINK: 'Link',
-    CASH: 'Cash',
+    OTHER: 'Other',
   };
-  const reportPaymentMethods = new Set(['CASH', 'KNET', 'LINK']);
+  const reportPaymentMethods = new Set(['KNET', 'LINK', 'OTHER']);
   const VISIT_TYPE_LABELS: Record<string, string> = {
     CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'),
   };
@@ -94,7 +92,6 @@ export default function ReportsPage() {
   const paymentMethods = useQuery({ queryKey: ['reports-payment-methods', from, to], queryFn: () => reportsService.getPaymentMethods(from, to) });
   const serviceUsage = useQuery({ queryKey: ['reports-service-usage', from, to], queryFn: () => reportsService.getServiceUsage(from, to) });
   const visitTypes = useQuery({ queryKey: ['reports-visit-types', from, to], queryFn: () => reportsService.getVisitTypes(from, to) });
-  const newPatientsTimeseries = useQuery({ queryKey: ['reports-new-patients-ts', from, to], queryFn: () => reportsService.getNewPatientsTimeseries(from, to) });
 
   const handleExportPdf = async () => {
     setExportingPdf(true);
@@ -169,62 +166,7 @@ export default function ReportsPage() {
       </div>
       {summary.error && <div className="ui-card p-4 mb-5 text-sm text-[#C4362B]" role="alert">{t('reports.loadError')}</div>}
 
-      {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
-        <KpiCard icon={TrendingUp} label={t('reports.totalRevenue')} value={s ? formatMoney(s.totalRevenue, i18n.language) : '—'} suffix={t('common.currency')} />
-        <KpiCard icon={Wallet} label={t('reports.totalCollected')} value={s ? formatMoney(s.totalCollected, i18n.language) : '—'} suffix={t('common.currency')} />
-        <KpiCard icon={UsersRound} label={t('reports.newPatientsCount')} value={s ? s.newPatients : '—'} />
-        <KpiCard icon={ClipboardList} label={t('reports.totalVisits')} value={s ? s.totalVisits : '—'} />
-        <KpiCard icon={ReceiptText} label={t('reports.issuedInvoices')} value={s ? s.totalInvoices : '—'} />
-        <KpiCard icon={CalendarDays} label={t('reports.appointmentCompletionRate')} value={s && typeof s.appointmentCompletionRate === 'number' && !isNaN(s.appointmentCompletionRate) ? `${s.appointmentCompletionRate}%` : '—'} />
-      </div>
-
-      {/* Main charts row */}
-      <div className="grid lg:grid-cols-2 gap-4 mb-4">
-        {/* New Patients chart */}
-        <div className="ui-card p-4">
-          <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.newPatientsCount')}</h2>
-          {newPatientsTimeseries.isLoading ? (
-            <Skeleton className="h-52 rounded-lg" />
-          ) : newPatientsTimeseries.data && newPatientsTimeseries.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={newPatientsTimeseries.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Line type="monotone" dataKey="count" name={t('reports.newPatientsCount')} stroke="#102F63" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState title={t('reports.noDataInPeriod')} />
-          )}
-        </div>
-
-        {/* Invoiced vs Collected chart */}
-        <div className="ui-card p-4">
-          <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.invoicedVsCollected')}</h2>
-          {revenueTimeseries.isLoading ? (
-            <Skeleton className="h-52 rounded-lg" />
-          ) : revenueTimeseries.data && revenueTimeseries.data.length > 0 ? (
-            <ResponsiveContainer width="100%" height={200}>
-              <LineChart data={revenueTimeseries.data}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="revenue" name={t('reports.revenue')} stroke="#16803C" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="collected" name={t('reports.collections')} stroke="#4B5694" strokeWidth={2} dot={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyState title={t('reports.noDataInPeriod')} />
-          )}
-        </div>
-      </div>
-
-      {/* Requires Attention - only shows when there are outstanding invoices */}
+      {/* Requires Attention - slim banner only when there are outstanding invoices */}
       {summary.data && summary.data.outstandingAmount > 0 && (
         <div className="ui-card p-3 mb-4 border-l-4 border-l-[#C4362B]">
           <div className="flex items-center justify-between">
@@ -244,127 +186,113 @@ export default function ReportsPage() {
         </div>
       )}
 
-      {/* Payment Details - secondary section with link to Daily Closing */}
+      {/* FOUR PRIMARY KPI CARDS ONLY */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <KpiCard icon={TrendingUp} label={t('reports.totalInvoiced')} value={s ? formatMoney(s.totalRevenue, i18n.language) : '—'} suffix={t('common.currency')} />
+        <KpiCard icon={Wallet} label={t('reports.totalCollected')} value={s ? formatMoney(s.totalCollected, i18n.language) : '—'} suffix={t('common.currency')} />
+        <KpiCard icon={ReceiptText} label={t('reports.outstandingAmount')} value={s ? formatMoney(s.outstandingAmount, i18n.language) : '—'} suffix={t('common.currency')} />
+        <KpiCard icon={ClipboardList} label={t('reports.totalVisits')} value={s ? s.totalVisits : '—'} />
+      </div>
+
+      {/* ONE PRIMARY CHART: Invoiced vs Collected */}
       <div className="ui-card p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[14px] font-bold text-[#102F63]">{t('reports.paymentDetails')}</h2>
-          <button
-            onClick={() => navigate('/reports/daily-closing')}
-            className="text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
-          >
-            {t('dailyClosing.title')} →
-          </button>
-        </div>
-        {paymentMethods.isLoading ? (
-          <Skeleton className="h-36 rounded-lg" />
-        ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
-          <>
-            {(() => {
+        <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.invoicedVsCollected')}</h2>
+        {revenueTimeseries.isLoading ? (
+          <Skeleton className="h-52 rounded-lg" />
+        ) : revenueTimeseries.data && revenueTimeseries.data.length > 0 ? (
+          <ResponsiveContainer width="100%" height={250}>
+            <LineChart data={revenueTimeseries.data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E2E8F0" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 11 }} />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="revenue" name={t('reports.revenue')} stroke="#16803C" strokeWidth={2} dot={false} />
+              <Line type="monotone" dataKey="collected" name={t('reports.collections')} stroke="#4B5694" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        ) : (
+          <EmptyState title={t('reports.noDataInPeriod')} />
+        )}
+      </div>
+
+      {/* SECONDARY INFORMATION - compact sections */}
+      <div className="grid md:grid-cols-2 gap-4 mb-4">
+        {/* Payment Methods - compact */}
+        <div className="ui-card p-4">
+          <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.paymentMethods')}</h2>
+          {paymentMethods.isLoading ? (
+            <Skeleton className="h-24 rounded-lg" />
+          ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
+            (() => {
+              // Allow KNET, LINK, OTHER (new methods) and historical CASH/VISA when they exist
               const validMethods = paymentMethods.data.filter(
-                (row) => (row.amount > 0 || row.count > 0) && reportPaymentMethods.has(row.method),
+                (row) => (row.amount > 0 || row.count > 0) && (
+                  reportPaymentMethods.has(row.method) || // New methods: KNET, LINK, OTHER
+                  row.method === 'CASH' || row.method === 'VISA' // Historical methods
+                ),
               );
               if (validMethods.length === 0) {
                 return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
               }
-              const totalPayments = validMethods.reduce((sum, m) => sum + m.amount, 0);
               return (
-                <>
-                  <ResponsiveContainer width="100%" height={150}>
-                    <PieChart>
-                      <Pie data={validMethods} dataKey="amount" nameKey="method" innerRadius={35} outerRadius={60}>
-                        {validMethods.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip formatter={(v: number) => `${formatMoney(v, i18n.language)} ${t('common.currency')}`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="space-y-1 mt-2">
-                    {validMethods.map((row, i) => (
-                      <div key={row.method} className="flex items-center justify-between text-xs">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full" style={{ background: COLORS[i % COLORS.length] }} />
-                          {REPORT_PAYMENT_METHOD_LABELS[row.method] || PAYMENT_METHOD_LABELS[row.method] || row.method}
-                        </span>
-                        <div className="text-right">
-                          <span className="font-medium text-[#1F2430]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>
-                          <span className="text-[#94A3B8] ml-1">({totalPayments > 0 ? ((row.amount / totalPayments) * 100).toFixed(1) : 0}%)</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </>
+                <div className="space-y-2">
+                  {validMethods.map((row) => (
+                    <div key={row.method} className="flex items-center justify-between text-sm">
+                      <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[row.method] || PAYMENT_METHOD_LABELS[row.method] || row.method}</span>
+                      <span className="font-medium text-[#102F63]">{formatMoney(row.amount, i18n.language)} {t('common.currency')}</span>
+                    </div>
+                  ))}
+                </div>
               );
-            })()}
-          </>
-        ) : (
-          <EmptyState title={t('reports.noPaymentsInPeriod')} />
-        )}
+            })()
+          ) : (
+            <EmptyState title={t('reports.noPaymentsInPeriod')} />
+          )}
+        </div>
+
+        {/* Top Services - top 5 only, simple list */}
+        <div className="ui-card p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[14px] font-bold text-[#102F63]">{t('reports.topServicesByRevenue')}</h2>
+            <button
+              onClick={() => navigate('/services')}
+              className="text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
+            >
+              {t('reports.viewAllServices')} →
+            </button>
+          </div>
+          {serviceUsage.isLoading ? (
+            <Skeleton className="h-24 rounded-lg" />
+          ) : serviceUsage.data && serviceUsage.data.length > 0 ? (
+            <div className="space-y-2">
+              {serviceUsage.data.slice(0, 5).map((row, index) => (
+                <div key={row.serviceName} className="flex items-center justify-between text-sm">
+                  <span className="text-[#1F2430]">{index + 1}. {row.serviceName}</span>
+                  <span className="font-medium text-[#102F63]">{formatMoney(row.revenue, i18n.language)} {t('common.currency')}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title={t('reports.noDataInPeriod')} />
+          )}
+        </div>
       </div>
 
-      {/* Visit Types */}
+      {/* Visit Types - compact */}
       <div className="ui-card p-4 mb-4">
         <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.visitTypesTitle')}</h2>
         {visitTypes.data && visitTypes.data.length > 0 ? (
-          <div className="space-y-2">
-            {visitTypes.data.map((row) => {
-              const maxCount = Math.max(...visitTypes.data.map(r => r.count));
-              const percentage = maxCount > 0 ? (row.count / maxCount) * 100 : 0;
-              return (
-                <div key={row.type} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[#1F2430]">{VISIT_TYPE_LABELS[row.type] || row.type}</span>
-                    <span className="font-medium text-[#102F63]">{row.count}</span>
-                  </div>
-                  <div className="h-1.5 bg-[#E2E8F0] rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-[#102F63] rounded-full transition-all"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+          <div className="grid grid-cols-3 gap-3">
+            {visitTypes.data.map((row) => (
+              <div key={row.type} className="text-center p-3 bg-[#F6F8FC] rounded-lg">
+                <div className="text-xl font-bold text-[#102F63]">{row.count}</div>
+                <div className="text-xs text-[#64748B] mt-1">{VISIT_TYPE_LABELS[row.type] || row.type}</div>
+              </div>
+            ))}
           </div>
         ) : (
           <EmptyState title={t('reports.noVisitsInPeriod')} />
-        )}
-      </div>
-
-      {/* Top Services table */}
-      <div className="ui-card p-4 mb-4">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-[14px] font-bold text-[#102F63]">{t('reports.topServicesByRevenue')}</h2>
-          <button
-            onClick={() => navigate('/services')}
-            className="text-xs text-[#102F63] hover:text-[#173B78] font-medium flex items-center gap-1"
-          >
-            {t('reports.viewAllServices')} →
-          </button>
-        </div>
-        {serviceUsage.isLoading ? (
-          <Skeleton className="h-36 rounded-lg" />
-        ) : serviceUsage.data && serviceUsage.data.length > 0 ? (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-[#94A3B8] text-xs border-b border-[#E2E8F0]">
-                <th className="text-right py-1.5 font-medium w-8">#</th>
-                <th className="text-right py-1.5 font-medium">{t('invoices.service')}</th>
-                <th className="text-center py-1.5 font-medium">{t('reports.timesUsed')}</th>
-                <th className="text-left py-1.5 font-medium">{t('reports.revenue')} ({t('common.currency')})</th>
-              </tr>
-            </thead>
-            <tbody>
-              {serviceUsage.data.map((row, index) => (
-                <tr key={row.serviceName} className="border-b border-[#E2E8F0] last:border-0">
-                  <td className="py-2 text-[#64748B] text-xs">{index + 1}</td>
-                  <td className="py-2 text-[#1F2430]">{row.serviceName}</td>
-                  <td className="py-2 text-center text-[#64748B]">{row.timesUsed}</td>
-                  <td className="py-2 text-left font-medium text-[#1F2430]">{formatMoney(row.revenue, i18n.language)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <EmptyState title={t('reports.noDataInPeriod')} />
         )}
       </div>
 
