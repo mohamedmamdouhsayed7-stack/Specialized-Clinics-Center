@@ -272,6 +272,7 @@ h4 {
   body {
     background: white;
     color: black;
+    font-size: 11pt;
   }
 
   .page-container {
@@ -288,16 +289,78 @@ h4 {
     box-shadow: none;
     border: 1px solid #ccc;
     page-break-inside: avoid;
+    margin-bottom: 8px;
+    padding: 8px !important;
   }
 
   /* Ensure important sections don't break awkwardly */
   .ui-card h2 {
     page-break-after: avoid;
+    margin-bottom: 6px !important;
+    font-size: 10pt !important;
   }
 
   /* Compact print layout */
   @page {
     size: A4;
     margin: 1cm;
+  }
+
+  /* Reduce grid gaps in print */
+  .grid {
+    gap: 6px !important;
+  }
+
+  /* Compact cards in print */
+  .ui-card .text-lg {
+    font-size: 12pt !important;
+  }
+
+  .ui-card .text-base {
+    font-size: 11pt !important;
+  }
+
+  .ui-card .text-xs {
+    font-size: 9pt !important;
+  }
+
+  /* Compact spacing */
+  .mb-3 {
+    margin-bottom: 8px !important;
+  }
+
+  .mb-4 {
+    margin-bottom: 10px !important;
+  }
+
+  .mb-2 {
+    margin-bottom: 6px !important;
+  }
+
+  .p-3 {
+    padding: 6px !important;
+  }
+
+  .p-4 {
+    padding: 8px !important;
+  }
+
+  .p-2 {
+    padding: 4px !important;
+  }
+
+  /* Hide detailed tables in print */
+  .print-tables-hidden {
+    display: none !important;
+  }
+
+  /* Print footer */
+  .print-footer {
+    margin-top: 12px;
+    font-size: 9pt;
+    color: #666;
+    text-align: center;
+    border-top: 1px solid #ccc;
+    padding-top: 6px;
   }
 }

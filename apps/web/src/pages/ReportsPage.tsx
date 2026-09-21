@@ -71,13 +71,13 @@ export default function ReportsPage() {
     VISA: t('payments.methodVisa'),
   };
 
-  // For the main report payment-method summary UI, display only: Cash, KNET, Link
+  // For the main report payment-method summary UI, display only: KNET, Link, OTHER
   const REPORT_PAYMENT_METHOD_LABELS: Record<string, string> = {
     KNET: 'KNET',
     LINK: 'Link',
-    CASH: 'Cash',
+    OTHER: 'Other',
   };
-  const reportPaymentMethods = new Set(['CASH', 'KNET', 'LINK']);
+  const reportPaymentMethods = new Set(['KNET', 'LINK', 'OTHER']);
   const VISIT_TYPE_LABELS: Record<string, string> = {
     CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'),
   };
@@ -188,7 +188,7 @@ export default function ReportsPage() {
 
       {/* FOUR PRIMARY KPI CARDS ONLY */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <KpiCard icon={TrendingUp} label={t('reports.totalRevenue')} value={s ? formatMoney(s.totalRevenue, i18n.language) : '—'} suffix={t('common.currency')} />
+        <KpiCard icon={TrendingUp} label={t('reports.totalInvoiced')} value={s ? formatMoney(s.totalRevenue, i18n.language) : '—'} suffix={t('common.currency')} />
         <KpiCard icon={Wallet} label={t('reports.totalCollected')} value={s ? formatMoney(s.totalCollected, i18n.language) : '—'} suffix={t('common.currency')} />
         <KpiCard icon={ReceiptText} label={t('reports.outstandingAmount')} value={s ? formatMoney(s.outstandingAmount, i18n.language) : '—'} suffix={t('common.currency')} />
         <KpiCard icon={ClipboardList} label={t('reports.totalVisits')} value={s ? s.totalVisits : '—'} />

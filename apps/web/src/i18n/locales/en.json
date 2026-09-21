@@ -487,6 +487,7 @@
     "subtitle": "Comprehensive analytics on clinic performance and financial growth indicators",
     "to": "to",
     "totalRevenue": "Total Revenue",
+    "totalInvoiced": "Total Invoiced",
     "totalCollected": "Total Collected",
     "outstandingAmount": "Outstanding Amount",
     "netProfit": "Net Profit",

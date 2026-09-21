@@ -108,10 +108,10 @@ export default function DailyClosingPage() {
       />
 
       {/* Print-only header */}
-      <div className="hidden print:block mb-6 text-center">
-        <h1 className="text-2xl font-bold text-[#102F63]">مركز العيادات التخصصية</h1>
+      <div className="hidden print:block mb-4 text-center border-b border-[#E2E8F0] pb-4">
+        <h1 className="text-xl font-bold text-[#102F63]">مركز العيادات التخصصية</h1>
         <p className="text-sm text-[#64748B]">Specialized Clinics Center</p>
-        <h2 className="text-lg font-bold mt-3">{t('dailyClosing.title')}</h2>
+        <h2 className="text-base font-bold mt-2">{t('dailyClosing.title')}</h2>
         <p className="text-sm">{data ? formatDate(data.date, i18n.language) : ''}</p>
         <p className="text-xs text-[#94A3B8] mt-1">Asia/Kuwait Timezone</p>
       </div>
@@ -127,60 +127,60 @@ export default function DailyClosingPage() {
       {data && (
         <>
           {/* PRIMARY DAILY SUMMARY - 4 cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 print:grid-cols-4">
-            <div className="ui-card p-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3 print:grid-cols-4 print:gap-2">
+            <div className="ui-card p-3">
               <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.todayInvoices')}</div>
-              <div className="text-xl font-bold text-[#102F63]">{data.invoiceCount}</div>
+              <div className="text-lg font-bold text-[#102F63]">{data.invoiceCount}</div>
             </div>
-            <div className="ui-card p-4">
+            <div className="ui-card p-3">
               <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.totalInvoiced')}</div>
-              <div className="text-xl font-bold text-[#102F63]">{formatMoney(data.totalInvoiced, i18n.language)} {t('common.currency')}</div>
+              <div className="text-lg font-bold text-[#102F63]">{formatMoney(data.totalInvoiced, i18n.language)} {t('common.currency')}</div>
             </div>
-            <div className="ui-card p-4">
+            <div className="ui-card p-3">
               <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.totalCollected')}</div>
-              <div className="text-xl font-bold text-[var(--success)]">{formatMoney(data.totalCollected, i18n.language)} {t('common.currency')}</div>
+              <div className="text-lg font-bold text-[var(--success)]">{formatMoney(data.totalCollected, i18n.language)} {t('common.currency')}</div>
             </div>
-            <div className="ui-card p-4">
+            <div className="ui-card p-3">
               <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.totalRemaining')}</div>
-              <div className="text-xl font-bold text-[#C4362B]">{formatMoney(data.totalRemaining, i18n.language)} {t('common.currency')}</div>
+              <div className="text-lg font-bold text-[#C4362B]">{formatMoney(data.totalRemaining, i18n.language)} {t('common.currency')}</div>
             </div>
           </div>
 
           {/* FINANCIAL RECONCILIATION - compact and prominent */}
-          <div className="ui-card p-4 mb-4">
-            <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('dailyClosing.reconciliation')}</h2>
-            <div className="grid md:grid-cols-3 gap-4 mb-3">
+          <div className="ui-card p-3 mb-3 print:page-break-inside-avoid">
+            <h2 className="text-[13px] font-bold text-[#102F63] mb-2">{t('dailyClosing.reconciliation')}</h2>
+            <div className="grid grid-cols-3 gap-3 mb-2">
               <div>
                 <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.expectedCollection')}</div>
-                <div className="text-lg font-bold text-[#102F63]">{formatMoney(data.totalInvoiced, i18n.language)} {t('common.currency')}</div>
+                <div className="text-base font-bold text-[#102F63]">{formatMoney(data.totalInvoiced, i18n.language)} {t('common.currency')}</div>
               </div>
               <div>
                 <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.actualRecorded')}</div>
-                <div className="text-lg font-bold text-[var(--success)]">{formatMoney(data.totalCollected, i18n.language)} {t('common.currency')}</div>
+                <div className="text-base font-bold text-[var(--success)]">{formatMoney(data.totalCollected, i18n.language)} {t('common.currency')}</div>
               </div>
               <div>
                 <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.reconciliationDifference')}</div>
-                <div className={`text-lg font-bold ${data.reconciliationDifference !== 0 ? 'text-[#C4362B]' : 'text-[var(--success)]'}`}>
+                <div className={`text-base font-bold ${data.reconciliationDifference !== 0 ? 'text-[#C4362B]' : 'text-[var(--success)]'}`}>
                   {data.reconciliationDifference !== 0 ? (data.reconciliationDifference > 0 ? '+' : '') : ''}{formatMoney(data.reconciliationDifference, i18n.language)} {t('common.currency')}
                 </div>
               </div>
             </div>
             {data.reconciliationDifference === 0 ? (
-              <div className="flex items-center gap-2 text-xs text-[var(--success)] bg-[#ECFDF5] px-3 py-2 rounded">
-                <CheckCircle2 size={14} />
+              <div className="flex items-center gap-2 text-xs text-[var(--success)] bg-[#ECFDF5] px-2 py-1.5 rounded">
+                <CheckCircle2 size={12} />
                 {t('dailyClosing.reconciled')}
               </div>
             ) : (
-              <div className="flex items-center gap-2 text-xs text-[#C4362B] bg-[#FEF2F2] px-3 py-2 rounded">
-                <AlertTriangle size={14} />
+              <div className="flex items-center gap-2 text-xs text-[#C4362B] bg-[#FEF2F2] px-2 py-1.5 rounded">
+                <AlertTriangle size={12} />
                 {t('dailyClosing.reconciliationNote')}
               </div>
             )}
           </div>
 
           {/* PAYMENT METHODS - compact */}
-          <div className="ui-card p-4 mb-4">
-            <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('reports.paymentMethods')}</h2>
+          <div className="ui-card p-3 mb-3 print:page-break-inside-avoid">
+            <h2 className="text-[13px] font-bold text-[#102F63] mb-2">{t('reports.paymentMethods')}</h2>
             {(() => {
               const validMethods = data.paymentMethods.filter(
                 (m) => (m.amount > 0 || m.count > 0) && REPORT_PAYMENT_METHODS.has(m.method),
@@ -189,9 +189,9 @@ export default function DailyClosingPage() {
                 return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
               }
               return (
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-3 gap-2">
                   {validMethods.map((m) => (
-                    <div key={m.method} className="flex items-center justify-between text-sm border border-[#E2E8F0] rounded-lg px-3 py-2">
+                    <div key={m.method} className="flex items-center justify-between text-xs border border-[#E2E8F0] rounded px-2 py-1.5">
                       <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[m.method]}</span>
                       <span className="font-medium text-[#102F63]">{formatMoney(m.amount, i18n.language)} {t('common.currency')}</span>
                     </div>
@@ -202,23 +202,23 @@ export default function DailyClosingPage() {
           </div>
 
           {/* OPERATIONAL SUMMARY - secondary */}
-          <div className="ui-card p-4 mb-4">
-            <h2 className="text-[14px] font-bold text-[#102F63] mb-3">{t('dailyClosing.operationalSummary')}</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="text-center p-3 bg-[#F6F8FC] rounded-lg">
-                <div className="text-lg font-bold text-[#102F63]">{data.visitsToday}</div>
+          <div className="ui-card p-3 mb-3 print:page-break-inside-avoid">
+            <h2 className="text-[13px] font-bold text-[#102F63] mb-2">{t('dailyClosing.operationalSummary')}</h2>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <div className="text-center p-2 bg-[#F6F8FC] rounded">
+                <div className="text-base font-bold text-[#102F63]">{data.visitsToday}</div>
                 <div className="text-xs text-[#64748B] mt-1">{t('dailyClosing.todayVisits')}</div>
               </div>
-              <div className="text-center p-3 bg-[#F6F8FC] rounded-lg">
-                <div className="text-lg font-bold text-[var(--success)]">{data.completedVisits}</div>
+              <div className="text-center p-2 bg-[#F6F8FC] rounded">
+                <div className="text-base font-bold text-[var(--success)]">{data.completedVisits}</div>
                 <div className="text-xs text-[#64748B] mt-1">{t('dailyClosing.completedVisits')}</div>
               </div>
-              <div className="text-center p-3 bg-[#F6F8FC] rounded-lg">
-                <div className="text-lg font-bold text-[#102F63]">{data.completedAppointments}</div>
+              <div className="text-center p-2 bg-[#F6F8FC] rounded">
+                <div className="text-base font-bold text-[#102F63]">{data.completedAppointments}</div>
                 <div className="text-xs text-[#64748B] mt-1">{t('dailyClosing.completedAppointments')}</div>
               </div>
-              <div className="text-center p-3 bg-[#F6F8FC] rounded-lg">
-                <div className="text-lg font-bold text-[#C4362B]">{data.cancelledOrNoShowAppointments}</div>
+              <div className="text-center p-2 bg-[#F6F8FC] rounded">
+                <div className="text-base font-bold text-[#C4362B]">{data.cancelledOrNoShowAppointments}</div>
                 <div className="text-xs text-[#64748B] mt-1">{t('dailyClosing.cancelledNoShow')}</div>
               </div>
             </div>
@@ -226,9 +226,9 @@ export default function DailyClosingPage() {
 
           {/* ATTENTION / EXCEPTIONS - conditional */}
           {(data.reconciliationDifference !== 0 || data.invoices.some(inv => inv.remaining > 0)) && (
-            <div className="ui-card p-4 mb-4 border-l-4 border-l-[#C4362B]">
-              <h2 className="text-[14px] font-bold text-[#C4362B] mb-3 flex items-center gap-2">
-                <AlertTriangle size={16} />
+            <div className="ui-card p-3 mb-3 border-l-4 border-l-[#C4362B] print:page-break-inside-avoid">
+              <h2 className="text-[13px] font-bold text-[#C4362B] mb-2 flex items-center gap-2">
+                <AlertTriangle size={14} />
                 {t('reports.requiresAttention')}
               </h2>
               {data.reconciliationDifference !== 0 && (
@@ -261,7 +261,7 @@ export default function DailyClosingPage() {
           )}
 
           {/* DETAILED DATA - secondary, collapsible, screen-only */}
-          <div className="print:hidden">
+          <div className="print:hidden print-tables-hidden">
             <button
               onClick={() => setShowDetails(!showDetails)}
               className="w-full ui-card p-3 mb-4 flex items-center justify-between text-sm font-medium text-[#102F63] hover:bg-[#F6F8FC]"
@@ -273,7 +273,7 @@ export default function DailyClosingPage() {
             {showDetails && (
               <>
                 {/* Invoices list */}
-                <div className="ui-card overflow-hidden p-0 mb-4">
+                <div className="ui-card overflow-hidden p-0 mb-4 print-tables-hidden">
                   <div className="px-5 pt-5 pb-3">
                     <h2 className="text-[15px] font-bold text-[#102F63]">{t('dailyClosing.invoicesToday')}</h2>
                   </div>
@@ -320,7 +320,7 @@ export default function DailyClosingPage() {
                 </div>
 
                 {/* Payments list */}
-                <div className="ui-card overflow-hidden p-0">
+                <div className="ui-card overflow-hidden p-0 print-tables-hidden">
                   <div className="px-5 pt-5 pb-3">
                     <h2 className="text-[15px] font-bold text-[#102F63]">{t('dailyClosing.paymentsToday')}</h2>
                   </div>
@@ -358,7 +358,7 @@ export default function DailyClosingPage() {
           </div>
 
           {/* Print-only footer */}
-          <div className="hidden print:block mt-6 pt-4 border-t border-[#E2E8F0] text-center text-xs text-[#94A3B8]">
+          <div className="hidden print:block print-footer">
             {t('dailyClosing.generatedAt')}: {new Date().toLocaleString(i18n.language)}
           </div>
         </>
