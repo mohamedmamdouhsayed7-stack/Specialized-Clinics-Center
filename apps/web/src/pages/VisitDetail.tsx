@@ -106,7 +106,7 @@ export default function VisitDetail() {
       <ConfirmDialog
         open={showDeleteDialog}
         title={t('visits.deletePermanently')}
-        message={t('visits.deleteVisitWarning')}
+        message={t('visits.deleteWarning')}
         confirmLabel={deleteMutation.isPending ? t('common.loading') : t('common.confirm')}
         cancelLabel={t('common.cancel')}
         destructive

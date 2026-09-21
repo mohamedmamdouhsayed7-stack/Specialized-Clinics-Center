@@ -250,7 +250,7 @@ export default function ServicesList() {
       <ConfirmDialog
         open={!!confirmDelete}
         title={t('services.deletePermanently')}
-        message={t('services.deleteServiceWarning', { name: confirmDelete?.name || '' })}
+        message={t('services.deleteWarning')}
         confirmLabel={t('common.confirm')}
         cancelLabel={t('common.cancel')}
         destructive
