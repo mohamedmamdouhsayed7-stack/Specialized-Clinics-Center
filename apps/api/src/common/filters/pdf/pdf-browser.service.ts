@@ -40,7 +40,7 @@ export class PdfBrowserService implements OnModuleDestroy {
 
       await page.setContent(html, { waitUntil: 'load' });
       // Add a small delay to allow fonts to load
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise(resolve => globalThis.setTimeout(resolve, 1000));
       const pdfBuffer = await page.pdf({
         format: 'A4',
         printBackground: true,
