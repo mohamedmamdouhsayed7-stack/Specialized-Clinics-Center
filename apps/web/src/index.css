@@ -266,3 +266,38 @@ h4 {
     background-position: 0 50%;
   }
 }
+
+/* Print-specific styles for Daily Closing */
+@media print {
+  body {
+    background: white;
+    color: black;
+  }
+
+  .page-container {
+    max-width: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .ui-card {
+    box-shadow: none;
+    border: 1px solid #ccc;
+    page-break-inside: avoid;
+  }
+
+  /* Ensure important sections don't break awkwardly */
+  .ui-card h2 {
+    page-break-after: avoid;
+  }
+
+  /* Compact print layout */
+  @page {
+    size: A4;
+    margin: 1cm;
+  }
+}
