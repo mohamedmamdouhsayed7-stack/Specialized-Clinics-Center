@@ -225,8 +225,12 @@ export default function ReportsPage() {
             <Skeleton className="h-24 rounded-lg" />
           ) : paymentMethods.data && paymentMethods.data.length > 0 ? (
             (() => {
+              // Allow KNET, LINK, OTHER (new methods) and historical CASH/VISA when they exist
               const validMethods = paymentMethods.data.filter(
-                (row) => (row.amount > 0 || row.count > 0) && reportPaymentMethods.has(row.method),
+                (row) => (row.amount > 0 || row.count > 0) && (
+                  reportPaymentMethods.has(row.method) || // New methods: KNET, LINK, OTHER
+                  row.method === 'CASH' || row.method === 'VISA' // Historical methods
+                ),
               );
               if (validMethods.length === 0) {
                 return <EmptyState title={t('reports.noPaymentsInPeriod')} />;

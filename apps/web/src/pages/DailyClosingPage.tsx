@@ -19,13 +19,21 @@ const PAYMENT_METHOD_KEYS: Record<string, string> = {
   VISA: 'payments.methodVisa',
 };
 
-// For the main report payment-method summary UI, display only: Cash, KNET, Link
+const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  KNET: 'KNET',
+  LINK: 'Link',
+  OTHER: 'Other',
+  CASH: 'Cash',
+  VISA: 'VISA',
+};
+
+// For the main report payment-method summary UI, display only: KNET, Link, OTHER
 const REPORT_PAYMENT_METHOD_LABELS: Record<string, string> = {
   KNET: 'KNET',
   LINK: 'Link',
-  CASH: 'Cash',
+  OTHER: 'Other',
 };
-const REPORT_PAYMENT_METHODS = new Set(['CASH', 'KNET', 'LINK']);
+const REPORT_PAYMENT_METHODS = new Set(['KNET', 'LINK', 'OTHER']);
 
 // Get local calendar date (YYYY-MM-DD) in Asia/Kuwait for the current day
 function getLocalToday(): string {
@@ -149,7 +157,7 @@ export default function DailyClosingPage() {
           {/* FINANCIAL RECONCILIATION - compact and prominent */}
           <div className="ui-card p-3 mb-3 print:page-break-inside-avoid">
             <h2 className="text-[13px] font-bold text-[#102F63] mb-2">{t('dailyClosing.reconciliation')}</h2>
-            <div className="grid grid-cols-3 gap-3 mb-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
               <div>
                 <div className="text-xs text-[#64748B] mb-1">{t('dailyClosing.expectedCollection')}</div>
                 <div className="text-base font-bold text-[#102F63]">{formatMoney(data.totalInvoiced, i18n.language)} {t('common.currency')}</div>
@@ -182,17 +190,21 @@ export default function DailyClosingPage() {
           <div className="ui-card p-3 mb-3 print:page-break-inside-avoid">
             <h2 className="text-[13px] font-bold text-[#102F63] mb-2">{t('reports.paymentMethods')}</h2>
             {(() => {
+              // Allow KNET, LINK, OTHER (new methods) and historical CASH/VISA when they exist
               const validMethods = data.paymentMethods.filter(
-                (m) => (m.amount > 0 || m.count > 0) && REPORT_PAYMENT_METHODS.has(m.method),
+                (m) => (m.amount > 0 || m.count > 0) && (
+                  REPORT_PAYMENT_METHODS.has(m.method) || // New methods: KNET, LINK, OTHER
+                  m.method === 'CASH' || m.method === 'VISA' // Historical methods
+                ),
               );
               if (validMethods.length === 0) {
                 return <EmptyState title={t('reports.noPaymentsInPeriod')} />;
               }
               return (
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   {validMethods.map((m) => (
                     <div key={m.method} className="flex items-center justify-between text-xs border border-[#E2E8F0] rounded px-2 py-1.5">
-                      <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[m.method]}</span>
+                      <span className="text-[#1F2430]">{REPORT_PAYMENT_METHOD_LABELS[m.method] || PAYMENT_METHOD_LABELS[m.method] || m.method}</span>
                       <span className="font-medium text-[#102F63]">{formatMoney(m.amount, i18n.language)} {t('common.currency')}</span>
                     </div>
                   ))}
