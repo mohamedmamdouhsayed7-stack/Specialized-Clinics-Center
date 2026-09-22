@@ -72,7 +72,64 @@ describe('BackupModule', () => {
       process.env.BACKUP_DIR = '/app/backups';
       const service = new BackupService({ logUserAction: jest.fn() } as any);
       // Don't call onModuleInit() in this test since we're testing getDbConnectionParams
-      expect(() => service['getDbConnectionParams']()).toThrow('POSTGRES_DB environment variable is required');
+      expect(() => service['getDbConnectionParams']()).toThrow('DATABASE_URL or POSTGRES_DB is required');
+    });
+
+    it('derives Neon connection parameters from DATABASE_URL', () => {
+      delete process.env.POSTGRES_USER;
+      delete process.env.POSTGRES_PASSWORD;
+      delete process.env.POSTGRES_DB;
+      delete process.env.DB_HOST;
+      delete process.env.DB_PORT;
+      process.env.DATABASE_URL = 'postgresql://neon_user:neon_password@ep-example.neon.tech/neon_db?sslmode=require';
+
+      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      expect(service['getDbConnectionParams']()).toMatchObject({
+        host: 'ep-example.neon.tech',
+        port: '5432',
+        user: 'neon_user',
+        password: 'neon_password',
+        database: 'neon_db',
+        sslmode: 'require',
+      });
+    });
+
+    it('decodes URL-encoded credentials and preserves query sslmode', () => {
+      delete process.env.POSTGRES_USER;
+      delete process.env.POSTGRES_PASSWORD;
+      delete process.env.POSTGRES_DB;
+      delete process.env.DB_HOST;
+      delete process.env.DB_PORT;
+      process.env.DATABASE_URL = 'postgresql://neon%40user:p%40ss%3Aword@ep-example.neon.tech:5433/clinic%20prod?sslmode=require&connect_timeout=10';
+
+      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      expect(service['getDbConnectionParams']()).toMatchObject({
+        host: 'ep-example.neon.tech',
+        port: '5433',
+        user: 'neon@user',
+        password: 'p@ss:word',
+        database: 'clinic prod',
+        sslmode: 'require',
+      });
+    });
+
+    it('keeps Docker environment variables as connection overrides', () => {
+      process.env.DATABASE_URL = 'postgresql://url_user:url_password@url-host/url_db?sslmode=require';
+      process.env.DB_HOST = 'postgres';
+      process.env.DB_PORT = '5432';
+      process.env.POSTGRES_USER = 'clinic_user';
+      process.env.POSTGRES_PASSWORD = 'clinic_password';
+      process.env.POSTGRES_DB = 'clinic_test_db';
+
+      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      expect(service['getDbConnectionParams']()).toMatchObject({
+        host: 'postgres',
+        port: '5432',
+        user: 'clinic_user',
+        password: 'clinic_password',
+        database: 'clinic_test_db',
+        sslmode: 'require',
+      });
     });
 
     it('should throw error if BACKUP_DIR is not absolute', () => {

@@ -1,5 +1,9 @@
 # Production Deployment Runbook
 
+> For the supported Cloudflare Pages + Railway + Neon deployment, use
+> [RAILWAY_DEPLOYMENT.md](./RAILWAY_DEPLOYMENT.md). The VPS/Compose procedure
+> below remains available for the existing self-hosted deployment.
+
 This runbook describes the supported single-VPS deployment using Docker Compose,
 PostgreSQL, NestJS, and Nginx with HTTPS termination.
 

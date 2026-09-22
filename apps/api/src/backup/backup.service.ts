@@ -10,6 +10,7 @@ import { Readable, Transform, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { URL } from 'node:url';
 import { AuditService } from '../audit/audit.service';
 import { MaintenanceService } from '../common/maintenance/maintenance.service';
 
@@ -137,21 +138,21 @@ export class BackupService implements OnModuleInit {
   }
 
   private getDbConnectionParams() {
-    // Extract database name from DATABASE_URL if POSTGRES_DB not explicitly set
-    // DATABASE_URL format: postgresql://user:password@host:port/database
+    const databaseUrl = process.env.DATABASE_URL;
+    let parsedUrl: URL | undefined;
     let database = process.env.POSTGRES_DB;
-    if (!database && process.env.DATABASE_URL) {
+
+    if (databaseUrl) {
       try {
-        // eslint-disable-next-line no-undef
-        const url = new URL(process.env.DATABASE_URL);
-        database = url.pathname.substring(1); // Remove leading slash
+        parsedUrl = new URL(databaseUrl);
+        database = database || decodeURIComponent(parsedUrl.pathname.slice(1));
       } catch {
-        throw new Error('Could not extract database name from DATABASE_URL. Please set POSTGRES_DB explicitly.');
+        throw new Error('DATABASE_URL is invalid for backup operations.');
       }
     }
 
     if (!database) {
-      throw new Error('POSTGRES_DB environment variable is required for backup operations');
+      throw new Error('DATABASE_URL or POSTGRES_DB is required for backup operations');
     }
 
     // CRITICAL: Validate that we're not accidentally targeting production during test verification
@@ -160,11 +161,12 @@ export class BackupService implements OnModuleInit {
     }
 
     return {
-      host: process.env.DB_HOST || 'postgres',
-      port: process.env.DB_PORT || '5432',
-      user: process.env.POSTGRES_USER || 'clinic_user',
-      password: process.env.POSTGRES_PASSWORD,
+      host: process.env.DB_HOST || parsedUrl?.hostname || 'postgres',
+      port: process.env.DB_PORT || parsedUrl?.port || '5432',
+      user: process.env.POSTGRES_USER || (parsedUrl ? decodeURIComponent(parsedUrl.username) : 'clinic_user'),
+      password: process.env.POSTGRES_PASSWORD || (parsedUrl ? decodeURIComponent(parsedUrl.password) : undefined),
       database,
+      sslmode: parsedUrl?.searchParams.get('sslmode') || undefined,
     };
   }
 
@@ -408,7 +410,7 @@ export class BackupService implements OnModuleInit {
   // separate prevents the pre-restore safety backup from waiting on itself.
   private async runBackupUnlocked(triggeredBy: 'manual' | 'scheduled' | 'pre-restore-safety', userId?: string, ipAddress?: string, userAgent?: string) {
       await this.ensureBackupDir();
-      const { host, port, user, password, database } = this.getDbConnectionParams();
+      const { host, port, user, password, database, sslmode } = this.getDbConnectionParams();
       const encryptionKey = this.getEncryptionKey();
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -423,7 +425,17 @@ export class BackupService implements OnModuleInit {
       // erroring on "already exists".
       const pgDump = spawn(
         'pg_dump',
-        ['--host', host, '--port', port, '--username', user, '--format', 'plain', '--clean', '--if-exists', '--no-owner', database],
+        [
+          '--host', host,
+          '--port', port,
+          '--username', user,
+          ...(sslmode ? ['--sslmode', sslmode] : []),
+          '--format', 'plain',
+          '--clean',
+          '--if-exists',
+          '--no-owner',
+          database,
+        ],
         { env: { ...process.env, PGPASSWORD: password } },
       );
 
@@ -587,7 +599,7 @@ export class BackupService implements OnModuleInit {
 
         let psql: ChildProcessWithoutNullStreams | undefined;
         try {
-        const { host, port, user, password, database } = this.getDbConnectionParams();
+        const { host, port, user, password, database, sslmode } = this.getDbConnectionParams();
 
         // Use ON_ERROR_STOP to ensure psql stops on first SQL error
         // Use single-transaction to ensure atomic restore
@@ -597,6 +609,7 @@ export class BackupService implements OnModuleInit {
             '--host', host,
             '--port', port,
             '--username', user,
+            ...(sslmode ? ['--sslmode', sslmode] : []),
             '--dbname', database,
             '--set=ON_ERROR_STOP=on',
             '--single-transaction',
