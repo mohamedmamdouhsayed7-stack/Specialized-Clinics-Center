@@ -397,6 +397,10 @@ export class InvoicesService {
           paid: true,
           remaining: true,
           paymentStatus: true,
+          replacedByInvoiceId: true,
+          replacementInvoices: {
+            select: { id: true },
+          },
         },
       });
 
@@ -404,8 +408,28 @@ export class InvoicesService {
         throw new NotFoundException('Invoice not found');
       }
 
-      // Allocations are restrictive in both directions: remove allocations
-      // owned by this invoice and allocations for payments owned by it.
+      if (invoice.replacedByInvoiceId || (invoice.replacementInvoices?.length ?? 0) > 0) {
+        throw new BadRequestException(
+          'This invoice cannot be permanently deleted because it has a replacement relationship.',
+        );
+      }
+
+      const allocationsForOwnedPayments = await tx.paymentAllocation.findMany({
+        where: {
+          payment: { invoiceId: id },
+          invoiceId: { not: id },
+        },
+        select: { invoiceId: true },
+      }) ?? [];
+
+      if (allocationsForOwnedPayments.length > 0) {
+        throw new BadRequestException(
+          'This invoice cannot be permanently deleted because its payment credit is referenced by another invoice.',
+        );
+      }
+
+      // Allocations belonging to this invoice can be removed only after the
+      // cross-invoice payment-credit check above has passed.
       await tx.paymentAllocation.deleteMany({
         where: {
           OR: [

@@ -15,7 +15,7 @@ function transactionClient() {
     invoiceItem: { findUnique: jest.fn(), deleteMany: jest.fn(), updateMany: jest.fn() },
     invoiceAdditionalCharge: { findUnique: jest.fn(), deleteMany: jest.fn() },
     payment: { findUnique: jest.fn(), deleteMany: jest.fn() },
-    paymentAllocation: { findUnique: jest.fn(), deleteMany: jest.fn() },
+    paymentAllocation: { findUnique: jest.fn(), findMany: jest.fn(), deleteMany: jest.fn() },
     auditLog: { create: jest.fn() },
   };
   return {
@@ -194,5 +194,57 @@ describe('focused permanent-delete safety', () => {
         entityId: 'invoice-id',
       }),
     }));
+  });
+
+  it('rejects deletion when an owned payment credits another invoice', async () => {
+    const { prisma, client } = transactionClient();
+    client.invoice.findUnique.mockResolvedValue({
+      id: 'invoice-id',
+      invoiceNumber: 'INV-000001',
+      visitId: 'visit-id',
+      patientId: 'patient-id',
+      status: 'ISSUED',
+      total: '100.00',
+      paid: '100.00',
+      remaining: '0.00',
+      paymentStatus: 'PAID',
+      replacedByInvoiceId: null,
+      replacementInvoices: [],
+    });
+    client.paymentAllocation.findMany.mockResolvedValue([{ invoiceId: 'replacement-id' }]);
+
+    await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(
+      'invoice-id',
+      'user-id',
+      UserRole.ADMIN,
+    )).rejects.toThrow('payment credit is referenced by another invoice');
+    expect(client.paymentAllocation.deleteMany).not.toHaveBeenCalled();
+    expect(client.payment.deleteMany).not.toHaveBeenCalled();
+    expect(client.invoice.delete).not.toHaveBeenCalled();
+  });
+
+  it('rejects deletion when the invoice has a replacement relationship', async () => {
+    const { prisma, client } = transactionClient();
+    client.invoice.findUnique.mockResolvedValue({
+      id: 'invoice-id',
+      invoiceNumber: 'INV-000001',
+      visitId: 'visit-id',
+      patientId: 'patient-id',
+      status: 'VOID',
+      total: '100.00',
+      paid: '100.00',
+      remaining: '0.00',
+      paymentStatus: 'PAID',
+      replacedByInvoiceId: 'replacement-id',
+      replacementInvoices: [],
+    });
+
+    await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(
+      'invoice-id',
+      'user-id',
+      UserRole.ADMIN,
+    )).rejects.toThrow('replacement relationship');
+    expect(client.paymentAllocation.deleteMany).not.toHaveBeenCalled();
+    expect(client.invoice.delete).not.toHaveBeenCalled();
   });
 });

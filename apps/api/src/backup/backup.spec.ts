@@ -723,8 +723,8 @@ describe('BackupModule', () => {
         'Updated At',
       ]);
       expect(workbook.getWorksheet('Patients')?.getRow(2).values).toContain('Patient');
-      expect(workbook.getWorksheet('Metadata')?.getColumn(1).values).toContain('Exported At');
-      expect(workbook.getWorksheet('Metadata')?.getColumn(1).values).toContain('Patients Rows');
+      expect(workbook.getWorksheet('Backup Info')?.getColumn(1).values).toContain('Exported At');
+      expect(workbook.getWorksheet('Backup Info')?.getColumn(1).values).toContain('Patients Rows');
       expect(buffer.toString()).not.toContain('passwordHash');
       expect(buffer.toString()).not.toContain('recordedById');
       expect(buffer.toString()).not.toContain('createdById');
