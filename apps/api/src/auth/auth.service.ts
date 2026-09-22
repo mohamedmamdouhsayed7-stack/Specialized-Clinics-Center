@@ -2,23 +2,32 @@ import {
   Injectable,
   UnauthorizedException,
   ConflictException,
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { EmailService } from '../email/email.service';
 import * as argon2 from 'argon2';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UserRole } from '@prisma/client';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
     private configService: ConfigService,
     private auditService: AuditService,
+    private emailService: EmailService,
   ) {}
 
   async register(dto: RegisterDto, ipAddress?: string, userAgent?: string) {
@@ -297,5 +306,110 @@ export class AuthService {
         expiresAt,
       },
     });
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto, ipAddress?: string, userAgent?: string) {
+    // Generic response - don't reveal if email exists
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+
+    if (user && user.isActive) {
+      // Generate secure random token
+      const resetToken = randomBytes(32).toString('hex');
+      const tokenHash = await argon2.hash(resetToken);
+
+      // Token expires in 1 hour
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 1);
+
+      // Store token
+      await this.prisma.passwordResetToken.create({
+        data: {
+          tokenHash,
+          userId: user.id,
+          expiresAt,
+        },
+      });
+
+      // Send email
+      try {
+        await this.emailService.sendPasswordResetEmail(user.email, resetToken);
+      } catch (error) {
+        this.logger.error('Failed to send password reset email', error);
+        // Don't throw - still return generic response
+      }
+
+      await this.auditService.logUserAction(
+        user.id,
+        'PASSWORD_RESET_REQUESTED',
+        'User',
+        user.id,
+        ipAddress,
+        userAgent,
+      );
+    }
+
+    // Always return generic success message
+    return { message: 'If an account with this email exists, a password reset link has been sent.' };
+  }
+
+  async resetPassword(dto: ResetPasswordDto, ipAddress?: string, userAgent?: string) {
+    // Find valid token
+    const resetTokens = await this.prisma.passwordResetToken.findMany({
+      where: {
+        expiresAt: { gte: new Date() },
+        usedAt: null,
+      },
+      include: { user: true },
+    });
+
+    let matchedToken = null;
+    for (const token of resetTokens) {
+      if (await argon2.verify(token.tokenHash, dto.token)) {
+        matchedToken = token;
+        break;
+      }
+    }
+
+    if (!matchedToken) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    if (!matchedToken.user.isActive) {
+      throw new BadRequestException('Account is inactive');
+    }
+
+    // Hash new password
+    const passwordHash = await argon2.hash(dto.newPassword);
+
+    // Update password
+    await this.prisma.user.update({
+      where: { id: matchedToken.userId },
+      data: { passwordHash },
+    });
+
+    // Mark token as used
+    await this.prisma.passwordResetToken.update({
+      where: { id: matchedToken.id },
+      data: { usedAt: new Date() },
+    });
+
+    // Revoke all refresh tokens for this user
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: matchedToken.userId },
+      data: { revokedAt: new Date() },
+    });
+
+    await this.auditService.logUserAction(
+      matchedToken.userId,
+      'PASSWORD_RESET',
+      'User',
+      matchedToken.userId,
+      ipAddress,
+      userAgent,
+    );
+
+    return { message: 'Password reset successfully' };
   }
 }

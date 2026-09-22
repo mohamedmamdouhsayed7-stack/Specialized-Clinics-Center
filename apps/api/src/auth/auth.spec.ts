@@ -632,6 +632,234 @@ describe('Authentication Security Tests (E2E)', () => {
     });
   });
 
+  describe('Password Reset Security', () => {
+    it('should return generic message for forgot-password regardless of email existence', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({
+          email: 'nonexistent@test.com',
+        })
+        .expect(200);
+
+      expect(response.body.message).toContain('password reset link');
+    });
+
+    it('should return generic message for forgot-password with existing email', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({
+          email: 'testadmin.auth@test.com',
+        })
+        .expect(200);
+
+      expect(response.body.message).toContain('password reset link');
+    });
+
+    it('should reject password reset with invalid token', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({
+          token: 'invalid-token',
+          newPassword: 'NewPassword123',
+        })
+        .expect(400);
+    });
+
+    it('should successfully reset password with valid token', async () => {
+      // First, request a password reset
+      await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({
+          email: 'testadmin.auth@test.com',
+        })
+        .expect(200);
+
+      // Get the created token from database
+      const resetToken = await prisma.passwordResetToken.findFirst({
+        where: {
+          userId: adminUserId,
+          usedAt: null,
+          expiresAt: { gte: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      expect(resetToken).toBeDefined();
+
+      // Extract the actual token (we need to hash the token we send)
+      // Since we can't easily get the plaintext token, we'll create a new one
+      const { randomBytes } = require('crypto');
+      const newToken = randomBytes(32).toString('hex');
+      const tokenHash = await argon2.hash(newToken);
+
+      // Update the token in database with our known token
+      await prisma.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { tokenHash },
+      });
+
+      // Reset password with the known token
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({
+          token: newToken,
+          newPassword: 'NewPassword123',
+        })
+        .expect(200);
+
+      expect(response.body.message).toBe('Password reset successfully');
+
+      // Verify token is marked as used
+      const updatedToken = await prisma.passwordResetToken.findUnique({
+        where: { id: resetToken.id },
+      });
+      expect(updatedToken.usedAt).toBeDefined();
+
+      // Verify all refresh tokens are revoked
+      const refreshTokens = await prisma.refreshToken.findMany({
+        where: { userId: adminUserId, revokedAt: null },
+      });
+      expect(refreshTokens.length).toBe(0);
+
+      // Verify new password works
+      await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({
+          email: 'testadmin.auth@test.com',
+          password: 'NewPassword123',
+        })
+        .expect(200);
+
+      // Reset password back to original for other tests
+      const newPasswordHash = await argon2.hash('admin123');
+      await prisma.user.update({
+        where: { id: adminUserId },
+        data: { passwordHash: newPasswordHash },
+      });
+    });
+
+    it('should reject password reset with expired token', async () => {
+      // Create an expired token
+      const expiredDate = new Date();
+      expiredDate.setHours(expiredDate.getHours() - 2);
+
+      const { randomBytes } = require('crypto');
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = await argon2.hash(token);
+
+      await prisma.passwordResetToken.create({
+        data: {
+          tokenHash,
+          userId: adminUserId,
+          expiresAt: expiredDate,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({
+          token,
+          newPassword: 'NewPassword123',
+        })
+        .expect(400);
+    });
+
+    it('should reject password reset with already used token', async () => {
+      // Create a token and mark it as used
+      const { randomBytes } = require('crypto');
+      const token = randomBytes(32).toString('hex');
+      const tokenHash = await argon2.hash(token);
+
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 1);
+
+      await prisma.passwordResetToken.create({
+        data: {
+          tokenHash,
+          userId: adminUserId,
+          expiresAt,
+          usedAt: new Date(),
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({
+          token,
+          newPassword: 'NewPassword123',
+        })
+        .expect(400);
+    });
+
+    it('should revoke all refresh tokens after password reset', async () => {
+      // Login to create refresh tokens
+      const agent = request.agent(app.getHttpServer());
+      await agent
+        .post('/api/auth/login')
+        .send({
+          email: 'testadmin.auth@test.com',
+          password: 'admin123',
+        })
+        .expect(200);
+
+      // Verify refresh token exists
+      const refreshTokensBefore = await prisma.refreshToken.findMany({
+        where: { userId: adminUserId, revokedAt: null },
+      });
+      expect(refreshTokensBefore.length).toBeGreaterThan(0);
+
+      // Request password reset
+      await request(app.getHttpServer())
+        .post('/api/auth/forgot-password')
+        .send({
+          email: 'testadmin.auth@test.com',
+        })
+        .expect(200);
+
+      // Get the created token
+      const resetToken = await prisma.passwordResetToken.findFirst({
+        where: {
+          userId: adminUserId,
+          usedAt: null,
+          expiresAt: { gte: new Date() },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Create known token
+      const { randomBytes } = require('crypto');
+      const newToken = randomBytes(32).toString('hex');
+      const tokenHash = await argon2.hash(newToken);
+
+      await prisma.passwordResetToken.update({
+        where: { id: resetToken.id },
+        data: { tokenHash },
+      });
+
+      // Reset password
+      await request(app.getHttpServer())
+        .post('/api/auth/reset-password')
+        .send({
+          token: newToken,
+          newPassword: 'AnotherPassword123',
+        })
+        .expect(200);
+
+      // Verify all refresh tokens are revoked
+      const refreshTokensAfter = await prisma.refreshToken.findMany({
+        where: { userId: adminUserId, revokedAt: null },
+      });
+      expect(refreshTokensAfter.length).toBe(0);
+
+      // Reset password back to original
+      const newPasswordHash = await argon2.hash('admin123');
+      await prisma.user.update({
+        where: { id: adminUserId },
+        data: { passwordHash: newPasswordHash },
+      });
+    });
+  });
+
   describe('Rate Limiting', () => {
     it('should enforce rate limiting on login', async () => {
       // Create a dedicated test user for rate limiting test to avoid contamination

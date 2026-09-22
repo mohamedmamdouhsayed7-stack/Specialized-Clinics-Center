@@ -4,6 +4,8 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -111,5 +113,22 @@ export class AuthController {
       ipAddress,
       userAgent,
     );
+  }
+
+  @Post('forgot-password')
+  @UseGuards(AuthThrottlerGuard)
+  @HttpCode(HttpStatus.OK)
+  async forgotPassword(@Req() req, @Body() forgotPasswordDto: ForgotPasswordDto) {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.authService.forgotPassword(forgotPasswordDto, ipAddress, userAgent);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Req() req, @Body() resetPasswordDto: ResetPasswordDto) {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.authService.resetPassword(resetPasswordDto, ipAddress, userAgent);
   }
 }

@@ -87,6 +87,7 @@ function BackupSection() {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [confirmRestore, setConfirmRestore] = useState<BackupEntry | null>(null);
   const [restoring, setRestoring] = useState(false);
@@ -121,6 +122,31 @@ function BackupSection() {
     }
   };
 
+  const handleExportExcel = async () => {
+    setExporting(true);
+    setError('');
+    try {
+      const blob = await backupService.exportExcel();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const now = new Date();
+      const dateStr = now.toISOString().slice(0, 10);
+      const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '-');
+      a.download = `clinic-data-backup-${dateStr}-${timeStr}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: t('feedback.excelExported') });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.excelExportError'));
+      showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.excelExportFailed') });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleRestore = async () => {
     if (!confirmRestore) return;
     setRestoring(true);
@@ -135,6 +161,24 @@ function BackupSection() {
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.restoreFailed') });
     } finally {
       setRestoring(false);
+    }
+  };
+
+  const handleDownloadBackup = async (filename: string) => {
+    try {
+      const blob = await backupService.downloadBackup(filename);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      showToast({ type: 'success', message: t('feedback.backupDownloaded') });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.backupDownloadError'));
+      showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.backupDownloadFailed') });
     }
   };
 
@@ -180,10 +224,16 @@ function BackupSection() {
         </div>
       )}
 
-      <button onClick={handleRunBackup} disabled={running} className="btn-primary px-4 py-2.5 text-sm mb-5 flex items-center gap-2">
-        {running ? <Loader2 size={16} className="animate-spin" /> : null}
-        {running ? t('settings.creatingBackup') : t('settings.createBackupNow')}
-      </button>
+      <div className="flex gap-3 mb-5">
+        <button onClick={handleRunBackup} disabled={running} className="btn-primary px-4 py-2.5 text-sm flex items-center gap-2">
+          {running ? <Loader2 size={16} className="animate-spin" /> : null}
+          {running ? t('settings.creatingBackup') : t('settings.createBackupNow')}
+        </button>
+        <button onClick={handleExportExcel} disabled={exporting} className="btn-secondary px-4 py-2.5 text-sm flex items-center gap-2">
+          {exporting ? <Loader2 size={16} className="animate-spin" /> : null}
+          {exporting ? t('settings.exportingExcel') : t('settings.downloadExcel')}
+        </button>
+      </div>
 
       <h3 className="text-sm font-bold text-[#102F63] mb-3">{t('settings.availableBackups')}</h3>
       {backups.length === 0 && !loading && <EmptyState title={t('settings.noBackupsYet')} />}
@@ -195,7 +245,10 @@ function BackupSection() {
                 <div className="text-[#1F2430]">{new Date(b.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW')}</div>
                 <div className="text-xs text-[#94A3B8]">{formatSize(b.sizeBytes)} · {b.triggeredBy === 'manual' ? t('settings.triggerManual') : b.triggeredBy === 'scheduled' ? t('settings.triggerScheduled') : t('settings.triggerPreRestore')}{b.uploadedToRemote ? ` · ${t('settings.uploadedRemotely')}` : ''}</div>
               </div>
-              <button onClick={() => setConfirmRestore(b)} className="text-[#C4362B] hover:underline">{t('settings.restore')}</button>
+              <div className="flex gap-2">
+                <button onClick={() => handleDownloadBackup(b.filename)} className="text-[#173B78] hover:underline text-xs">{t('settings.download')}</button>
+                <button onClick={() => setConfirmRestore(b)} className="text-[#C4362B] hover:underline text-xs">{t('settings.restore')}</button>
+              </div>
             </div>
           ))}
         </div>
@@ -282,6 +335,7 @@ function RolesSection({ currentUserId }: { currentUserId?: string }) {
 
 function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const { t } = useTranslation();
   const { showToast } = useToast();
 
@@ -312,10 +366,16 @@ function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; 
         </span>
       </td>
       <td>
-        <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
-          {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowEdit(true)} className="text-sm text-[#173B78] hover:underline">
+            {t('common.edit')}
+          </button>
+          <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
+            {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
+          </button>
+        </div>
       </td>
+      {showEdit && <EditUserModal user={user} isSelf={isSelf} onClose={() => setShowEdit(false)} onUpdated={onChanged} />}
     </tr>
   );
 }
@@ -357,6 +417,48 @@ function CreateUserModal({ onClose, onCreated }: { onClose: () => void; onCreate
         </select>
         <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
           {submitting ? t('settings.creatingUser') : t('settings.createUser')}
+        </button>
+      </form>
+    </ModalDialog>
+  );
+}
+
+function EditUserModal({ user, isSelf, onClose, onUpdated }: { user: AppUser; isSelf: boolean; onClose: () => void; onUpdated: () => void }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(user.name);
+  const [email, setEmail] = useState(user.email);
+  const [role, setRole] = useState<'ADMIN' | 'RECEPTIONIST'>(user.role as 'ADMIN' | 'RECEPTIONIST');
+  const [error, setError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      await usersService.updateUser(user.id, { name, email, role });
+      onUpdated();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('settings.updateUserError'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalDialog open title={t('settings.editUser')} labelledBy="edit-user-title" onClose={onClose}>
+      {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-100 text-[#C4362B] rounded-lg text-sm">{error}</div>}
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('settings.userName')} required className="ui-input" />
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('settings.email')} required className="ui-input" />
+        <select value={role} onChange={(e) => setRole(e.target.value as 'ADMIN' | 'RECEPTIONIST')} disabled={isSelf} className="ui-input">
+          <option value="RECEPTIONIST">{t('roles.receptionist')}</option>
+          <option value="ADMIN">{t('roles.admin')}</option>
+        </select>
+        {isSelf && <p className="text-xs text-[#94A3B8]">{t('settings.cannotEditOwnRole')}</p>}
+        <button type="submit" disabled={submitting} className="btn-primary w-full py-2.5 text-sm">
+          {submitting ? t('settings.updatingUser') : t('settings.updateUser')}
         </button>
       </form>
     </ModalDialog>

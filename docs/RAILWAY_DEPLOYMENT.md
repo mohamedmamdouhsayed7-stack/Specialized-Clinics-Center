@@ -59,11 +59,8 @@ BACKUP_S3_SECRET_KEY=
 BACKUP_S3_REGION=us-east-1
 ```
 
-The current checked-out backend does not contain an SMTP/email module or a
-password-reset email flow. Therefore SMTP variables are not consumed by this
-revision and adding them will not enable password-reset emails. If that
-feature is added later, document and configure these Railway variables at that
-time:
+The password-reset email flow uses SMTP. Configure these variables when that
+flow is enabled:
 
 ```text
 SMTP_HOST=<provider host>
@@ -71,6 +68,14 @@ SMTP_PORT=<provider port>
 SMTP_USER=<provider username>
 SMTP_PASSWORD=<provider password>
 SMTP_FROM=<verified sender address>
+```
+
+For the initial production administrator, run the one-time seed command with
+`PROD_ADMIN_EMAIL` and `PROD_ADMIN_PASSWORD` supplied as protected Railway
+variables, then remove or clear those variables:
+
+```bash
+npm run seed:prod-admin --workspace @clinic-system/api
 ```
 
 `VITE_API_URL` belongs to the Cloudflare Pages frontend build environment, not

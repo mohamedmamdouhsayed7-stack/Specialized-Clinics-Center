@@ -9,11 +9,13 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { AuthThrottlerGuard } from './guards/auth-throttler.guard';
 import { DatabaseModule } from '../database/database.module';
 import { AuditModule } from '../audit/audit.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     DatabaseModule,
     AuditModule,
+    EmailModule,
     PassportModule,
     ConfigModule,
     JwtModule.registerAsync({

@@ -186,6 +186,7 @@ export default function InvoiceDetail() {
   const [messageSharePhone, setMessageSharePhone] = useState('');
   const [messageShareCountryCode, setMessageShareCountryCode] = useState('');
   const [messageShareMessage, setMessageShareMessage] = useState('');
+  const [whatsappCountryCode, setWhatsappCountryCode] = useState('965');
 
   const shareMenuRef = useRef<HTMLDivElement>(null);
   const messageShareDialogRef = useRef<HTMLDivElement>(null);
@@ -493,8 +494,9 @@ export default function InvoiceDetail() {
 
     const rawPhone = invoice.patient.phone || '';
 
+    // Use the selected country code from the WhatsApp modal
     const normalizedPhone = rawPhone
-      ? normalizeWhatsAppPhone(rawPhone)
+      ? normalizeWhatsAppPhone(rawPhone, whatsappCountryCode)
       : '';
 
     const hasValidPhone =
@@ -931,6 +933,19 @@ export default function InvoiceDetail() {
               </div>
 
               <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+                {invoice.status === 'ISSUED' && isAdmin && (
+                  <button
+                    onClick={() =>
+                      setShowReplacementForm(
+                        !showReplacementForm
+                      )
+                    }
+                    className="px-4 py-2 border border-[#4B5694] text-[#4B5694] rounded-md hover:bg-blue-50 transition-colors"
+                  >
+                    {t('invoices.createReplacement')}
+                  </button>
+                )}
+
                 <div
                   className="relative"
                   ref={shareMenuRef}
@@ -1107,19 +1122,6 @@ export default function InvoiceDetail() {
                     className="px-4 py-2 border border-[#C4362B] text-[#C4362B] rounded-md hover:bg-red-50 transition-colors disabled:opacity-50"
                   >
                     {t('invoices.voidInvoice')}
-                  </button>
-                )}
-
-                {invoice.status === 'ISSUED' && isAdmin && (
-                  <button
-                    onClick={() =>
-                      setShowReplacementForm(
-                        !showReplacementForm
-                      )
-                    }
-                    className="px-4 py-2 border border-[#4B5694] text-[#4B5694] rounded-md hover:bg-blue-50 transition-colors"
-                  >
-                    {t('invoices.createReplacement')}
                   </button>
                 )}
               </div>
@@ -2246,6 +2248,27 @@ export default function InvoiceDetail() {
 
               {/* Scrollable Content */}
               <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                {/* Country Code Selector */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    {t('invoices.countryCode')}
+                  </label>
+                  <select
+                    value={whatsappCountryCode}
+                    onChange={(event) => setWhatsappCountryCode(event.target.value)}
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    dir="ltr"
+                  >
+                    <option value="965">Kuwait (+965)</option>
+                    <option value="20">Egypt (+20)</option>
+                    <option value="966">Saudi Arabia (+966)</option>
+                    <option value="971">United Arab Emirates (+971)</option>
+                    <option value="974">Qatar (+974)</option>
+                    <option value="973">Bahrain (+973)</option>
+                    <option value="968">Oman (+968)</option>
+                  </select>
+                </div>
+
                 <button
                   type="button"
                   onClick={() => {

@@ -377,8 +377,10 @@ export function renderInvoiceHtml(
 <html lang="${language}" dir="${isArabic ? 'rtl' : 'ltr'}">
 <head>
 <meta charset="UTF-8" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  @font-face { font-family: 'Noto Naskh Arabic'; src: local('Noto Naskh Arabic'); }
   * { box-sizing: border-box; }
 
   @page {
@@ -387,7 +389,7 @@ export function renderInvoiceHtml(
   }
 
   body {
-    font-family: 'Arial', 'Noto Sans Arabic', 'Noto Naskh Arabic', sans-serif;
+    font-family: 'Noto Naskh Arabic', 'Arial', sans-serif;
     color: #1F2430;
     margin: 0;
     padding: 0;
@@ -396,33 +398,43 @@ export function renderInvoiceHtml(
 
   .sheet {
     width: 210mm;
-    min-height: 297mm;
-    padding: 6mm 10mm;
+    height: 297mm;
+    margin: 0 auto;
+    background: #FFFFFF;
     display: flex;
     flex-direction: column;
-    gap: 4mm;
+  }
+
+  .invoice-copy {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10mm 12mm;
   }
 
   .cut-line {
-    flex: 0 0 auto;
+    border-top: 1px dashed #CCCCCC;
+    margin: 2px 0;
     display: flex;
     align-items: center;
-    gap: 6px;
-    color: #AEB9CC;
-    font-size: 7px;
+    justify-content: center;
+    height: 8px;
   }
 
-  .cut-line .dashes {
-    flex: 1;
-    border-top: 1.5px dashed #C7D2E3;
+  .cut-line::after {
+    content: '${isArabic ? '✂' : '✂'}';
+    font-size: 8px;
+    color: #999999;
+    background: #FFFFFF;
+    padding: 0 4px;
   }
 
   .copy {
-    flex: 0 0 auto;
+    flex: 1;
     position: relative;
     border: 1px solid #E1E6EF;
     border-radius: 6px;
-    padding: 4mm 6mm;
+    padding: 5mm 8mm;
     display: flex;
     flex-direction: column;
   }
@@ -767,13 +779,13 @@ export function renderInvoiceHtml(
 
 <body>
   <div class="sheet">
-    ${copyHtml}
-    <div class="cut-line">
-      <span class="dashes"></span>
-      &#9986;
-      <span class="dashes"></span>
+    <div class="invoice-copy">
+      ${copyHtml}
     </div>
-    ${copyHtml}
+    <div class="cut-line"></div>
+    <div class="invoice-copy">
+      ${copyHtml}
+    </div>
   </div>
 </body>
 </html>`;

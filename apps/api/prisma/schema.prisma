@@ -90,6 +90,7 @@ model User {
   createdServices      Service[]        @relation("UserCreatedBy")
   auditLogs            AuditLog[]
   refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([email])
 }
@@ -240,7 +241,7 @@ model InvoiceItem {
 
   // Relations
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  service Service? @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
 
   @@index([invoiceId])
 }
@@ -318,6 +319,22 @@ model RefreshToken {
   @@index([userId])
   @@index([token])
   @@map("RefreshToken")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  tokenHash  String
+  userId     String   @db.Uuid
+  expiresAt  DateTime
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("PasswordResetToken")
 }
 
 model AuditLog {

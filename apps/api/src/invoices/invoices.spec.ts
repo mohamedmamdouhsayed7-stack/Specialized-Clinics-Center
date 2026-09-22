@@ -1697,6 +1697,49 @@ describe('Invoices Module Tests (E2E)', () => {
       expect(Math.abs(num1 - num2)).toBe(1);
     });
 
+    it('should prevent duplicate invoice numbers through concurrent invoice creation', async () => {
+      // This test verifies that the PostgreSQL sequence + UNIQUE constraint
+      // prevent duplicate invoice numbers even under concurrent load
+      const visits = await Promise.all([
+        prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
+        prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
+        prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
+        prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
+        prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
+      ]);
+
+      // Create 5 invoices concurrently
+      const responses = await Promise.all(
+        visits.map((visit) =>
+          request(app.getHttpServer())
+            .post('/api/invoices')
+            .set('Authorization', `Bearer ${adminAccessToken}`)
+            .send({
+              visitId: visit.id,
+              paymentMethod: 'KNET',
+              items: [{ serviceId: testServiceAId, quantity: 1 }],
+            }),
+        ),
+      );
+
+      // All should succeed
+      responses.forEach((response) => {
+        expect(response.status).toBe(201);
+        expect(response.body.invoiceNumber).toMatch(/^INV-\d{6}$/);
+      });
+
+      // All invoice numbers should be unique
+      const invoiceNumbers = responses.map((r) => r.body.invoiceNumber);
+      const uniqueNumbers = new Set(invoiceNumbers);
+      expect(uniqueNumbers.size).toBe(invoiceNumbers.length);
+
+      // Verify no duplicates in database
+      const invoices = await prisma.invoice.findMany({
+        where: { invoiceNumber: { in: invoiceNumbers } },
+      });
+      expect(invoices).toHaveLength(5);
+    });
+
     it('should assign invoice number transactionally with status change on draft issuance', async () => {
       const visit = await prisma.visit.create({
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
