@@ -766,217 +766,236 @@ export class BackupService implements OnModuleInit {
     workbook.creator = 'Clinic Management System';
     workbook.created = new Date();
 
+    // Helper to add worksheet with batched queries
+    const addWorksheet = async <T>(
+      name: string,
+      query: () => Promise<T[]>,
+      columns: Partial<ExcelJS.Column>[],
+    ) => {
+      const sheet = workbook.addWorksheet(name);
+      sheet.columns = columns;
+      const data = await query();
+      sheet.addRows(data);
+    };
+
     // Export patients
-    const patientsSheet = workbook.addWorksheet('Patients');
-    const patients = await this.prisma.patient.findMany({
-      select: {
-        id: true,
-        civilId: true,
-        fullNameAr: true,
-        fullNameEn: true,
-        phone: true,
-        dateOfBirth: true,
-        address: true,
-        isArchived: true,
-        createdAt: true,
-        updatedAt: true,
-        createdById: true,
-      },
-    });
-    patientsSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Civil ID', key: 'civilId' },
-      { header: 'Full Name (Arabic)', key: 'fullNameAr' },
-      { header: 'Full Name (English)', key: 'fullNameEn' },
-      { header: 'Phone', key: 'phone' },
-      { header: 'Date of Birth', key: 'dateOfBirth' },
-      { header: 'Address', key: 'address' },
-      { header: 'Archived', key: 'isArchived' },
-      { header: 'Created At', key: 'createdAt' },
-      { header: 'Updated At', key: 'updatedAt' },
-      { header: 'Created By', key: 'createdById' },
-    ];
-    patientsSheet.addRows(patients);
+    await addWorksheet(
+      'Patients',
+      () => this.prisma.patient.findMany({
+        select: {
+          id: true,
+          civilId: true,
+          fullNameAr: true,
+          fullNameEn: true,
+          phone: true,
+          dateOfBirth: true,
+          address: true,
+          isArchived: true,
+          createdAt: true,
+          updatedAt: true,
+          createdById: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Civil ID', key: 'civilId' },
+        { header: 'Full Name (Arabic)', key: 'fullNameAr' },
+        { header: 'Full Name (English)', key: 'fullNameEn' },
+        { header: 'Phone', key: 'phone' },
+        { header: 'Date of Birth', key: 'dateOfBirth' },
+        { header: 'Address', key: 'address' },
+        { header: 'Archived', key: 'isArchived' },
+        { header: 'Created At', key: 'createdAt' },
+        { header: 'Updated At', key: 'updatedAt' },
+        { header: 'Created By', key: 'createdById' },
+      ],
+    );
 
     // Export appointments
-    const appointmentsSheet = workbook.addWorksheet('Appointments');
-    const appointments = await this.prisma.appointment.findMany({
-      select: {
-        id: true,
-        patientId: true,
-        scheduledAt: true,
-        status: true,
-        notes: true,
-        createdAt: true,
-        updatedAt: true,
-        createdById: true,
-      },
-    });
-    appointmentsSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Patient ID', key: 'patientId' },
-      { header: 'Scheduled At', key: 'scheduledAt' },
-      { header: 'Status', key: 'status' },
-      { header: 'Notes', key: 'notes' },
-      { header: 'Created At', key: 'createdAt' },
-      { header: 'Updated At', key: 'updatedAt' },
-      { header: 'Created By', key: 'createdById' },
-    ];
-    appointmentsSheet.addRows(appointments);
+    await addWorksheet(
+      'Appointments',
+      () => this.prisma.appointment.findMany({
+        select: {
+          id: true,
+          patientId: true,
+          scheduledAt: true,
+          status: true,
+          notes: true,
+          createdAt: true,
+          updatedAt: true,
+          createdById: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Patient ID', key: 'patientId' },
+        { header: 'Scheduled At', key: 'scheduledAt' },
+        { header: 'Status', key: 'status' },
+        { header: 'Notes', key: 'notes' },
+        { header: 'Created At', key: 'createdAt' },
+        { header: 'Updated At', key: 'updatedAt' },
+        { header: 'Created By', key: 'createdById' },
+      ],
+    );
 
     // Export visits
-    const visitsSheet = workbook.addWorksheet('Visits');
-    const visits = await this.prisma.visit.findMany({
-      select: {
-        id: true,
-        patientId: true,
-        appointmentId: true,
-        type: true,
-        diagnosis: true,
-        status: true,
-        visitDate: true,
-        createdAt: true,
-        updatedAt: true,
-        createdById: true,
-      },
-    });
-    visitsSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Patient ID', key: 'patientId' },
-      { header: 'Appointment ID', key: 'appointmentId' },
-      { header: 'Type', key: 'type' },
-      { header: 'Diagnosis', key: 'diagnosis' },
-      { header: 'Status', key: 'status' },
-      { header: 'Visit Date', key: 'visitDate' },
-      { header: 'Created At', key: 'createdAt' },
-      { header: 'Updated At', key: 'updatedAt' },
-      { header: 'Created By', key: 'createdById' },
-    ];
-    visitsSheet.addRows(visits);
+    await addWorksheet(
+      'Visits',
+      () => this.prisma.visit.findMany({
+        select: {
+          id: true,
+          patientId: true,
+          appointmentId: true,
+          type: true,
+          diagnosis: true,
+          status: true,
+          visitDate: true,
+          createdAt: true,
+          updatedAt: true,
+          createdById: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Patient ID', key: 'patientId' },
+        { header: 'Appointment ID', key: 'appointmentId' },
+        { header: 'Type', key: 'type' },
+        { header: 'Diagnosis', key: 'diagnosis' },
+        { header: 'Status', key: 'status' },
+        { header: 'Visit Date', key: 'visitDate' },
+        { header: 'Created At', key: 'createdAt' },
+        { header: 'Updated At', key: 'updatedAt' },
+        { header: 'Created By', key: 'createdById' },
+      ],
+    );
 
     // Export services
-    const servicesSheet = workbook.addWorksheet('Services');
-    const services = await this.prisma.service.findMany({
-      select: {
-        id: true,
-        name: true,
-        code: true,
-        currentPrice: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-        createdById: true,
-      },
-    });
-    servicesSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Name', key: 'name' },
-      { header: 'Code', key: 'code' },
-      { header: 'Current Price', key: 'currentPrice' },
-      { header: 'Active', key: 'isActive' },
-      { header: 'Created At', key: 'createdAt' },
-      { header: 'Updated At', key: 'updatedAt' },
-      { header: 'Created By', key: 'createdById' },
-    ];
-    servicesSheet.addRows(services);
+    await addWorksheet(
+      'Services',
+      () => this.prisma.service.findMany({
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          currentPrice: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+          createdById: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Name', key: 'name' },
+        { header: 'Code', key: 'code' },
+        { header: 'Current Price', key: 'currentPrice' },
+        { header: 'Active', key: 'isActive' },
+        { header: 'Created At', key: 'createdAt' },
+        { header: 'Updated At', key: 'updatedAt' },
+        { header: 'Created By', key: 'createdById' },
+      ],
+    );
 
     // Export invoices
-    const invoicesSheet = workbook.addWorksheet('Invoices');
-    const invoices = await this.prisma.invoice.findMany({
-      select: {
-        id: true,
-        invoiceNumber: true,
-        patientId: true,
-        visitId: true,
-        status: true,
-        subtotal: true,
-        total: true,
-        paid: true,
-        remaining: true,
-        paymentStatus: true,
-        issuedAt: true,
-        createdAt: true,
-        updatedAt: true,
-        createdById: true,
-        issuedById: true,
-      },
-    });
-    invoicesSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Invoice Number', key: 'invoiceNumber' },
-      { header: 'Patient ID', key: 'patientId' },
-      { header: 'Visit ID', key: 'visitId' },
-      { header: 'Status', key: 'status' },
-      { header: 'Subtotal', key: 'subtotal' },
-      { header: 'Total', key: 'total' },
-      { header: 'Paid', key: 'paid' },
-      { header: 'Remaining', key: 'remaining' },
-      { header: 'Payment Status', key: 'paymentStatus' },
-      { header: 'Issued At', key: 'issuedAt' },
-      { header: 'Created At', key: 'createdAt' },
-      { header: 'Updated At', key: 'updatedAt' },
-      { header: 'Created By', key: 'createdById' },
-      { header: 'Issued By', key: 'issuedById' },
-    ];
-    invoicesSheet.addRows(invoices);
+    await addWorksheet(
+      'Invoices',
+      () => this.prisma.invoice.findMany({
+        select: {
+          id: true,
+          invoiceNumber: true,
+          patientId: true,
+          visitId: true,
+          status: true,
+          subtotal: true,
+          total: true,
+          paid: true,
+          remaining: true,
+          paymentStatus: true,
+          issuedAt: true,
+          createdAt: true,
+          updatedAt: true,
+          createdById: true,
+          issuedById: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Invoice Number', key: 'invoiceNumber' },
+        { header: 'Patient ID', key: 'patientId' },
+        { header: 'Visit ID', key: 'visitId' },
+        { header: 'Status', key: 'status' },
+        { header: 'Subtotal', key: 'subtotal' },
+        { header: 'Total', key: 'total' },
+        { header: 'Paid', key: 'paid' },
+        { header: 'Remaining', key: 'remaining' },
+        { header: 'Payment Status', key: 'paymentStatus' },
+        { header: 'Issued At', key: 'issuedAt' },
+        { header: 'Created At', key: 'createdAt' },
+        { header: 'Updated At', key: 'updatedAt' },
+        { header: 'Created By', key: 'createdById' },
+        { header: 'Issued By', key: 'issuedById' },
+      ],
+    );
 
     // Export invoice items
-    const invoiceItemsSheet = workbook.addWorksheet('Invoice Items');
-    const invoiceItems = await this.prisma.invoiceItem.findMany({
-      select: {
-        id: true,
-        invoiceId: true,
-        serviceId: true,
-        serviceNameSnapshot: true,
-        unitPriceSnapshot: true,
-        quantity: true,
-        lineTotal: true,
-      },
-    });
-    invoiceItemsSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Invoice ID', key: 'invoiceId' },
-      { header: 'Service ID', key: 'serviceId' },
-      { header: 'Service Name', key: 'serviceNameSnapshot' },
-      { header: 'Unit Price', key: 'unitPriceSnapshot' },
-      { header: 'Quantity', key: 'quantity' },
-      { header: 'Line Total', key: 'lineTotal' },
-    ];
-    invoiceItemsSheet.addRows(invoiceItems);
+    await addWorksheet(
+      'Invoice Items',
+      () => this.prisma.invoiceItem.findMany({
+        select: {
+          id: true,
+          invoiceId: true,
+          serviceId: true,
+          serviceNameSnapshot: true,
+          unitPriceSnapshot: true,
+          quantity: true,
+          lineTotal: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Invoice ID', key: 'invoiceId' },
+        { header: 'Service ID', key: 'serviceId' },
+        { header: 'Service Name', key: 'serviceNameSnapshot' },
+        { header: 'Unit Price', key: 'unitPriceSnapshot' },
+        { header: 'Quantity', key: 'quantity' },
+        { header: 'Line Total', key: 'lineTotal' },
+      ],
+    );
 
     // Export payments
-    const paymentsSheet = workbook.addWorksheet('Payments');
-    const payments = await this.prisma.payment.findMany({
-      select: {
-        id: true,
-        invoiceId: true,
-        amount: true,
-        method: true,
-        paymentDate: true,
-        status: true,
-        notes: true,
-        reversedAt: true,
-        reversedBy: true,
-        reversalNotes: true,
-        createdAt: true,
-        recordedById: true,
-      },
-    });
-    paymentsSheet.columns = [
-      { header: 'ID', key: 'id' },
-      { header: 'Invoice ID', key: 'invoiceId' },
-      { header: 'Amount', key: 'amount' },
-      { header: 'Method', key: 'method' },
-      { header: 'Payment Date', key: 'paymentDate' },
-      { header: 'Status', key: 'status' },
-      { header: 'Notes', key: 'notes' },
-      { header: 'Reversed At', key: 'reversedAt' },
-      { header: 'Reversed By', key: 'reversedBy' },
-      { header: 'Reversal Notes', key: 'reversalNotes' },
-      { header: 'Created At', key: 'createdAt' },
-      { header: 'Recorded By', key: 'recordedById' },
-    ];
-    paymentsSheet.addRows(payments);
+    await addWorksheet(
+      'Payments',
+      () => this.prisma.payment.findMany({
+        select: {
+          id: true,
+          invoiceId: true,
+          amount: true,
+          method: true,
+          paymentDate: true,
+          status: true,
+          notes: true,
+          reversedAt: true,
+          reversedBy: true,
+          reversalNotes: true,
+          createdAt: true,
+          recordedById: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Invoice ID', key: 'invoiceId' },
+        { header: 'Amount', key: 'amount' },
+        { header: 'Method', key: 'method' },
+        { header: 'Payment Date', key: 'paymentDate' },
+        { header: 'Status', key: 'status' },
+        { header: 'Notes', key: 'notes' },
+        { header: 'Reversed At', key: 'reversedAt' },
+        { header: 'Reversed By', key: 'reversedBy' },
+        { header: 'Reversal Notes', key: 'reversalNotes' },
+        { header: 'Created At', key: 'createdAt' },
+        { header: 'Recorded By', key: 'recordedById' },
+      ],
+    );
 
     const buffer = await workbook.xlsx.writeBuffer();
 
