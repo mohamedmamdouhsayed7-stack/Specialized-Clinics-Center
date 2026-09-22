@@ -96,7 +96,7 @@ describe('BackupModule', () => {
       delete process.env.DB_PORT;
       process.env.DATABASE_URL = 'postgresql://neon_user:neon_password@ep-example.neon.tech/neon_db?sslmode=require';
 
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['getDbConnectionParams']()).toMatchObject({
         host: 'ep-example.neon.tech',
         port: '5432',
@@ -115,7 +115,7 @@ describe('BackupModule', () => {
       delete process.env.DB_PORT;
       process.env.DATABASE_URL = 'postgresql://neon%40user:p%40ss%3Aword@ep-example.neon.tech:5433/clinic%20prod?sslmode=require&connect_timeout=10';
 
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['getDbConnectionParams']()).toMatchObject({
         host: 'ep-example.neon.tech',
         port: '5433',
@@ -134,7 +134,7 @@ describe('BackupModule', () => {
       process.env.POSTGRES_PASSWORD = 'clinic_password';
       process.env.POSTGRES_DB = 'clinic_test_db';
 
-      const service = new BackupService({ logUserAction: jest.fn() } as any);
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['getDbConnectionParams']()).toMatchObject({
         host: 'postgres',
         port: '5432',
