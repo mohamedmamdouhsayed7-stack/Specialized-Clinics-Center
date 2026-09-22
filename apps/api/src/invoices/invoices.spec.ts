@@ -562,8 +562,14 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .expect(200);
 
-      expect(response.body.meta.limit).toBe(1);
-      expect(response.body.meta.page).toBe(2);
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.meta).toEqual(expect.objectContaining({
+        total: expect.any(Number),
+        page: 2,
+        limit: 1,
+        totalPages: expect.any(Number),
+      }));
+      expect(response.body.meta.totalPages).toBeGreaterThanOrEqual(2);
     });
 
     it('should reject unauthenticated invoice list', async () => {

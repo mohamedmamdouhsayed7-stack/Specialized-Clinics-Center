@@ -64,6 +64,17 @@ export default function InvoiceDetail() {
     enabled: !!id,
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => invoicesService.deleteInvoicePermanently(id!),
+    onSuccess: () => {
+      setConfirmDelete(false);
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      showToast({ type: 'success', message: t('feedback.invoiceDeleted') });
+      navigate(returnTo);
+    },
+    onError: (error: Error) => showToast({ type: 'error', message: error.message }),
+  });
+
   const { data: payments, isLoading: paymentsLoading } = useQuery({
     queryKey: ['payments', id],
     queryFn: () => paymentsService.getPaymentsForInvoice(id!),
@@ -175,6 +186,7 @@ export default function InvoiceDetail() {
   >(null);
   const [confirmReplacement, setConfirmReplacement] = useState(false);
   const [confirmReversePayment, setConfirmReversePayment] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
 
   const [whatsappOpening, setWhatsappOpening] = useState(false);
@@ -819,13 +831,31 @@ export default function InvoiceDetail() {
           ]}
           backTo={returnTo}
           actions={
-            <button
-              onClick={() => navigate(returnTo)}
-              className="btn-primary px-4 py-2"
-            >
-              {t('common.back')}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              {isAdmin && (
+                <button
+                  onClick={() => setConfirmDelete(true)}
+                  className="btn-danger-outline px-4 py-2"
+                >
+                  {t('invoices.deletePermanently')}
+                </button>
+              )}
+              <button onClick={() => navigate(returnTo)} className="btn-primary px-4 py-2">
+                {t('common.back')}
+              </button>
+            </div>
           }
+        />
+        <ConfirmDialog
+          open={confirmDelete}
+          title={t('invoices.deletePermanently')}
+          message={t('invoices.deleteWarning')}
+          confirmLabel={deleteMutation.isPending ? t('common.loading') : t('common.confirm')}
+          cancelLabel={t('common.cancel')}
+          destructive
+          loading={deleteMutation.isPending}
+          onConfirm={() => deleteMutation.mutate()}
+          onCancel={() => setConfirmDelete(false)}
         />
 
         {formError && (
@@ -2325,4 +2355,3 @@ export default function InvoiceDetail() {
     </div>
   );
 }
-

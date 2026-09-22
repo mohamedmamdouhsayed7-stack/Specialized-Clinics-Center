@@ -343,7 +343,7 @@ export class InvoicesService {
         where,
         skip,
         take: limit,
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         include: INVOICE_ITEM_INCLUDE,
       }),
       this.prisma.invoice.count({ where }),
@@ -371,6 +371,78 @@ export class InvoicesService {
     }
 
     return invoice;
+  }
+
+  async hardDelete(
+    id: string,
+    userId: string,
+    userRole: UserRole,
+    ipAddress?: string,
+    userAgent?: string,
+  ) {
+    if (userRole !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only admin can permanently delete invoices');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const invoice = await tx.invoice.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          invoiceNumber: true,
+          visitId: true,
+          patientId: true,
+          status: true,
+          total: true,
+          paid: true,
+          remaining: true,
+          paymentStatus: true,
+        },
+      });
+
+      if (!invoice) {
+        throw new NotFoundException('Invoice not found');
+      }
+
+      // Allocations are restrictive in both directions: remove allocations
+      // owned by this invoice and allocations for payments owned by it.
+      await tx.paymentAllocation.deleteMany({
+        where: {
+          OR: [
+            { invoiceId: id },
+            { payment: { invoiceId: id } },
+          ],
+        },
+      });
+      await tx.payment.deleteMany({ where: { invoiceId: id } });
+      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
+      await tx.invoiceAdditionalCharge.deleteMany({ where: { invoiceId: id } });
+      await tx.invoice.delete({ where: { id } });
+
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: 'DELETE_PERMANENT',
+          entityType: 'Invoice',
+          entityId: id,
+          beforeState: {
+            invoiceNumber: invoice.invoiceNumber,
+            visitId: invoice.visitId,
+            patientId: invoice.patientId,
+            status: invoice.status,
+            total: invoice.total.toString(),
+            paid: invoice.paid.toString(),
+            remaining: invoice.remaining.toString(),
+            paymentStatus: invoice.paymentStatus,
+          },
+          afterState: null,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      return { id, deleted: true };
+    });
   }
 
   async updateStatus(

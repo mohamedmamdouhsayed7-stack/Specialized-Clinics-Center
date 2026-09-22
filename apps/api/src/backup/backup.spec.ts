@@ -11,6 +11,7 @@ import { gzipSync } from 'zlib';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
+import * as ExcelJS from 'exceljs';
 
 jest.mock('child_process', () => {
   const actual = jest.requireActual('child_process');
@@ -37,7 +38,9 @@ function createMockPrismaService() {
     service: { findMany: jest.fn() },
     invoice: { findMany: jest.fn() },
     invoiceItem: { findMany: jest.fn() },
+    invoiceAdditionalCharge: { findMany: jest.fn() },
     payment: { findMany: jest.fn() },
+    paymentAllocation: { findMany: jest.fn() },
   } as any;
 }
 
@@ -660,6 +663,71 @@ describe('BackupModule', () => {
           throw new BadRequestException('confirm must be true to restore a backup');
         }
       }).not.toThrow();
+    });
+  });
+
+  describe('Structured Excel export', () => {
+    it('exports stable headers and metadata without authentication or audit fields', async () => {
+      const prisma = createMockPrismaService();
+      const patient = {
+        id: 'patient-1',
+        civilId: '123',
+        fullNameAr: 'مريضة',
+        fullNameEn: 'Patient',
+        phone: '555',
+        dateOfBirth: null,
+        address: null,
+        legacySource: 'legacy',
+        legacyPatientKey: 'p-1',
+        legacyReference: null,
+        isArchived: false,
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      };
+      prisma.patient.findMany.mockResolvedValue([patient]);
+      for (const model of ['appointment', 'visit', 'service', 'invoice', 'invoiceItem', 'invoiceAdditionalCharge', 'payment', 'paymentAllocation']) {
+        prisma[model].findMany.mockResolvedValue([]);
+      }
+
+      const service = new BackupService({ logUserAction: jest.fn() } as any, prisma);
+      const buffer = await service.exportToExcel('admin-1');
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
+
+      expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([
+        'Backup Info',
+        'Patients',
+        'Appointments',
+        'Visits',
+        'Services',
+        'Invoices',
+        'Invoice Items',
+        'Additional Charges',
+        'Payments',
+        'Payment Allocations',
+      ]);
+      expect(workbook.getWorksheet('Patients')?.getRow(1).values).toEqual([
+        undefined,
+        'ID',
+        'Civil ID',
+        'Full Name (Arabic)',
+        'Full Name (English)',
+        'Phone',
+        'Date of Birth',
+        'Address',
+        'Legacy Source',
+        'Legacy Patient Key',
+        'Legacy Reference',
+        'Archived',
+        'Created At',
+        'Updated At',
+      ]);
+      expect(workbook.getWorksheet('Patients')?.getRow(2).values).toContain('Patient');
+      expect(workbook.getWorksheet('Metadata')?.getColumn(1).values).toContain('Exported At');
+      expect(workbook.getWorksheet('Metadata')?.getColumn(1).values).toContain('Patients Rows');
+      expect(buffer.toString()).not.toContain('passwordHash');
+      expect(buffer.toString()).not.toContain('recordedById');
+      expect(buffer.toString()).not.toContain('createdById');
     });
   });
 });

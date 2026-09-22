@@ -144,6 +144,17 @@ class InvoicesService {
     return response.json();
   }
 
+  async deleteInvoicePermanently(id: string): Promise<{ id: string; deleted: boolean }> {
+    const response = await fetch(`${apiBaseUrl}/invoices/${id}/permanent`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) {
+      throw await parseApiError(response, 'Failed to permanently delete invoice');
+    }
+    return response.json();
+  }
+
   async getPdfBlob(id: string, language: 'ar' | 'en'): Promise<Blob> {
     const response = await fetch(`${apiBaseUrl}/invoices/${id}/pdf?lang=${language}`, {
       headers: this.getAuthHeaders(),

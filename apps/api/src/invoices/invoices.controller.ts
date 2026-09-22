@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards, ParseUUIDPipe, Request, HttpCode, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Query, UseGuards, ParseUUIDPipe, Request, HttpCode, Res, Delete } from '@nestjs/common';
 import { Response } from 'express';
 import { InvoicesService } from './invoices.service';
 import { InvoicePdfService } from './invoice-pdf.service';
@@ -63,6 +63,14 @@ export class InvoicesController {
       'Content-Length': pdfBuffer.length,
     });
     res.end(pdfBuffer);
+  }
+
+  @Delete(':id/permanent')
+  @Roles(UserRole.ADMIN)
+  hardDelete(@Request() req, @Param('id', ParseUUIDPipe) id: string) {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.invoicesService.hardDelete(id, req.user.id, req.user.role, ipAddress, userAgent);
   }
 
   @Patch(':id/status')

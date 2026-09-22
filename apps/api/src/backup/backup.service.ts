@@ -731,21 +731,51 @@ export class BackupService implements OnModuleInit {
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Clinic Management System';
-    workbook.created = new Date();
+    const exportedAt = new Date();
+    workbook.created = exportedAt;
+    workbook.modified = exportedAt;
+    workbook.lastModifiedBy = 'Clinic Management System';
 
-    // Helper to add worksheet with batched queries
-    const addWorksheet = async <T>(
+    const metadata = workbook.addWorksheet('Backup Info');
+    metadata.columns = [
+      { header: 'Property', key: 'property', width: 24 },
+      { header: 'Value', key: 'value', width: 80 },
+    ];
+    metadata.addRows([
+      { property: 'Exported At', value: exportedAt.toISOString() },
+      { property: 'Workbook Version', value: '1' },
+      { property: 'Source', value: 'Clinic Management System' },
+      { property: 'Scope', value: 'Business and reference data only; authentication and audit secrets are excluded.' },
+    ]);
+
+    const exportedSheets: Array<{ name: string; rowCount: number }> = [];
+    const normalizeCellValue = (value: unknown): unknown => {
+      if (value === null || value === undefined) return null;
+      if (value instanceof Date) return value;
+      if (typeof value === 'object' && value !== null && 'toNumber' in value && typeof value.toNumber === 'function') {
+        return value.toNumber();
+      }
+      if (typeof value === 'string' && /^[=+\-@]/.test(value)) return `'${value}`;
+      return value;
+    };
+
+    const addWorksheet = async (
       name: string,
-      query: () => Promise<T[]>,
+      query: () => Promise<Array<Record<string, unknown>>>,
       columns: Partial<ExcelJS.Column>[],
     ) => {
       const sheet = workbook.addWorksheet(name);
       sheet.columns = columns;
       const data = await query();
-      sheet.addRows(data);
+      sheet.addRows(data.map(row => Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key, normalizeCellValue(value)]),
+      )));
+      sheet.getRow(1).font = { bold: true };
+      sheet.views = [{ state: 'frozen', ySplit: 1 }];
+      sheet.autoFilter = { from: 'A1', to: `${String.fromCharCode(64 + columns.length)}1` };
+      exportedSheets.push({ name, rowCount: data.length });
     };
 
-    // Export patients
     await addWorksheet(
       'Patients',
       () => this.prisma.patient.findMany({
@@ -757,10 +787,12 @@ export class BackupService implements OnModuleInit {
           phone: true,
           dateOfBirth: true,
           address: true,
+          legacySource: true,
+          legacyPatientKey: true,
+          legacyReference: true,
           isArchived: true,
           createdAt: true,
           updatedAt: true,
-          createdById: true,
         },
       }),
       [
@@ -771,14 +803,15 @@ export class BackupService implements OnModuleInit {
         { header: 'Phone', key: 'phone' },
         { header: 'Date of Birth', key: 'dateOfBirth' },
         { header: 'Address', key: 'address' },
+        { header: 'Legacy Source', key: 'legacySource' },
+        { header: 'Legacy Patient Key', key: 'legacyPatientKey' },
+        { header: 'Legacy Reference', key: 'legacyReference' },
         { header: 'Archived', key: 'isArchived' },
         { header: 'Created At', key: 'createdAt' },
         { header: 'Updated At', key: 'updatedAt' },
-        { header: 'Created By', key: 'createdById' },
       ],
     );
 
-    // Export appointments
     await addWorksheet(
       'Appointments',
       () => this.prisma.appointment.findMany({
@@ -790,7 +823,6 @@ export class BackupService implements OnModuleInit {
           notes: true,
           createdAt: true,
           updatedAt: true,
-          createdById: true,
         },
       }),
       [
@@ -801,11 +833,9 @@ export class BackupService implements OnModuleInit {
         { header: 'Notes', key: 'notes' },
         { header: 'Created At', key: 'createdAt' },
         { header: 'Updated At', key: 'updatedAt' },
-        { header: 'Created By', key: 'createdById' },
       ],
     );
 
-    // Export visits
     await addWorksheet(
       'Visits',
       () => this.prisma.visit.findMany({
@@ -817,9 +847,9 @@ export class BackupService implements OnModuleInit {
           diagnosis: true,
           status: true,
           visitDate: true,
+          notes: true,
           createdAt: true,
           updatedAt: true,
-          createdById: true,
         },
       }),
       [
@@ -830,13 +860,12 @@ export class BackupService implements OnModuleInit {
         { header: 'Diagnosis', key: 'diagnosis' },
         { header: 'Status', key: 'status' },
         { header: 'Visit Date', key: 'visitDate' },
+        { header: 'Notes', key: 'notes' },
         { header: 'Created At', key: 'createdAt' },
         { header: 'Updated At', key: 'updatedAt' },
-        { header: 'Created By', key: 'createdById' },
       ],
     );
 
-    // Export services
     await addWorksheet(
       'Services',
       () => this.prisma.service.findMany({
@@ -844,26 +873,25 @@ export class BackupService implements OnModuleInit {
           id: true,
           name: true,
           code: true,
+          description: true,
           currentPrice: true,
           isActive: true,
           createdAt: true,
           updatedAt: true,
-          createdById: true,
         },
       }),
       [
         { header: 'ID', key: 'id' },
         { header: 'Name', key: 'name' },
         { header: 'Code', key: 'code' },
+        { header: 'Description', key: 'description' },
         { header: 'Current Price', key: 'currentPrice' },
         { header: 'Active', key: 'isActive' },
         { header: 'Created At', key: 'createdAt' },
         { header: 'Updated At', key: 'updatedAt' },
-        { header: 'Created By', key: 'createdById' },
       ],
     );
 
-    // Export invoices
     await addWorksheet(
       'Invoices',
       () => this.prisma.invoice.findMany({
@@ -879,10 +907,9 @@ export class BackupService implements OnModuleInit {
           remaining: true,
           paymentStatus: true,
           issuedAt: true,
+          replacedByInvoiceId: true,
           createdAt: true,
           updatedAt: true,
-          createdById: true,
-          issuedById: true,
         },
       }),
       [
@@ -897,14 +924,12 @@ export class BackupService implements OnModuleInit {
         { header: 'Remaining', key: 'remaining' },
         { header: 'Payment Status', key: 'paymentStatus' },
         { header: 'Issued At', key: 'issuedAt' },
+        { header: 'Replaced By Invoice ID', key: 'replacedByInvoiceId' },
         { header: 'Created At', key: 'createdAt' },
         { header: 'Updated At', key: 'updatedAt' },
-        { header: 'Created By', key: 'createdById' },
-        { header: 'Issued By', key: 'issuedById' },
       ],
     );
 
-    // Export invoice items
     await addWorksheet(
       'Invoice Items',
       () => this.prisma.invoiceItem.findMany({
@@ -916,6 +941,7 @@ export class BackupService implements OnModuleInit {
           unitPriceSnapshot: true,
           quantity: true,
           lineTotal: true,
+          createdAt: true,
         },
       }),
       [
@@ -926,10 +952,34 @@ export class BackupService implements OnModuleInit {
         { header: 'Unit Price', key: 'unitPriceSnapshot' },
         { header: 'Quantity', key: 'quantity' },
         { header: 'Line Total', key: 'lineTotal' },
+        { header: 'Created At', key: 'createdAt' },
       ],
     );
 
-    // Export payments
+    await addWorksheet(
+      'Additional Charges',
+      () => this.prisma.invoiceAdditionalCharge.findMany({
+        select: {
+          id: true,
+          invoiceId: true,
+          chargeType: true,
+          chargeValue: true,
+          calculatedAmount: true,
+          description: true,
+          createdAt: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Invoice ID', key: 'invoiceId' },
+        { header: 'Charge Type', key: 'chargeType' },
+        { header: 'Charge Value', key: 'chargeValue' },
+        { header: 'Calculated Amount', key: 'calculatedAmount' },
+        { header: 'Description', key: 'description' },
+        { header: 'Created At', key: 'createdAt' },
+      ],
+    );
+
     await addWorksheet(
       'Payments',
       () => this.prisma.payment.findMany({
@@ -942,10 +992,8 @@ export class BackupService implements OnModuleInit {
           status: true,
           notes: true,
           reversedAt: true,
-          reversedBy: true,
           reversalNotes: true,
           createdAt: true,
-          recordedById: true,
         },
       }),
       [
@@ -957,12 +1005,37 @@ export class BackupService implements OnModuleInit {
         { header: 'Status', key: 'status' },
         { header: 'Notes', key: 'notes' },
         { header: 'Reversed At', key: 'reversedAt' },
-        { header: 'Reversed By', key: 'reversedBy' },
         { header: 'Reversal Notes', key: 'reversalNotes' },
         { header: 'Created At', key: 'createdAt' },
-        { header: 'Recorded By', key: 'recordedById' },
       ],
     );
+
+    await addWorksheet(
+      'Payment Allocations',
+      () => this.prisma.paymentAllocation.findMany({
+        select: {
+          id: true,
+          paymentId: true,
+          invoiceId: true,
+          amount: true,
+          createdAt: true,
+        },
+      }),
+      [
+        { header: 'ID', key: 'id' },
+        { header: 'Payment ID', key: 'paymentId' },
+        { header: 'Invoice ID', key: 'invoiceId' },
+        { header: 'Amount', key: 'amount' },
+        { header: 'Created At', key: 'createdAt' },
+      ],
+    );
+
+    metadata.addRow({ property: 'Sheets', value: exportedSheets.map(sheet => sheet.name).join(', ') });
+    for (const sheet of exportedSheets) {
+      metadata.addRow({ property: `${sheet.name} Rows`, value: sheet.rowCount });
+    }
+    metadata.getRow(1).font = { bold: true };
+    metadata.views = [{ state: 'frozen', ySplit: 1 }];
 
     const buffer = await workbook.xlsx.writeBuffer();
 

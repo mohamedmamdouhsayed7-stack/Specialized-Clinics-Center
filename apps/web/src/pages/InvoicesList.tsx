@@ -11,6 +11,8 @@ import EmptyState from '../components/EmptyState';
 import Skeleton from '../components/Skeleton';
 import MobileRecordCard, { MobileRecordField } from '../components/MobileRecordCard';
 
+const INVOICE_PAGE_SIZE = 20;
+
 export default function InvoicesList() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -41,7 +43,7 @@ export default function InvoicesList() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['invoices', search, statusFilter, page],
-    queryFn: () => invoicesService.getInvoices(undefined, statusFilter || undefined, page, 50, search || undefined),
+    queryFn: () => invoicesService.getInvoices(undefined, statusFilter || undefined, page, INVOICE_PAGE_SIZE, search || undefined),
   });
 
   const invoices = data?.data || [];
@@ -187,11 +189,43 @@ export default function InvoicesList() {
             </div>
             </>
           )}
-          {data?.meta && data.meta.totalPages > 1 && (
+          {data?.meta && data.meta.total > 0 && (
             <div className="flex items-center justify-between border-t border-gray-200 px-6 py-4">
-              <button onClick={() => setPage((currentPage) => { const next = Math.max(1, currentPage - 1); setSearchParams((current) => { current.set('page', String(next)); return current; }); return next; })} disabled={page === 1} className="px-3 py-1.5 rounded border disabled:opacity-40">{t('common.previous')}</button>
-              <span className="text-sm">{page} / {data.meta.totalPages}</span>
-              <button onClick={() => setPage((currentPage) => { const next = Math.min(data.meta.totalPages, currentPage + 1); setSearchParams((current) => { current.set('page', String(next)); return current; }); return next; })} disabled={page === data.meta.totalPages} className="px-3 py-1.5 rounded border disabled:opacity-40">{t('common.next')}</button>
+              <span className="text-sm text-gray-600">
+                {t('common.showingRange', {
+                  from: (data.meta.page - 1) * data.meta.limit + 1,
+                  to: Math.min(data.meta.page * data.meta.limit, data.meta.total),
+                  total: data.meta.total,
+                  item: t('invoices.itemPlural'),
+                })}
+              </span>
+              {data.meta.totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage((currentPage) => {
+                      const next = Math.max(1, currentPage - 1);
+                      setSearchParams((current) => { current.set('page', String(next)); return current; });
+                      return next;
+                    })}
+                    disabled={page === 1}
+                    className="px-3 py-1.5 rounded border disabled:opacity-40"
+                  >
+                    {t('common.previous')}
+                  </button>
+                  <span className="text-sm">{data.meta.page} / {data.meta.totalPages}</span>
+                  <button
+                    onClick={() => setPage((currentPage) => {
+                      const next = Math.min(data.meta.totalPages, currentPage + 1);
+                      setSearchParams((current) => { current.set('page', String(next)); return current; });
+                      return next;
+                    })}
+                    disabled={page === data.meta.totalPages}
+                    className="px-3 py-1.5 rounded border disabled:opacity-40"
+                  >
+                    {t('common.next')}
+                  </button>
+                </div>
+              )}
             </div>
           )}
       </div>

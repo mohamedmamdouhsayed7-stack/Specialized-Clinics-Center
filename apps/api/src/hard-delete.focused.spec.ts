@@ -2,7 +2,8 @@ import { AppointmentsService } from './appointments/appointments.service';
 import { PatientsService } from './patients/patients.service';
 import { ServicesService } from './services/services.service';
 import { VisitsService } from './visits/visits.service';
-import { AppointmentStatus, VisitStatus } from '@prisma/client';
+import { InvoicesService } from './invoices/invoices.service';
+import { AppointmentStatus, UserRole, VisitStatus } from '@prisma/client';
 
 function transactionClient() {
   const client = {
@@ -10,7 +11,7 @@ function transactionClient() {
     appointment: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
     visit: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
     service: { findUnique: jest.fn(), delete: jest.fn() },
-    invoice: { findUnique: jest.fn(), deleteMany: jest.fn() },
+    invoice: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
     invoiceItem: { findUnique: jest.fn(), deleteMany: jest.fn(), updateMany: jest.fn() },
     invoiceAdditionalCharge: { findUnique: jest.fn(), deleteMany: jest.fn() },
     payment: { findUnique: jest.fn(), deleteMany: jest.fn() },
@@ -144,5 +145,54 @@ describe('focused permanent-delete safety', () => {
     });
     expect(client.service.delete).toHaveBeenCalledWith({ where: { id: 'service-id' } });
     expect(client.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('allows only admins to permanently delete an invoice and removes its dependents transactionally', async () => {
+    const { prisma, client } = transactionClient();
+    client.invoice.findUnique.mockResolvedValue({
+      id: 'invoice-id',
+      invoiceNumber: 'INV-000001',
+      visitId: 'visit-id',
+      patientId: 'patient-id',
+      status: 'ISSUED',
+      total: '100.00',
+      paid: '100.00',
+      remaining: '0.00',
+      paymentStatus: 'PAID',
+    });
+
+    await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(
+      'invoice-id',
+      'user-id',
+      UserRole.RECEPTIONIST,
+    )).rejects.toThrow('Only admin');
+
+    await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(
+      'invoice-id',
+      'user-id',
+      UserRole.ADMIN,
+      '127.0.0.1',
+      'focused-test',
+    )).resolves.toEqual({ id: 'invoice-id', deleted: true });
+
+    expect(client.paymentAllocation.deleteMany).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { invoiceId: 'invoice-id' },
+          { payment: { invoiceId: 'invoice-id' } },
+        ],
+      },
+    });
+    expect(client.payment.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: 'invoice-id' } });
+    expect(client.invoiceItem.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: 'invoice-id' } });
+    expect(client.invoiceAdditionalCharge.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: 'invoice-id' } });
+    expect(client.invoice.delete).toHaveBeenCalledWith({ where: { id: 'invoice-id' } });
+    expect(client.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        action: 'DELETE_PERMANENT',
+        entityType: 'Invoice',
+        entityId: 'invoice-id',
+      }),
+    }));
   });
 });

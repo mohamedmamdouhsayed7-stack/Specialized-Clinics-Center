@@ -99,6 +99,10 @@ The daily scheduled backup remains enabled and prunes entries according to
 off-service disaster recovery is required; a Railway Volume alone does not
 protect against loss of the Railway service or volume.
 
+The Backup page also provides an administrator-only Excel export. This is a
+human-readable local data copy for inspection and offline reference; it is not
+a replacement for the encrypted PostgreSQL backup or restore workflow.
+
 ## Verification
 
 After Railway supplies the variables and the volume is attached:

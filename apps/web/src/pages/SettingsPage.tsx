@@ -229,10 +229,19 @@ function BackupSection() {
           {running ? <Loader2 size={16} className="animate-spin" /> : null}
           {running ? t('settings.creatingBackup') : t('settings.createBackupNow')}
         </button>
-        <button onClick={handleExportExcel} disabled={exporting} className="btn-secondary px-4 py-2.5 text-sm flex items-center gap-2">
+        <button
+          onClick={handleExportExcel}
+          disabled={exporting}
+          aria-label={t('settings.structuredExcelBackup')}
+          className="btn-secondary px-4 py-2.5 text-sm flex items-center gap-2"
+        >
           {exporting ? <Loader2 size={16} className="animate-spin" /> : null}
-          {exporting ? t('settings.exportingExcel') : t('settings.downloadExcel')}
+          {exporting ? t('settings.exportingExcel') : t('settings.structuredExcelBackup')}
         </button>
+      </div>
+      <div className="grid gap-2 mb-5 text-xs text-[#64748B]">
+        <p><strong>{t('settings.technicalBackupLabel')}:</strong> {t('settings.technicalBackupHelp')}</p>
+        <p><strong>{t('settings.excelBackupLabel')}:</strong> {t('settings.excelBackupHelp')}</p>
       </div>
 
       <h3 className="text-sm font-bold text-[#102F63] mb-3">{t('settings.availableBackups')}</h3>
@@ -658,4 +667,3 @@ function SystemOverviewGrid() {
     </div>
   );
 }
-
