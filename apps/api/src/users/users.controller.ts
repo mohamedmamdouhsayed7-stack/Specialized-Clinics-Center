@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, UseGuards, ParseUUIDPipe, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Delete, Param, UseGuards, ParseUUIDPipe, Request } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -49,5 +49,12 @@ export class UsersController {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.usersService.updatePassword(id, newPassword, req.user.id, ipAddress, userAgent);
+  }
+
+  @Delete(':id')
+  remove(@Request() req, @Param('id', ParseUUIDPipe) id: string) {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.usersService.remove(id, req.user.id, ipAddress, userAgent);
   }
 }

@@ -205,4 +205,43 @@ export class UsersService {
 
     return { message: 'Password updated successfully' };
   }
+
+  async remove(id: string, deletedBy: string, ipAddress?: string, userAgent?: string) {
+    if (id === deletedBy) {
+      throw new ConflictException('You cannot delete your current account');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const target = await tx.user.findUnique({
+        where: { id },
+        select: { id: true, email: true, name: true, role: true, isActive: true },
+      });
+
+      if (!target) {
+        throw new NotFoundException('User not found');
+      }
+
+      if (target.role === 'ADMIN') {
+        const adminCount = await tx.user.count({ where: { role: 'ADMIN' } });
+        if (adminCount <= 1) {
+          throw new ConflictException('Cannot delete the last remaining administrator');
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          userId: deletedBy,
+          action: 'USER_DELETED',
+          entityType: 'User',
+          entityId: target.id,
+          beforeState: target,
+          ipAddress,
+          userAgent,
+        },
+      });
+
+      await tx.user.delete({ where: { id: target.id } });
+      return { message: 'User deleted successfully' };
+    });
+  }
 }

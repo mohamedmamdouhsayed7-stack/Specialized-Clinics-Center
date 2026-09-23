@@ -79,6 +79,18 @@ class UsersService {
     }
     return response.json();
   }
+
+  async deleteUser(id: string): Promise<{ message: string }> {
+    const response = await fetch(`${apiBaseUrl}/users/${id}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to delete user');
+    }
+    return response.json();
+  }
 }
 
 export const usersService = new UsersService();

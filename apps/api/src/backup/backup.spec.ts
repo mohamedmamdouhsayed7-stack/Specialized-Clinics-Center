@@ -171,6 +171,28 @@ describe('BackupModule', () => {
       const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(() => service['getDbConnectionParams']()).not.toThrow();
     });
+
+    it('builds pg_dump arguments without the unsupported sslmode flag', () => {
+      process.env.DATABASE_URL = 'postgresql://neon_user:pa%24%24@neon.example/clinic_test_db?sslmode=require';
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const params = service['getDbConnectionParams']();
+      const args = service['getPgDumpArguments'](params);
+      expect(args).not.toContain('--sslmode');
+      expect(args).not.toContain('require');
+      expect(service['getPostgresProcessEnvironment'](params.password, params.sslmode)).toMatchObject({
+        PGPASSWORD: 'pa$$',
+        PGSSLMODE: 'require',
+      });
+    });
+
+    it('does not set PGSSLMODE when DATABASE_URL has no sslmode', () => {
+      delete process.env.DATABASE_URL;
+      process.env.POSTGRES_DB = 'clinic_test_db';
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const env = service['getPostgresProcessEnvironment']('local-password');
+      expect(env.PGSSLMODE).toBeUndefined();
+      expect(env.PGPASSWORD).toBe('local-password');
+    });
   });
 
   describe('BackupService - Filename Sanitization', () => {

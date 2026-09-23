@@ -21,7 +21,8 @@ system settings. Receptionists can perform day-to-day clinic operations but
 cannot perform administrator-only actions.
 
 Password reset requires the production SMTP settings to be configured in
-Railway. Reset links use the configured production frontend URL.
+Railway. Users receive a six-digit verification code that expires after 10
+minutes.
 
 ## Backups
 

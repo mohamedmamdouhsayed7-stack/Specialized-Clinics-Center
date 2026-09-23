@@ -1,0 +1,9 @@
+-- Preserve audit history while allowing the referenced user to be deleted.
+ALTER TABLE "AuditLog" DROP CONSTRAINT "AuditLog_userId_fkey";
+
+ALTER TABLE "AuditLog" ALTER COLUMN "userId" DROP NOT NULL;
+
+ALTER TABLE "AuditLog"
+  ADD CONSTRAINT "AuditLog_userId_fkey"
+  FOREIGN KEY ("userId") REFERENCES "User"("id")
+  ON DELETE SET NULL ON UPDATE CASCADE;

@@ -339,7 +339,7 @@ model PasswordResetToken {
 
 model AuditLog {
   id         String   @id @default(uuid()) @db.Uuid
-  userId     String   @db.Uuid
+  userId     String?  @db.Uuid
   action     String
   entityType String
   entityId   String   @db.Uuid
@@ -350,7 +350,7 @@ model AuditLog {
   createdAt  DateTime @default(now())
 
   // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([entityType, entityId])

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  UsersRound, ShieldCheck, Server, Lock, DatabaseBackup,
+  UsersRound, ShieldCheck, Server, Lock, DatabaseBackup, Trash2,
   CheckCircle2, XCircle, Loader2, Plus, Eye, EyeOff,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -345,6 +345,7 @@ function RolesSection({ currentUserId }: { currentUserId?: string }) {
 function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const { t } = useTranslation();
   const { showToast } = useToast();
 
@@ -360,32 +361,67 @@ function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; 
     }
   };
 
+  const deleteUser = async () => {
+    setBusy(true);
+    try {
+      await usersService.deleteUser(user.id);
+      setConfirmDelete(false);
+      onChanged();
+      showToast({ type: 'success', message: t('settings.userDeleted') });
+    } catch (err) {
+      showToast({ type: 'error', message: err instanceof Error ? err.message : t('settings.deleteUserError') });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <tr>
-      <td className="font-medium text-[#1F2430]">{user.name}{isSelf && <span className="text-xs text-[#94A3B8]"> ({t('settings.you')})</span>}</td>
-      <td className="text-[#64748B]">{user.email}</td>
-      <td>
-        <span className="ui-badge" style={{ background: 'rgba(23,59,120,0.1)', color: 'var(--brand-blue)' }}>
-          {user.role === 'ADMIN' ? t('roles.admin') : t('roles.receptionist')}
-        </span>
-      </td>
-      <td>
-        <span className="ui-badge" style={user.isActive ? { background: 'rgba(22,128,60,0.1)', color: 'var(--success)' } : { background: 'rgba(100,116,139,0.1)', color: 'var(--text-secondary)' }}>
-          {user.isActive ? t('common.active') : t('settings.disabled')}
-        </span>
-      </td>
-      <td>
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowEdit(true)} className="text-sm text-[#173B78] hover:underline">
-            {t('common.edit')}
-          </button>
-          <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
-            {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
-          </button>
-        </div>
-      </td>
+    <>
+      <tr>
+        <td className="font-medium text-[#1F2430]">{user.name}{isSelf && <span className="text-xs text-[#94A3B8]"> ({t('settings.you')})</span>}</td>
+        <td className="text-[#64748B]">{user.email}</td>
+        <td>
+          <span className="ui-badge" style={{ background: 'rgba(23,59,120,0.1)', color: 'var(--brand-blue)' }}>
+            {user.role === 'ADMIN' ? t('roles.admin') : t('roles.receptionist')}
+          </span>
+        </td>
+        <td>
+          <span className="ui-badge" style={user.isActive ? { background: 'rgba(22,128,60,0.1)', color: 'var(--success)' } : { background: 'rgba(100,116,139,0.1)', color: 'var(--text-secondary)' }}>
+            {user.isActive ? t('common.active') : t('settings.disabled')}
+          </span>
+        </td>
+        <td>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowEdit(true)} className="text-sm text-[#173B78] hover:underline">
+              {t('common.edit')}
+            </button>
+            <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
+              {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
+            </button>
+            <button
+              onClick={() => setConfirmDelete(true)}
+              disabled={isSelf || busy}
+              className="inline-flex items-center gap-1 text-sm text-[#C4362B] disabled:cursor-not-allowed disabled:opacity-40 hover:underline"
+            >
+              <Trash2 size={14} />
+              {t('common.delete')}
+            </button>
+          </div>
+        </td>
+      </tr>
       {showEdit && <EditUserModal user={user} isSelf={isSelf} onClose={() => setShowEdit(false)} onUpdated={onChanged} />}
-    </tr>
+      <ConfirmDialog
+        open={confirmDelete}
+        title={t('settings.deleteUserTitle')}
+        message={t('settings.deleteUserMessage', { name: user.name, email: user.email })}
+        confirmLabel={t('settings.deleteUserConfirm')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        loading={busy}
+        onConfirm={deleteUser}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    </>
   );
 }
 

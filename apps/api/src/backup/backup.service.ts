@@ -191,6 +191,29 @@ export class BackupService implements OnModuleInit {
     };
   }
 
+  private getPostgresProcessEnvironment(password: string | undefined, sslmode?: string) {
+    const environment = { ...process.env };
+    delete environment.PGSSLMODE;
+    return {
+      ...environment,
+      PGPASSWORD: password,
+      ...(sslmode ? { PGSSLMODE: sslmode } : {}),
+    };
+  }
+
+  private getPgDumpArguments(params: ReturnType<BackupService['getDbConnectionParams']>) {
+    return [
+      '--host', params.host,
+      '--port', params.port,
+      '--username', params.user,
+      '--format', 'plain',
+      '--clean',
+      '--if-exists',
+      '--no-owner',
+      params.database,
+    ];
+  }
+
   private async ensureBackupDir() {
     try {
       await fs.mkdir(this.backupDir, { recursive: true });
@@ -436,7 +459,8 @@ export class BackupService implements OnModuleInit {
   // separate prevents the pre-restore safety backup from waiting on itself.
   private async runBackupUnlocked(triggeredBy: 'manual' | 'scheduled' | 'pre-restore-safety', userId?: string, ipAddress?: string, userAgent?: string) {
       await this.ensureBackupDir();
-      const { host, port, user, password, database, sslmode } = this.getDbConnectionParams();
+      const connection = this.getDbConnectionParams();
+      const { password, sslmode } = connection;
       const encryptionKey = this.getEncryptionKey();
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -451,8 +475,8 @@ export class BackupService implements OnModuleInit {
       // erroring on "already exists".
       const pgDump = spawn(
         'pg_dump',
-        ['--host', host, '--port', port, '--username', user, ...(sslmode ? ['--sslmode', sslmode] : []), '--format', 'plain', '--clean', '--if-exists', '--no-owner', database],
-        { env: { ...process.env, PGPASSWORD: password } },
+        this.getPgDumpArguments(connection),
+        { env: this.getPostgresProcessEnvironment(password, sslmode) },
       );
 
       const gzip = createGzip();
@@ -625,7 +649,8 @@ export class BackupService implements OnModuleInit {
 
         let psql: ChildProcessWithoutNullStreams | undefined;
         try {
-        const { host, port, user, password, database, sslmode } = this.getDbConnectionParams();
+        const connection = this.getDbConnectionParams();
+        const { host, port, user, password, database, sslmode } = connection;
 
         // Use ON_ERROR_STOP to ensure psql stops on first SQL error
         // Use single-transaction to ensure atomic restore
@@ -635,12 +660,11 @@ export class BackupService implements OnModuleInit {
             '--host', host,
             '--port', port,
             '--username', user,
-            ...(sslmode ? ['--sslmode', sslmode] : []),
             '--dbname', database,
             '--set=ON_ERROR_STOP=on',
             '--single-transaction',
           ],
-          { env: { ...process.env, PGPASSWORD: password } },
+          { env: this.getPostgresProcessEnvironment(password, sslmode) },
         );
 
         let stderr = '';

@@ -28,6 +28,9 @@ export class EmailService {
         host: smtpHost,
         port: smtpPort,
         secure: smtpPort === 465,
+        connectionTimeout: 10_000,
+        greetingTimeout: 10_000,
+        socketTimeout: 15_000,
         auth: {
           user: smtpUser,
           pass: smtpPassword,
@@ -75,7 +78,9 @@ export class EmailService {
       });
       this.logger.log('Password reset verification email sent');
     } catch (error) {
-      this.logger.error('Failed to send password reset verification email', error);
+      this.logger.error(
+        `Failed to send password reset verification email via ${this.configService.get<string>('SMTP_HOST')}:${this.configService.get<string>('SMTP_PORT')}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       throw error;
     }
   }
