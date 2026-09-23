@@ -25,7 +25,7 @@ export class EmailService {
       this.resend = new Resend(apiKey);
       this.fromAddress = fromAddress;
       this.logger.log('Email service initialized successfully');
-    } catch (error) {
+    } catch {
       this.logger.error('Failed to initialize email service');
       this.resend = null;
       this.fromAddress = null;
