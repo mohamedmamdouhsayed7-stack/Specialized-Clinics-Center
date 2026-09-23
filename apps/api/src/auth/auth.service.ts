@@ -15,8 +15,9 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyResetCodeDto } from './dto/verify-reset-code.dto';
 import { UserRole } from '@prisma/client';
-import { randomBytes } from 'crypto';
+import { randomInt } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -315,29 +316,28 @@ export class AuthService {
     });
 
     if (user && user.isActive) {
-      // Generate secure random token
-      const resetToken = randomBytes(32).toString('hex');
-      const tokenHash = await argon2.hash(resetToken);
+      const verificationCode = randomInt(0, 1_000_000).toString().padStart(6, '0');
+      const tokenHash = await argon2.hash(verificationCode);
 
-      // Token expires in 1 hour
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 1);
+      expiresAt.setMinutes(expiresAt.getMinutes() + 10);
 
-      // Store token
-      await this.prisma.passwordResetToken.create({
-        data: {
-          tokenHash,
-          userId: user.id,
-          expiresAt,
-        },
+      await this.prisma.passwordResetToken.updateMany({
+        where: { userId: user.id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      const resetToken = await this.prisma.passwordResetToken.create({
+        data: { tokenHash, userId: user.id, expiresAt },
       });
 
-      // Send email
       try {
-        await this.emailService.sendPasswordResetEmail(user.email, resetToken);
+        await this.emailService.sendPasswordResetEmail(user.email, verificationCode);
       } catch (error) {
-        this.logger.error('Failed to send password reset email', error);
-        // Don't throw - still return generic response
+        await this.prisma.passwordResetToken.update({
+          where: { id: resetToken.id },
+          data: { usedAt: new Date() },
+        });
+        this.logger.error('Failed to send password reset email', error instanceof Error ? error.message : String(error));
       }
 
       await this.auditService.logUserAction(
@@ -351,61 +351,78 @@ export class AuthService {
     }
 
     // Always return generic success message
-    return { message: 'If an account with this email exists, a password reset link has been sent.' };
+    return { message: 'If an account with this email exists, a verification code has been sent.' };
   }
 
-  async resetPassword(dto: ResetPasswordDto, ipAddress?: string, userAgent?: string) {
-    // Find valid token
+  private async findValidResetToken(email: string, code: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+    if (!user || !user.isActive) return null;
+
     const resetTokens = await this.prisma.passwordResetToken.findMany({
       where: {
+        userId: user.id,
         expiresAt: { gte: new Date() },
         usedAt: null,
       },
-      include: { user: true },
+      orderBy: { createdAt: 'desc' },
     });
 
-    let matchedToken = null;
-    for (const token of resetTokens) {
-      if (await argon2.verify(token.tokenHash, dto.token)) {
-        matchedToken = token;
-        break;
+    for (const resetToken of resetTokens) {
+      if (await argon2.verify(resetToken.tokenHash, code)) {
+        return { resetToken, user };
       }
     }
+    return null;
+  }
 
+  async verifyResetCode(dto: VerifyResetCodeDto) {
+    const matchedToken = await this.findValidResetToken(dto.email, dto.code);
     if (!matchedToken) {
-      throw new BadRequestException('Invalid or expired reset token');
+      throw new BadRequestException('Invalid or expired verification code');
+    }
+    return { verified: true };
+  }
+
+  async resetPassword(dto: ResetPasswordDto, ipAddress?: string, userAgent?: string) {
+    const matchedToken = await this.findValidResetToken(dto.email, dto.code);
+    if (!matchedToken) {
+      throw new BadRequestException('Invalid or expired verification code');
     }
 
-    if (!matchedToken.user.isActive) {
-      throw new BadRequestException('Account is inactive');
-    }
-
-    // Hash new password
     const passwordHash = await argon2.hash(dto.newPassword);
+    const now = new Date();
 
-    // Update password
-    await this.prisma.user.update({
-      where: { id: matchedToken.userId },
-      data: { passwordHash },
-    });
+    await this.prisma.$transaction(async (tx) => {
+      const claimedToken = await tx.passwordResetToken.updateMany({
+        where: {
+          id: matchedToken.resetToken.id,
+          usedAt: null,
+          expiresAt: { gte: now },
+        },
+        data: { usedAt: now },
+      });
+      if (claimedToken.count !== 1) {
+        throw new BadRequestException('Invalid or expired verification code');
+      }
 
-    // Mark token as used
-    await this.prisma.passwordResetToken.update({
-      where: { id: matchedToken.id },
-      data: { usedAt: new Date() },
-    });
+      await tx.user.update({
+        where: { id: matchedToken.user.id },
+        data: { passwordHash },
+      });
 
-    // Revoke all refresh tokens for this user
-    await this.prisma.refreshToken.updateMany({
-      where: { userId: matchedToken.userId },
-      data: { revokedAt: new Date() },
+      await tx.refreshToken.updateMany({
+        where: { userId: matchedToken.user.id },
+        data: { revokedAt: now },
+      });
     });
 
     await this.auditService.logUserAction(
-      matchedToken.userId,
+      matchedToken.user.id,
       'PASSWORD_RESET',
       'User',
-      matchedToken.userId,
+      matchedToken.user.id,
       ipAddress,
       userAgent,
     );

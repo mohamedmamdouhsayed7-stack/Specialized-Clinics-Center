@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Mail, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail, ArrowRight, AlertCircle, CheckCircle, KeyRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { apiBaseUrl } from '../config/api';
 
 export default function ForgotPassword() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const isArabic = i18n.language === 'ar';
   const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
+  const [step, setStep] = useState<'email' | 'code' | 'success'>('email');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -18,19 +20,44 @@ export default function ForgotPassword() {
     setError('');
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/forgot-password`, {
+      const response = await fetch(`${apiBaseUrl}/auth/forgot-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to send reset link');
+        throw new Error('Failed to send verification code');
       }
 
-      setSuccess(true);
+      setStep('code');
     } catch {
       setError(t('forgotPassword.error'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{6}$/.test(code)) {
+      setError(t('forgotPassword.invalidCode'));
+      return;
+    }
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/verify-reset-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code }),
+      });
+      if (!response.ok) {
+        throw new Error('Invalid or expired verification code');
+      }
+      navigate(`/reset-password?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`);
+    } catch {
+      setError(t('forgotPassword.invalidCode'));
     } finally {
       setLoading(false);
     }
@@ -57,7 +84,7 @@ export default function ForgotPassword() {
             <p className="mt-1 text-[13px] text-[#64748B]">{t('forgotPassword.subtitle')}</p>
           </div>
 
-          {success ? (
+          {step === 'success' ? (
             <div className="text-center py-8">
               <div className="flex justify-center mb-4">
                 <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center">
@@ -72,7 +99,7 @@ export default function ForgotPassword() {
                 {t('forgotPassword.backToLogin')}
               </button>
             </div>
-          ) : (
+          ) : step === 'email' ? (
             <>
               {error && (
                 <div className="mb-5 flex items-start gap-2 px-3.5 py-3 bg-red-50 border border-red-100 text-[#C4362B] rounded-[10px] text-[13px]">
@@ -120,6 +147,47 @@ export default function ForgotPassword() {
                   {t('forgotPassword.backToLogin')}
                 </button>
               </div>
+            </>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-5 flex items-start gap-2 px-3.5 py-3 bg-red-50 border border-red-100 text-[#C4362B] rounded-[10px] text-[13px]">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" strokeWidth={1.75} />
+                  <span>{error}</span>
+                </div>
+              )}
+              <p className="mb-5 text-center text-sm text-[#64748B]">{t('forgotPassword.codeSent')}</p>
+              <form onSubmit={handleVerifyCode} dir={isArabic ? 'rtl' : 'ltr'} className="space-y-5">
+                <div>
+                  <label className="block text-[13px] font-medium text-[#102F63] mb-2">{t('forgotPassword.code')}</label>
+                  <div className="relative">
+                    <KeyRound size={17} strokeWidth={1.75} className="absolute start-3.5 top-1/2 -translate-y-1/2 text-[#94A3B8]" />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      dir="ltr"
+                      className="ui-input ps-11 tracking-[0.35em]"
+                      placeholder={t('forgotPassword.codePlaceholder')}
+                      required
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+                <button type="submit" disabled={loading} className="btn-primary w-full py-3.5 text-[14px]">
+                  {loading ? t('forgotPassword.verifying') : t('forgotPassword.verifyCode')}
+                </button>
+              </form>
+              <button
+                type="button"
+                onClick={() => { setStep('email'); setCode(''); setError(''); }}
+                className="mt-6 w-full text-center text-[13px] text-[#64748B] hover:text-[#102F63]"
+              >
+                {t('forgotPassword.requestAnother')}
+              </button>
             </>
           )}
         </div>

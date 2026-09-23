@@ -13,12 +13,12 @@ export class EmailService {
 
   private initializeTransporter() {
     const smtpHost = this.configService.get<string>('SMTP_HOST');
-    const smtpPort = this.configService.get<number>('SMTP_PORT');
+    const smtpPort = Number(this.configService.get<string>('SMTP_PORT'));
     const smtpUser = this.configService.get<string>('SMTP_USER');
     const smtpPassword = this.configService.get<string>('SMTP_PASSWORD');
     const smtpFrom = this.configService.get<string>('SMTP_FROM');
 
-    if (!smtpHost || !smtpPort || !smtpUser || !smtpPassword || !smtpFrom) {
+    if (!smtpHost || !Number.isInteger(smtpPort) || smtpPort <= 0 || !smtpUser || !smtpPassword || !smtpFrom) {
       this.logger.warn('SMTP configuration incomplete. Email service will be disabled.');
       return;
     }
@@ -41,24 +41,29 @@ export class EmailService {
     }
   }
 
-  async sendPasswordResetEmail(email: string, resetToken: string): Promise<void> {
+  async sendPasswordResetEmail(email: string, verificationCode: string): Promise<void> {
     if (!this.transporter) {
-      this.logger.warn('Email service not configured. Skipping password reset email.');
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('SMTP is not configured');
+      }
+      this.logger.warn('Email service not configured outside production. Password reset email was not sent.');
       return;
     }
 
-    const frontendUrl = this.configService.get<string>('FRONTEND_URL', 'http://localhost:3000');
-    const resetLink = `${frontendUrl}/reset-password?token=${resetToken}`;
     const smtpFrom = this.configService.get<string>('SMTP_FROM');
 
-    const subject = 'Password Reset Request';
+    const subject = 'Password Reset Verification Code | رمز التحقق لإعادة تعيين كلمة المرور';
     const html = `
-      <h2>Password Reset Request</h2>
-      <p>You requested a password reset for your account.</p>
-      <p>Click the link below to reset your password:</p>
-      <p><a href="${resetLink}">${resetLink}</a></p>
-      <p>This link will expire in 1 hour.</p>
-      <p>If you did not request this password reset, please ignore this email.</p>
+      <h2>Specialized Clinics Center</h2>
+      <h3>Password Reset Verification</h3>
+      <p>Your verification code is:</p>
+      <p style="font-size: 28px; font-weight: bold; letter-spacing: 8px;">${verificationCode}</p>
+      <p>This code expires in 10 minutes and must not be shared.</p>
+      <hr />
+      <h3>مركز العيادات التخصصية</h3>
+      <p>رمز التحقق لإعادة تعيين كلمة المرور هو:</p>
+      <p style="font-size: 28px; font-weight: bold; letter-spacing: 8px;">${verificationCode}</p>
+      <p>ينتهي هذا الرمز خلال 10 دقائق. يرجى عدم مشاركته مع أي شخص.</p>
     `;
 
     try {
@@ -68,9 +73,9 @@ export class EmailService {
         subject,
         html,
       });
-      this.logger.log(`Password reset email sent to ${email}`);
+      this.logger.log('Password reset verification email sent');
     } catch (error) {
-      this.logger.error(`Failed to send password reset email to ${email}`, error);
+      this.logger.error('Failed to send password reset verification email', error);
       throw error;
     }
   }

@@ -160,15 +160,17 @@ export class BackupService implements OnModuleInit {
   private getDbConnectionParams() {
     const databaseUrl = process.env.DATABASE_URL;
     let parsedUrl: URL | undefined;
-    let database = process.env.POSTGRES_DB;
+    let database: string | undefined;
 
     if (databaseUrl) {
       try {
         parsedUrl = new URL(databaseUrl);
-        database = database || decodeURIComponent(parsedUrl.pathname.slice(1));
+        database = decodeURIComponent(parsedUrl.pathname.slice(1));
       } catch {
         throw new Error('DATABASE_URL is invalid for backup operations.');
       }
+    } else {
+      database = process.env.POSTGRES_DB;
     }
 
     if (!database) {
@@ -180,10 +182,10 @@ export class BackupService implements OnModuleInit {
     }
 
     return {
-      host: process.env.DB_HOST || parsedUrl?.hostname || 'postgres',
-      port: process.env.DB_PORT || parsedUrl?.port || '5432',
-      user: process.env.POSTGRES_USER || (parsedUrl ? decodeURIComponent(parsedUrl.username) : 'clinic_user'),
-      password: process.env.POSTGRES_PASSWORD || (parsedUrl ? decodeURIComponent(parsedUrl.password) : undefined),
+      host: parsedUrl?.hostname || process.env.DB_HOST || 'postgres',
+      port: parsedUrl?.port || process.env.DB_PORT || '5432',
+      user: parsedUrl ? decodeURIComponent(parsedUrl.username) : process.env.POSTGRES_USER || 'clinic_user',
+      password: parsedUrl ? decodeURIComponent(parsedUrl.password) : process.env.POSTGRES_PASSWORD,
       database,
       sslmode: parsedUrl?.searchParams.get('sslmode') || undefined,
     };

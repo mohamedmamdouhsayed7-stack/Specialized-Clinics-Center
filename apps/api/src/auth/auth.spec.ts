@@ -641,7 +641,7 @@ describe('Authentication Security Tests (E2E)', () => {
         })
         .expect(200);
 
-      expect(response.body.message).toContain('password reset link');
+      expect(response.body.message).toContain('verification code');
     });
 
     it('should return generic message for forgot-password with existing email', async () => {
@@ -652,14 +652,15 @@ describe('Authentication Security Tests (E2E)', () => {
         })
         .expect(200);
 
-      expect(response.body.message).toContain('password reset link');
+      expect(response.body.message).toContain('verification code');
     });
 
-    it('should reject password reset with invalid token', async () => {
+    it('should reject password reset with invalid code', async () => {
       await request(app.getHttpServer())
         .post('/api/auth/reset-password')
         .send({
-          token: 'invalid-token',
+          email: 'testadmin.auth@test.com',
+          code: '000000',
           newPassword: 'NewPassword123',
         })
         .expect(400);
@@ -674,7 +675,7 @@ describe('Authentication Security Tests (E2E)', () => {
         })
         .expect(200);
 
-      // Get the created token from database
+      // Get the created code record from database
       const resetToken = await prisma.passwordResetToken.findFirst({
         where: {
           userId: adminUserId,
@@ -686,11 +687,8 @@ describe('Authentication Security Tests (E2E)', () => {
 
       expect(resetToken).toBeDefined();
 
-      // Extract the actual token (we need to hash the token we send)
-      // Since we can't easily get the plaintext token, we'll create a new one
-      const { randomBytes } = require('crypto');
-      const newToken = randomBytes(32).toString('hex');
-      const tokenHash = await argon2.hash(newToken);
+      const newCode = '123456';
+      const tokenHash = await argon2.hash(newCode);
 
       // Update the token in database with our known token
       await prisma.passwordResetToken.update({
@@ -698,11 +696,20 @@ describe('Authentication Security Tests (E2E)', () => {
         data: { tokenHash },
       });
 
-      // Reset password with the known token
+      await request(app.getHttpServer())
+        .post('/api/auth/verify-reset-code')
+        .send({
+          email: 'testadmin.auth@test.com',
+          code: newCode,
+        })
+        .expect(200);
+
+      // Reset password with the known code
       const response = await request(app.getHttpServer())
         .post('/api/auth/reset-password')
         .send({
-          token: newToken,
+          email: 'testadmin.auth@test.com',
+          code: newCode,
           newPassword: 'NewPassword123',
         })
         .expect(200);
@@ -738,14 +745,13 @@ describe('Authentication Security Tests (E2E)', () => {
       });
     });
 
-    it('should reject password reset with expired token', async () => {
-      // Create an expired token
+    it('should reject password reset with expired code', async () => {
+      // Create an expired code
       const expiredDate = new Date();
       expiredDate.setHours(expiredDate.getHours() - 2);
 
-      const { randomBytes } = require('crypto');
-      const token = randomBytes(32).toString('hex');
-      const tokenHash = await argon2.hash(token);
+      const code = '123456';
+      const tokenHash = await argon2.hash(code);
 
       await prisma.passwordResetToken.create({
         data: {
@@ -758,17 +764,17 @@ describe('Authentication Security Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/reset-password')
         .send({
-          token,
+          email: 'testadmin.auth@test.com',
+          code,
           newPassword: 'NewPassword123',
         })
         .expect(400);
     });
 
-    it('should reject password reset with already used token', async () => {
-      // Create a token and mark it as used
-      const { randomBytes } = require('crypto');
-      const token = randomBytes(32).toString('hex');
-      const tokenHash = await argon2.hash(token);
+    it('should reject password reset with already used code', async () => {
+      // Create a code and mark it as used
+      const code = '123456';
+      const tokenHash = await argon2.hash(code);
 
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 1);
@@ -785,7 +791,8 @@ describe('Authentication Security Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/reset-password')
         .send({
-          token,
+          email: 'testadmin.auth@test.com',
+          code,
           newPassword: 'NewPassword123',
         })
         .expect(400);
@@ -816,7 +823,7 @@ describe('Authentication Security Tests (E2E)', () => {
         })
         .expect(200);
 
-      // Get the created token
+      // Get the created code record
       const resetToken = await prisma.passwordResetToken.findFirst({
         where: {
           userId: adminUserId,
@@ -826,10 +833,8 @@ describe('Authentication Security Tests (E2E)', () => {
         orderBy: { createdAt: 'desc' },
       });
 
-      // Create known token
-      const { randomBytes } = require('crypto');
-      const newToken = randomBytes(32).toString('hex');
-      const tokenHash = await argon2.hash(newToken);
+      const newCode = '123456';
+      const tokenHash = await argon2.hash(newCode);
 
       await prisma.passwordResetToken.update({
         where: { id: resetToken.id },
@@ -840,7 +845,8 @@ describe('Authentication Security Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/auth/reset-password')
         .send({
-          token: newToken,
+          email: 'testadmin.auth@test.com',
+          code: newCode,
           newPassword: 'AnotherPassword123',
         })
         .expect(200);
@@ -909,4 +915,3 @@ describe('Authentication Security Tests (E2E)', () => {
     }, 90000);
   });
 });
-

@@ -6,6 +6,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 import { Response } from 'express';
+import { stat } from 'fs/promises';
 
 // Full database access either way (dump or restore), so Admin-only.
 @Controller('backup')
@@ -51,6 +52,7 @@ export class BackupController {
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', buffer.length);
     res.send(buffer);
   }
 
@@ -60,8 +62,10 @@ export class BackupController {
     const userAgent = req.headers['user-agent'];
     const filepath = await this.backupService.downloadBackup(filename, req.user.id, ipAddress, userAgent);
 
-    res.setHeader('Content-Type', 'application/gzip');
+    const fileStat = await stat(filepath);
+    res.setHeader('Content-Type', filename.endsWith('.enc') ? 'application/octet-stream' : 'application/gzip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', fileStat.size);
     res.sendFile(filepath);
   }
 }

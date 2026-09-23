@@ -129,7 +129,7 @@ describe('BackupModule', () => {
       });
     });
 
-    it('keeps Docker environment variables as connection overrides', () => {
+    it('uses DATABASE_URL as the authoritative production connection source', () => {
       process.env.DATABASE_URL = 'postgresql://url_user:url_password@url-host/url_db?sslmode=require';
       process.env.DB_HOST = 'postgres';
       process.env.DB_PORT = '5432';
@@ -139,11 +139,11 @@ describe('BackupModule', () => {
 
       const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['getDbConnectionParams']()).toMatchObject({
-        host: 'postgres',
+        host: 'url-host',
         port: '5432',
-        user: 'clinic_user',
-        password: 'clinic_password',
-        database: 'clinic_test_db',
+        user: 'url_user',
+        password: 'url_password',
+        database: 'url_db',
         sslmode: 'require',
       });
     });
@@ -159,6 +159,7 @@ describe('BackupModule', () => {
 
     it('should prevent targeting production DB during test', () => {
       process.env.NODE_ENV = 'test';
+      process.env.DATABASE_URL = 'postgresql://clinic_user:clinic_password@localhost:5432/clinic_db';
       process.env.POSTGRES_DB = 'clinic_db';
       const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(() => service['getDbConnectionParams']()).toThrow('Cannot target production database');

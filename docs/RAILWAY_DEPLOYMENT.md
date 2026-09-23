@@ -59,8 +59,9 @@ BACKUP_S3_SECRET_KEY=
 BACKUP_S3_REGION=us-east-1
 ```
 
-The password-reset email flow uses SMTP. Configure these variables when that
-flow is enabled:
+The password-reset flow sends a one-time six-digit verification code by SMTP.
+Codes are stored only as hashes, expire after 10 minutes, and are invalidated
+after use. Configure these variables when password reset is enabled:
 
 ```text
 SMTP_HOST=<provider host>

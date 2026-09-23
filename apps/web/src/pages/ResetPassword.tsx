@@ -2,13 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { apiBaseUrl } from '../config/api';
 
 export default function ResetPassword() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const isArabic = i18n.language === 'ar';
   const [searchParams] = useSearchParams();
-  const token = searchParams.get('token') || '';
+  const email = searchParams.get('email') || '';
+  const code = searchParams.get('code') || '';
 
   const [formData, setFormData] = useState({
     newPassword: '',
@@ -21,10 +23,10 @@ export default function ResetPassword() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (!token) {
+    if (!email || !/^\d{6}$/.test(code)) {
       navigate('/forgot-password');
     }
-  }, [token, navigate]);
+  }, [email, code, navigate]);
 
   const validatePassword = (password: string): string | null => {
     if (password.length < 8) {
@@ -57,11 +59,12 @@ export default function ResetPassword() {
     setLoading(true);
 
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/auth/reset-password`, {
+      const response = await fetch(`${apiBaseUrl}/auth/reset-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token,
+          email,
+          code,
           newPassword: formData.newPassword,
         }),
       });

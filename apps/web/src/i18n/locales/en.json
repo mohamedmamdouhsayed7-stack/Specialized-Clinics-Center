@@ -126,14 +126,21 @@
   },
   "forgotPassword": {
     "title": "Forgot Password",
-    "subtitle": "Enter your email address and we'll send you a link to reset your password",
+    "subtitle": "Enter your email address and we'll send you a verification code",
     "email": "Email",
     "emailPlaceholder": "Enter your email",
-    "submit": "Send Reset Link",
+    "submit": "Send Verification Code",
     "sending": "Sending...",
-    "success": "If an account with this email exists, a password reset link has been sent to your email.",
+    "success": "If an account with this email exists, a verification code has been sent to your email.",
+    "codeSent": "Enter the 6-digit code sent to your email. It expires in 10 minutes.",
+    "code": "Verification Code",
+    "codePlaceholder": "Enter 6-digit code",
+    "verifyCode": "Verify Code",
+    "verifying": "Verifying...",
+    "invalidCode": "The verification code is invalid or expired.",
+    "requestAnother": "Request a new code",
     "backToLogin": "Back to Login",
-    "error": "Failed to send reset link. Please try again."
+    "error": "Unable to send a verification code. Please try again."
   },
   "resetPassword": {
     "title": "Reset Password",
@@ -146,7 +153,7 @@
     "resetting": "Resetting...",
     "success": "Password reset successfully. You can now login with your new password.",
     "backToLogin": "Back to Login",
-    "error": "Failed to reset password. The link may be invalid or expired.",
+    "error": "Failed to reset password. The verification code may be invalid or expired.",
     "passwordsDoNotMatch": "Passwords do not match",
     "passwordTooShort": "Password must be at least 8 characters",
     "passwordRequirements": "Password must contain at least one uppercase letter, one lowercase letter, and one number"

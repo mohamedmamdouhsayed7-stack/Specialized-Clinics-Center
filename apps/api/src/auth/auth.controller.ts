@@ -6,6 +6,7 @@ import { RegisterDto } from './dto/register.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { VerifyResetCodeDto } from './dto/verify-reset-code.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { RolesGuard } from './guards/roles.guard';
 import { Roles } from './decorators/roles.decorator';
@@ -125,10 +126,18 @@ export class AuthController {
   }
 
   @Post('reset-password')
+  @UseGuards(AuthThrottlerGuard)
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Req() req, @Body() resetPasswordDto: ResetPasswordDto) {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.authService.resetPassword(resetPasswordDto, ipAddress, userAgent);
+  }
+
+  @Post('verify-reset-code')
+  @UseGuards(AuthThrottlerGuard)
+  @HttpCode(HttpStatus.OK)
+  async verifyResetCode(@Body() verifyResetCodeDto: VerifyResetCodeDto) {
+    return this.authService.verifyResetCode(verifyResetCodeDto);
   }
 }
