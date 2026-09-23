@@ -669,6 +669,114 @@ describe('BackupModule', () => {
     });
   });
 
+  describe('BackupService - Retention', () => {
+    const createEntry = (
+      filename: string,
+      createdAt: string,
+      protectedBackup: boolean,
+    ) => ({
+      filename,
+      sizeBytes: 1,
+      sha256: '0'.repeat(64),
+      createdAt,
+      triggeredBy: protectedBackup ? 'pre-restore-safety' as const : 'manual' as const,
+      uploadedToRemote: false,
+      validation: {
+        gzipVerified: true,
+        databaseVerified: false,
+        verifiedAt: createdAt,
+      },
+      protected: protectedBackup,
+    });
+
+    async function runPrune(entries: ReturnType<typeof createEntry>[]) {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-retention-`);
+      process.env.BACKUP_DIR = directory;
+      process.env.BACKUP_RETENTION_DAYS = '14';
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+
+      for (const entry of entries) {
+        await writeFile(`${directory}/${entry.filename}`, 'backup');
+      }
+      await service['writeManifest']({
+        version: 2,
+        database: 'clinic_test_db',
+        entries,
+      });
+      await service['pruneOldBackups']();
+      const manifest = JSON.parse(await readFile(`${directory}/manifest.json`, 'utf8'));
+      const files = await readdir(directory);
+      await rm(directory, { recursive: true, force: true });
+      return { manifest, files };
+    }
+
+    it('deletes old unprotected backups', async () => {
+      const result = await runPrune([
+        createEntry(
+          'clinic_backup_old.sql.gz',
+          new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+          false,
+        ),
+      ]);
+
+      expect(result.manifest.entries).toHaveLength(0);
+      expect(result.files).toEqual(['manifest.json']);
+    });
+
+    it('retains recent unprotected backups', async () => {
+      const entry = createEntry(
+        'clinic_backup_recent.sql.gz',
+        new Date().toISOString(),
+        false,
+      );
+      const result = await runPrune([entry]);
+
+      expect(result.manifest.entries).toEqual([entry]);
+      expect(result.files.sort()).toEqual(['clinic_backup_recent.sql.gz', 'manifest.json']);
+    });
+
+    it.each([
+      ['old', new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()],
+      ['recent', new Date().toISOString()],
+    ])('retains %s protected backups', async (_age, createdAt) => {
+      const entry = createEntry('clinic_backup_protected.sql.gz', createdAt, true);
+      const result = await runPrune([entry]);
+
+      expect(result.manifest.entries).toEqual([entry]);
+      expect(result.files.sort()).toEqual(['clinic_backup_protected.sql.gz', 'manifest.json']);
+    });
+
+    it('deletes only eligible unprotected backups from a mixed list', async () => {
+      const entries = [
+        createEntry(
+          'clinic_backup_old.sql.gz',
+          new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+          false,
+        ),
+        createEntry(
+          'clinic_backup_old-protected.sql.gz',
+          new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
+          true,
+        ),
+        createEntry('clinic_backup_recent.sql.gz', new Date().toISOString(), false),
+        createEntry('clinic_backup_recent-protected.sql.gz', new Date().toISOString(), true),
+      ];
+      const result = await runPrune(entries);
+
+      expect(result.manifest.entries.map((entry: { filename: string }) => entry.filename).sort()).toEqual([
+        'clinic_backup_old-protected.sql.gz',
+        'clinic_backup_recent-protected.sql.gz',
+        'clinic_backup_recent.sql.gz',
+      ]);
+      expect(result.files.sort()).toEqual([
+        'clinic_backup_old-protected.sql.gz',
+        'clinic_backup_recent-protected.sql.gz',
+        'clinic_backup_recent.sql.gz',
+        'manifest.json',
+      ]);
+    });
+  });
+
   describe('RestoreBackupDto Validation', () => {
     it('should require confirm to be true', () => {
       const dto = { filename: 'clinic_backup_2024.sql.gz', confirm: false };

@@ -445,6 +445,32 @@ describe('Patients Module Tests (E2E)', () => {
     });
   });
 
+  describe('Patient Permanent Delete Authorization', () => {
+    it('allows admins, rejects receptionists, and rejects unauthenticated users', async () => {
+      const patient = await prisma.patient.create({
+        data: {
+          civilId: '12345678906',
+          fullNameAr: 'Permanent Delete Test',
+          createdById: adminUserId,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/patients/${patient.id}/permanent`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .delete(`/api/patients/${patient.id}/permanent`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/api/patients/${patient.id}/permanent`)
+        .expect(401);
+    });
+  });
+
   describe('Audit Logging', () => {
     it('should log patient creation', async () => {
       const logs = await prisma.auditLog.findMany({

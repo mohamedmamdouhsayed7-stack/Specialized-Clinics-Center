@@ -700,7 +700,7 @@ export class BackupService implements OnModuleInit {
     const kept: BackupManifestEntry[] = [];
 
     for (const entry of manifest.entries) {
-      if (new Date(entry.createdAt).getTime() < cutoff) {
+      if (!entry.protected && new Date(entry.createdAt).getTime() < cutoff) {
         // Use centralized safe path resolver to prevent manifest path traversal
         try {
           const safePath = this.resolveSafePath(entry.filename);

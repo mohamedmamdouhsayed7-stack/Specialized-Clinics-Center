@@ -68,7 +68,7 @@ export class ServicesController {
   }
 
   @Delete(':id/permanent')
-  @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
+  @Roles(UserRole.ADMIN)
   hardDelete(@Request() req, @Param('id', ParseUUIDPipe) id: string) {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];

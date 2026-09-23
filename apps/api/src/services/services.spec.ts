@@ -431,6 +431,33 @@ describe('Services Module Tests (E2E)', () => {
     });
   });
 
+  describe('Service Permanent Delete Authorization', () => {
+    it('allows admins, rejects receptionists, and rejects unauthenticated users', async () => {
+      const service = await prisma.service.create({
+        data: {
+          name: 'Permanent Delete Test Service',
+          code: 'DELETE-TEST',
+          currentPrice: 10,
+          createdById: adminUserId,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/services/${service.id}/permanent`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .delete(`/api/services/${service.id}/permanent`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/api/services/${service.id}/permanent`)
+        .expect(401);
+    });
+  });
+
   describe('Audit Logging', () => {
     it('should log service creation', async () => {
       const logs = await prisma.auditLog.findMany({

@@ -34,7 +34,7 @@ export class UsersController {
   update(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() updateUserDto: UpdateUserDto) {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    return this.usersService.update(id, updateUserDto, req.user.id, ipAddress, userAgent);
+    return this.usersService.update(id, updateUserDto, req.user.id, req.user.role, ipAddress, userAgent);
   }
 
   @Patch(':id/status')

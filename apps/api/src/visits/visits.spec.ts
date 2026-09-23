@@ -5,7 +5,7 @@ import { AppModule } from '../app.module';
 import { PrismaService } from '../database/prisma.service';
 import * as argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
-import { VisitType } from '@prisma/client';
+import { VisitStatus, VisitType } from '@prisma/client';
 import { cleanupTestData } from '../test-utils';
 
 describe('Visits Module Tests (E2E)', () => {
@@ -507,6 +507,34 @@ describe('Visits Module Tests (E2E)', () => {
         .expect(201);
 
       expect(new Date(response.body.visitDate).getTime()).toBeLessThan(Date.now());
+    });
+  });
+
+  describe('Visit Permanent Delete Authorization', () => {
+    it('allows admins, rejects receptionists, and rejects unauthenticated users', async () => {
+      const visit = await prisma.visit.create({
+        data: {
+          patientId: testPatientId,
+          type: VisitType.OTHER,
+          status: VisitStatus.CANCELLED,
+          visitDate: new Date(),
+          createdById: adminUserId,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/visits/${visit.id}/permanent`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .delete(`/api/visits/${visit.id}/permanent`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/api/visits/${visit.id}/permanent`)
+        .expect(401);
     });
   });
 

@@ -492,6 +492,33 @@ describe('Appointments Module Tests (E2E)', () => {
     });
   });
 
+  describe('Appointment Permanent Delete Authorization', () => {
+    it('allows admins, rejects receptionists, and rejects unauthenticated users', async () => {
+      const appointment = await prisma.appointment.create({
+        data: {
+          patientId: testPatientId,
+          scheduledAt: new Date(Date.now() + 86400000),
+          status: AppointmentStatus.CANCELLED,
+          createdById: adminUserId,
+        },
+      });
+
+      await request(app.getHttpServer())
+        .delete(`/api/appointments/${appointment.id}/permanent`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .delete(`/api/appointments/${appointment.id}/permanent`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .expect(200);
+
+      await request(app.getHttpServer())
+        .delete(`/api/appointments/${appointment.id}/permanent`)
+        .expect(401);
+    });
+  });
+
   describe('Audit Logging', () => {
     it('should log appointment creation', async () => {
       const logs = await prisma.auditLog.findMany({

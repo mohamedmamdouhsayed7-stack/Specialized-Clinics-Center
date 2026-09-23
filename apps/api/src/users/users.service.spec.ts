@@ -1,4 +1,5 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { UsersService } from './users.service';
 
 describe('UsersService permanent deletion', () => {
@@ -17,8 +18,15 @@ describe('UsersService permanent deletion', () => {
         findUnique: jest.fn().mockResolvedValue(target),
         count: jest.fn(),
         delete: jest.fn(),
+        update: jest.fn().mockResolvedValue({
+          ...target,
+          role: target.role,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }),
       },
       auditLog: { create: jest.fn() },
+      $queryRaw: jest.fn(),
     };
     const prisma = {
       $transaction: jest.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
@@ -63,5 +71,65 @@ describe('UsersService permanent deletion', () => {
     tx.user.findUnique.mockResolvedValue(null);
     await expect(service.remove('missing-id', 'admin-id')).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('allows demoting an administrator when another administrator remains', async () => {
+    const { service, tx } = setup();
+    tx.user.findUnique.mockResolvedValue({ ...target, role: UserRole.ADMIN });
+    tx.user.count.mockResolvedValue(2);
+    tx.user.update.mockResolvedValue({ ...target, role: UserRole.RECEPTIONIST });
+
+    await expect(service.update(
+      'target-id',
+      { role: UserRole.RECEPTIONIST },
+      'admin-id',
+      UserRole.ADMIN,
+    )).resolves.toMatchObject({ role: UserRole.RECEPTIONIST });
+
+    expect(tx.$queryRaw).toHaveBeenCalled();
+    expect(tx.user.count).toHaveBeenCalledWith({ where: { role: UserRole.ADMIN } });
+    expect(tx.auditLog.create).toHaveBeenCalled();
+  });
+
+  it('rejects demoting the last administrator, including self-demotion', async () => {
+    const { service, tx } = setup();
+    tx.user.findUnique.mockResolvedValue({ ...target, role: UserRole.ADMIN });
+    tx.user.count.mockResolvedValue(1);
+
+    await expect(service.update(
+      'target-id',
+      { role: UserRole.RECEPTIONIST },
+      'target-id',
+      UserRole.ADMIN,
+    )).rejects.toThrow('last remaining administrator');
+
+    expect(tx.user.update).not.toHaveBeenCalled();
+    expect(tx.auditLog.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an authorized admin demoting another last administrator', async () => {
+    const { service, tx } = setup();
+    tx.user.findUnique.mockResolvedValue({ ...target, role: UserRole.ADMIN });
+    tx.user.count.mockResolvedValue(1);
+
+    await expect(service.update(
+      'target-id',
+      { role: UserRole.RECEPTIONIST },
+      'other-admin-id',
+      UserRole.ADMIN,
+    )).rejects.toThrow('last remaining administrator');
+  });
+
+  it('rejects role changes requested by a non-admin', async () => {
+    const { service, tx } = setup();
+
+    await expect(service.update(
+      'target-id',
+      { role: UserRole.ADMIN },
+      'receptionist-id',
+      UserRole.RECEPTIONIST,
+    )).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(tx.user.update).not.toHaveBeenCalled();
   });
 });
