@@ -31,16 +31,31 @@ FROM node:20-bookworm-slim AS runner
 ENV PUPPETEER_SKIP_DOWNLOAD=true \
     PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium \
-    NODE_ENV=production
+    NODE_ENV=production \
+    PATH="/usr/lib/postgresql/17/bin:${PATH}"
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
     ca-certificates \
     chromium \
+    curl \
     fontconfig \
     fonts-noto-core \
+    gnupg \
     openssl \
-    postgresql-client \
+  && install -d /usr/share/postgresql-common/pgdg \
+  && curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+  && printf '%s\n' \
+    'Types: deb' \
+    'URIs: https://apt.postgresql.org/pub/repos/apt' \
+    'Suites: bookworm-pgdg' \
+    'Components: main' \
+    'Signed-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc' \
+    > /etc/apt/sources.list.d/pgdg.sources \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+    postgresql-client-17 \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
