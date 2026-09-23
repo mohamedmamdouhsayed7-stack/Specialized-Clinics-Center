@@ -59,16 +59,15 @@ BACKUP_S3_SECRET_KEY=
 BACKUP_S3_REGION=us-east-1
 ```
 
-The password-reset flow sends a one-time six-digit verification code by SMTP.
-Codes are stored only as hashes, expire after 10 minutes, and are invalidated
-after use. Configure these variables when password reset is enabled:
+The password-reset flow sends a one-time six-digit verification code through
+the Resend HTTPS API. This avoids outbound SMTP restrictions on Railway Free
+Trial. Codes are stored only as hashes, expire after 10 minutes, and are
+invalidated after use. Verify the sender domain/address in Resend, then
+configure these variables in Railway:
 
 ```text
-SMTP_HOST=<provider host>
-SMTP_PORT=<provider port>
-SMTP_USER=<provider username>
-SMTP_PASSWORD=<provider password>
-SMTP_FROM=<verified sender address>
+RESEND_API_KEY=<Resend API key>
+RESEND_FROM=<verified sender address>
 ```
 
 For the initial production administrator, run the one-time seed command with

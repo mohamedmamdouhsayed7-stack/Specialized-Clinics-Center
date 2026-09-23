@@ -20,7 +20,7 @@ procedure. Administrators manage users, backups, invoice operations, and
 system settings. Receptionists can perform day-to-day clinic operations but
 cannot perform administrator-only actions.
 
-Password reset requires the production SMTP settings to be configured in
+Password reset requires the Resend HTTPS API settings to be configured in
 Railway. Users receive a six-digit verification code that expires after 10
 minutes.
 
@@ -43,9 +43,9 @@ connected database. Do not use destructive operations as a health check.
 
 Application deployments are made from the GitHub `main` branch through the
 Railway API service. Cloudflare Pages hosts the frontend deployment. Neon hosts
-the production database. Railway service variables, SMTP settings, and the
+the production database. Railway service variables, Resend settings, and the
 backup Volume are administered in Railway; database administration is handled
 through Neon.
 
-Never place passwords, database URLs, JWT secrets, SMTP passwords, encryption
-keys, or provider API tokens in this document or in source control.
+Never place passwords, database URLs, JWT secrets, encryption keys, or provider
+API tokens in this document or in source control.

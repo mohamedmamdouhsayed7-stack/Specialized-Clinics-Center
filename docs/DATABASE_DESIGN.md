@@ -199,10 +199,10 @@ Comprehensive audit trail for all financial and administrative operations. Recor
 | Field | Type | Constraints | Purpose |
 |-------|------|-------------|---------|
 | id | UUID | PRIMARY KEY | Unique identifier |
-| userId | UUID | FK → User.id, NOT NULL | Who performed the action |
+| userId | UUID | Nullable FK → User.id | Who performed the action; retained as NULL if that user is deleted |
 | action | VARCHAR(100) | NOT NULL | Action performed |
 | entityType | VARCHAR(100) | NOT NULL | Entity type affected |
-| entityId | UUID | NOT NULL | Entity ID affected |
+| entityId | TEXT | NOT NULL | UUID entity ID, filename, or system-operation identifier |
 | beforeState | JSONB | | State before change |
 | afterState | JSONB | | State after change |
 | ipAddress | VARCHAR(45) | | IP address of request |

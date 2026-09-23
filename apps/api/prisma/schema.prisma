@@ -342,7 +342,7 @@ model AuditLog {
   userId     String?  @db.Uuid
   action     String
   entityType String
-  entityId   String   @db.Uuid
+  entityId   String
   beforeState Json?
   afterState  Json?
   ipAddress  String?

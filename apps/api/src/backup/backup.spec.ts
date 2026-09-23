@@ -712,7 +712,8 @@ describe('BackupModule', () => {
         prisma[model].findMany.mockResolvedValue([]);
       }
 
-      const service = new BackupService({ logUserAction: jest.fn() } as any, prisma);
+      const auditService = { logUserAction: jest.fn() };
+      const service = new BackupService(auditService as any, prisma);
       const buffer = await service.exportToExcel('admin-1');
       const workbook = new ExcelJS.Workbook();
       await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
@@ -751,6 +752,14 @@ describe('BackupModule', () => {
       expect(buffer.toString()).not.toContain('passwordHash');
       expect(buffer.toString()).not.toContain('recordedById');
       expect(buffer.toString()).not.toContain('createdById');
+      expect(auditService.logUserAction).toHaveBeenCalledWith(
+        'admin-1',
+        'DATA_EXPORT',
+        'Backup',
+        'excel-export',
+        undefined,
+        undefined,
+      );
     });
   });
 });
