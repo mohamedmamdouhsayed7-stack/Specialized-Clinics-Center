@@ -1,14 +1,17 @@
 import { BackupService } from './backup.service';
 import { PrismaClient } from '@prisma/client';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
+import { gzipSync } from 'zlib';
 
 describe('Backup PostgreSQL integration', () => {
   let source: PrismaClient;
   let backupService: BackupService;
   let backupDir: string;
   let restoreDatabase: string;
+  let auditService: { logUserAction: jest.Mock };
   const originalEnv = { ...process.env };
 
   const runCommand = (command: string, args: string[], env: NodeJS.ProcessEnv = process.env) =>
@@ -39,7 +42,8 @@ describe('Backup PostgreSQL integration', () => {
       ...process.env,
       PGPASSWORD: process.env.POSTGRES_PASSWORD,
     });
-    backupService = new BackupService({ logUserAction: jest.fn() } as any, source as any);
+    auditService = { logUserAction: jest.fn() };
+    backupService = new BackupService(auditService as any, source as any);
     backupService.onModuleInit();
   });
 
@@ -102,6 +106,15 @@ describe('Backup PostgreSQL integration', () => {
     process.env.DATABASE_URL = `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${restoreDatabase}`;
     await backupService.restoreBackup(result.filename, user.id);
 
+    const safetyBackup = (await backupService.listBackups()).find(entry => entry.triggeredBy === 'pre-restore-safety');
+    expect(safetyBackup?.protected).toBe(true);
+    expect(auditService.logUserAction).toHaveBeenCalledWith(
+      user.id, 'RESTORE_EXECUTED', 'System', result.filename, undefined, undefined,
+    );
+    expect(auditService.logUserAction).toHaveBeenCalledWith(
+      user.id, 'BACKUP_CREATED', 'System', safetyBackup?.filename, undefined, undefined,
+    );
+
     const restored = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
     try {
       const restoredInvoice = await restored.invoice.findUnique({
@@ -118,5 +131,43 @@ describe('Backup PostgreSQL integration', () => {
     } finally {
       await restored.$disconnect();
     }
+  }, 120000);
+
+  it('restores a historical compressed plain SQL dump after skipping managed-role-incompatible statements', async () => {
+    const suffix = `${Date.now()}_${process.pid}`;
+    const tableName = `backup_restore_compat_${suffix}`;
+    const filename = `clinic_backup_historical-${suffix}.sql.gz`;
+    const sql = [
+      `CREATE TABLE public.${tableName} (id integer PRIMARY KEY, label text NOT NULL);`,
+      `COPY public.${tableName} (id, label) FROM stdin;`,
+      '1\tfixture row',
+      '\\.',
+      `ALTER TABLE public.${tableName} OWNER TO historical_owner;`,
+      'ALTER DEFAULT PRIVILEGES FOR ROLE historical_owner IN SCHEMA public GRANT SELECT ON TABLES TO historical_reader;',
+      `GRANT SELECT ON TABLE public.${tableName} TO historical_reader;`,
+      `REVOKE ALL ON TABLE public.${tableName} FROM historical_owner;`,
+      'SET statement_timeout = 0;',
+    ].join('\n') + '\n';
+    const content = gzipSync(Buffer.from(sql));
+    await writeFile(`${backupDir}/${filename}`, content);
+    const manifest = await backupService['readManifest']();
+    manifest.entries.push({
+      filename,
+      sizeBytes: content.length,
+      sha256: createHash('sha256').update(content).digest('hex'),
+      createdAt: new Date().toISOString(),
+      triggeredBy: 'manual',
+      uploadedToRemote: false,
+      validation: { gzipVerified: true, databaseVerified: false, verifiedAt: new Date().toISOString() },
+      protected: false,
+    });
+    await backupService['writeManifest'](manifest);
+
+    await backupService.restoreBackup(filename, 'historical-fixture-admin');
+
+    const rows = await source.$queryRawUnsafe<Array<{ id: number; label: string }>>(
+      `SELECT id, label FROM public.${tableName}`,
+    );
+    expect(rows).toEqual([{ id: 1, label: 'fixture row' }]);
   }, 120000);
 });

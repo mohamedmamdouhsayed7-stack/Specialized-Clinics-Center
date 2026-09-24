@@ -7,6 +7,7 @@ export interface BackupEntry {
   createdAt: string;
   triggeredBy: 'manual' | 'scheduled' | 'pre-restore-safety';
   uploadedToRemote: boolean;
+  protected: boolean;
 }
 
 export interface BackupStatus {
@@ -56,6 +57,18 @@ class BackupService {
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.message || 'Failed to restore backup');
+    }
+    return response.json();
+  }
+
+  async deleteBackup(filename: string): Promise<{ deleted: string; fileMissing: boolean }> {
+    const response = await fetch(`${apiBaseUrl}/backup/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Failed to permanently delete backup');
     }
     return response.json();
   }

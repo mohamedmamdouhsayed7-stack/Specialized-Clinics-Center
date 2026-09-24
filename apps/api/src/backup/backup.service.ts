@@ -1,6 +1,7 @@
-import { Injectable, Logger, BadRequestException, InternalServerErrorException, OnModuleInit, Optional } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException, ForbiddenException, InternalServerErrorException, NotFoundException, OnModuleInit, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ChildProcessWithoutNullStreams, spawn, spawnSync } from 'child_process';
+import { UserRole } from '@prisma/client';
 import { createGzip, createGunzip } from 'zlib';
 import { createReadStream, createWriteStream } from 'fs';
 import * as fs from 'fs/promises';
@@ -63,6 +64,18 @@ export class BackupService implements OnModuleInit {
       await new Promise<void>(resolve => globalThis.setTimeout(resolve, 100));
     }
 
+    this.operationInProgress = true;
+    try {
+      return await operation();
+    } finally {
+      this.operationInProgress = false;
+    }
+  }
+
+  private async withOperationLockIfIdle<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.operationInProgress) {
+      throw new ConflictException('A backup or restore operation is currently in progress');
+    }
     this.operationInProgress = true;
     try {
       return await operation();
@@ -210,8 +223,169 @@ export class BackupService implements OnModuleInit {
       '--clean',
       '--if-exists',
       '--no-owner',
+      '--no-acl',
       params.database,
     ];
+  }
+
+  private createManagedRestoreFilter() {
+    let pending = '';
+    let skippingStatement = false;
+    let copyData = false;
+    let dollarQuote: string | undefined;
+    let skippedStatements = 0;
+    let blockCommentDepth = 0;
+
+    const shouldSkipStatement = (line: string) => {
+      const statement = line.trim();
+      return /^(?:GRANT\b|REVOKE\b|ALTER\s+DEFAULT\s+PRIVILEGES\b|SET\s+SESSION\s+AUTHORIZATION\b|RESET\s+SESSION\s+AUTHORIZATION\b)/i.test(statement) ||
+        (/^ALTER\b/i.test(statement) && /\bOWNER\s+TO\b/i.test(statement));
+    };
+
+    const updateDollarQuote = (line: string) => {
+      let singleQuoted = false;
+      let doubleQuoted = false;
+      for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        const next = line[index + 1];
+
+        if (dollarQuote) {
+          const delimiter = dollarQuote;
+          const end = line.indexOf(delimiter, index);
+          if (end < 0) return;
+          dollarQuote = undefined;
+          index = end + delimiter.length - 1;
+          continue;
+        }
+
+        if (blockCommentDepth > 0) {
+          if (char === '/' && next === '*') {
+            blockCommentDepth += 1;
+            index += 1;
+          } else if (char === '*' && next === '/') {
+            blockCommentDepth -= 1;
+            index += 1;
+          }
+          continue;
+        }
+
+        if (singleQuoted) {
+          if (char === '\\') index += 1;
+          else if (char === "'" && next === "'") index += 1;
+          else if (char === "'") singleQuoted = false;
+          continue;
+        }
+
+        if (doubleQuoted) {
+          if (char === '"' && next === '"') index += 1;
+          else if (char === '"') doubleQuoted = false;
+          continue;
+        }
+
+        if (char === '-' && next === '-') return;
+        if (char === '/' && next === '*') {
+          blockCommentDepth = 1;
+          index += 1;
+        } else if (char === "'") {
+          singleQuoted = true;
+        } else if (char === '"') {
+          doubleQuoted = true;
+        } else if (char === '$') {
+          const delimiter = line.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)?.[0];
+          if (delimiter) {
+            dollarQuote = delimiter;
+            index += delimiter.length - 1;
+          }
+        }
+      }
+    };
+
+    const filter = new Transform({
+      transform: (chunk, _encoding, callback) => {
+        try {
+          const lines = `${pending}${chunk.toString('utf8')}`.split('\n');
+          pending = lines.pop() || '';
+          for (const line of lines) {
+            const normalized = line.replace(/\r$/, '');
+            const statement = normalized.trim();
+
+            if (copyData) {
+              filter.push(`${line}\n`);
+              if (statement === '\\.') copyData = false;
+              continue;
+            }
+
+            if (dollarQuote) {
+              filter.push(`${line}\n`);
+              updateDollarQuote(normalized);
+              continue;
+            }
+
+            if (skippingStatement) {
+              if (statement.endsWith(';')) skippingStatement = false;
+              continue;
+            }
+
+            if (/^COPY\b[\s\S]*\bFROM\s+stdin\s*;$/i.test(statement)) {
+              filter.push(`${line}\n`);
+              copyData = true;
+              continue;
+            }
+
+            if (shouldSkipStatement(normalized)) {
+              skippedStatements += 1;
+              skippingStatement = !statement.endsWith(';');
+              continue;
+            }
+
+            filter.push(`${line}\n`);
+            updateDollarQuote(normalized);
+          }
+          callback();
+        } catch (error) {
+          callback(error as Error);
+        }
+      },
+      flush: (callback) => {
+        if (pending) {
+          const statement = pending.trim();
+          if (!skippingStatement && shouldSkipStatement(pending)) {
+            skippedStatements += 1;
+            skippingStatement = !statement.endsWith(';');
+          } else if (!skippingStatement) {
+            filter.push(pending);
+          }
+        }
+        if (skippingStatement) {
+          callback(new Error('Backup contains an incomplete privilege statement'));
+          return;
+        }
+        callback();
+      },
+    });
+
+    return { filter, getSkippedStatements: () => skippedStatements };
+  }
+
+  private getRestoreFailureCategory(stderr: string): 'permission' | 'schema' | 'data' | 'database' {
+    const message = stderr.toLowerCase();
+    if (/permission denied|insufficient privilege|must be owner|must be member of role/.test(message)) return 'permission';
+    if (/syntax error|already exists|does not exist|undefined (?:table|column|object)|invalid type/.test(message)) return 'schema';
+    if (/violates|duplicate key|foreign key|not-null|invalid input|value too long|out of range/.test(message)) return 'data';
+    return 'database';
+  }
+
+  private getRestoreFailureMessage(category: ReturnType<BackupService['getRestoreFailureCategory']>) {
+    switch (category) {
+      case 'permission':
+        return 'Restore failed due to a database permission error. The backup may contain operations unsupported by this database role.';
+      case 'schema':
+        return 'Restore failed due to a schema error. Verify that the backup matches this application version.';
+      case 'data':
+        return 'Restore failed due to a data or constraint error. Verify that the backup is complete and compatible.';
+      default:
+        return 'Database restore failed. Verify that the backup is valid and compatible, then contact support.';
+    }
   }
 
   private async ensureBackupDir() {
@@ -424,17 +598,16 @@ export class BackupService implements OnModuleInit {
     psql: ChildProcessWithoutNullStreams,
     input: Readable,
     gunzip: Transform,
-    stderr: () => string,
-    stdout: () => string,
+    managedRestoreFilter: Transform,
   ) {
     const results = await Promise.all([
-      pipeline(input, gunzip, psql.stdin),
+      pipeline(input, gunzip, managedRestoreFilter, psql.stdin),
       this.waitForProcessExit(psql),
     ]);
     const exitCode = results[1];
 
     if (exitCode !== 0) {
-      throw new Error(`psql exited with code ${exitCode}. stderr: ${stderr()}, stdout: ${stdout()}`);
+      throw new Error(`psql exited with code ${exitCode}`);
     }
   }
 
@@ -606,6 +779,89 @@ export class BackupService implements OnModuleInit {
     }
   }
 
+  private isDeletionMetadataValid(entry: BackupManifestEntry, filename: string): boolean {
+    return !!entry &&
+      entry.filename === filename &&
+      Number.isSafeInteger(entry.sizeBytes) && entry.sizeBytes >= 0 &&
+      /^[a-f0-9]{64}$/.test(entry.sha256) &&
+      Number.isFinite(Date.parse(entry.createdAt)) &&
+      ['manual', 'scheduled', 'pre-restore-safety'].includes(entry.triggeredBy) &&
+      typeof entry.uploadedToRemote === 'boolean' &&
+      typeof entry.protected === 'boolean' &&
+      !!entry.validation &&
+      typeof entry.validation.gzipVerified === 'boolean' &&
+      typeof entry.validation.databaseVerified === 'boolean' &&
+      Number.isFinite(Date.parse(entry.validation.verifiedAt)) &&
+      (entry.encrypted
+        ? filename.endsWith('.sql.gz.enc') && entry.encryptionAlgorithm === 'aes-256-gcm' && !!entry.nonce && !!entry.authTag
+        : !filename.endsWith('.sql.gz.enc'));
+  }
+
+  async deleteBackup(filename: string, userId: string, userRole: UserRole, ipAddress?: string, userAgent?: string) {
+    if (userRole !== UserRole.ADMIN) {
+      throw new ForbiddenException('Only administrators can permanently delete backups');
+    }
+
+    const safeFilename = this.sanitizeFilename(filename);
+    return this.withOperationLockIfIdle(async () => {
+      let manifest: BackupManifest;
+      try {
+        manifest = await this.readManifest();
+      } catch {
+        throw new InternalServerErrorException('Backup metadata is unavailable or invalid; no file was deleted');
+      }
+      const matchingEntries = manifest.entries.filter((entry) =>
+        !!entry && typeof entry === 'object' && entry.filename === safeFilename,
+      );
+      if (matchingEntries.length === 0) {
+        throw new NotFoundException('Backup is not registered in the manifest');
+      }
+      if (matchingEntries.length !== 1 || !this.isDeletionMetadataValid(matchingEntries[0], safeFilename)) {
+        throw new BadRequestException('Backup metadata is invalid; the file was not deleted');
+      }
+
+      const entry = matchingEntries[0];
+      if (entry.protected) {
+        throw new ForbiddenException('Protected safety backups cannot be permanently deleted');
+      }
+
+      const filepath = this.resolveSafePath(safeFilename);
+      const nextManifest = { ...manifest, entries: manifest.entries.filter((candidate) => candidate !== entry) };
+      let fileMissing = false;
+      let tombstonePath: string | undefined;
+      try {
+        const stat = await fs.lstat(filepath);
+        if (!stat.isFile() || stat.isSymbolicLink()) {
+          throw new BadRequestException('Target is not a recognized backup file');
+        }
+        tombstonePath = path.join(this.backupDir, `${safeFilename}.${process.pid}.${randomBytes(8).toString('hex')}.delete.tmp`);
+        await fs.rename(filepath, tombstonePath);
+      } catch (error) {
+        if ((error as Error & { code?: string }).code === 'ENOENT') {
+          fileMissing = true;
+        } else if (error instanceof BadRequestException) {
+          throw error;
+        } else {
+          throw new InternalServerErrorException('Backup file could not be accessed; no manifest change was made');
+        }
+      }
+
+      let manifestUpdated = false;
+      try {
+        await this.writeManifest(nextManifest);
+        manifestUpdated = true;
+        if (tombstonePath) await fs.unlink(tombstonePath);
+      } catch {
+        if (manifestUpdated) await this.writeManifest(manifest).catch(() => undefined);
+        if (tombstonePath) await fs.rename(tombstonePath, filepath).catch(() => undefined);
+        throw new InternalServerErrorException('Backup could not be permanently deleted. The manifest and backup file were preserved where possible.');
+      }
+
+      await this.auditService.logUserAction(userId, 'BACKUP_DELETED', 'System', safeFilename, ipAddress, userAgent);
+      return { deleted: safeFilename, fileMissing };
+    });
+  }
+
   private sanitizeFilename(filename: string): string {
     const base = path.basename(filename);
     if (!/^clinic_backup_[\w-]+\.sql\.gz(?:\.enc)?$/.test(base)) {
@@ -627,7 +883,7 @@ export class BackupService implements OnModuleInit {
     const resolvedPath = path.resolve(fullPath);
     const resolvedBackupDir = path.resolve(this.backupDir);
 
-    if (!resolvedPath.startsWith(resolvedBackupDir)) {
+    if (path.dirname(resolvedPath) !== resolvedBackupDir) {
       throw new BadRequestException('Invalid backup filename: path traversal not allowed');
     }
 
@@ -648,6 +904,7 @@ export class BackupService implements OnModuleInit {
         validatedSnapshot = await this.createVerifiedSnapshot(filename, await this.readManifest());
 
         let psql: ChildProcessWithoutNullStreams | undefined;
+        let stderr = '';
         try {
         const connection = this.getDbConnectionParams();
         const { host, port, user, password, database, sslmode } = connection;
@@ -661,26 +918,32 @@ export class BackupService implements OnModuleInit {
             '--port', port,
             '--username', user,
             '--dbname', database,
+            '--no-psqlrc',
             '--set=ON_ERROR_STOP=on',
             '--single-transaction',
           ],
           { env: this.getPostgresProcessEnvironment(password, sslmode) },
         );
 
-        let stderr = '';
-        let stdout = '';
-        psql.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-        psql.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+        psql.stdout.resume();
+        psql.stderr.on('data', (chunk) => {
+          stderr = `${stderr}${chunk.toString()}`.slice(-4096);
+        });
 
         const gunzip = createGunzip();
+        const managedRestore = this.createManagedRestoreFilter();
         const input = createReadStream(validatedSnapshot);
-        await this.completeRestoreProcess(psql, input, gunzip, () => stderr, () => stdout);
+        await this.completeRestoreProcess(psql, input, gunzip, managedRestore.filter);
+        if (managedRestore.getSkippedStatements() > 0) {
+          this.logger.warn(`Restore skipped ${managedRestore.getSkippedStatements()} unsupported ownership or ACL statement(s)`);
+        }
         } catch (err) {
         // Restore failed - pre-restore safety backup remains available
         psql?.kill();
-        const message = err instanceof Error ? err.message : String(err);
-        this.logger.error(`Restore failed: ${message}`);
-        throw new InternalServerErrorException(`Restore failed: ${message}`);
+        const category = this.getRestoreFailureCategory(stderr);
+        const exitCode = err instanceof Error ? err.message.match(/psql exited with code (-?\d+)/)?.[1] : undefined;
+        this.logger.error(`Restore failed (${category}${exitCode ? `, psql exit code ${exitCode}` : ''})`);
+        throw new InternalServerErrorException(this.getRestoreFailureMessage(category));
         } finally {
           if (validatedSnapshot) await fs.unlink(validatedSnapshot).catch(() => undefined);
         }

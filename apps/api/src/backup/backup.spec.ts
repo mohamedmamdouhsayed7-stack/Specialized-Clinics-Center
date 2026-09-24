@@ -4,7 +4,10 @@ import { BackupController } from './backup.controller';
 import { BackupModule } from './backup.module';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../database/prisma.service';
-import { BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
+import { BadRequestException, ConflictException, ForbiddenException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { EventEmitter } from 'events';
 import { PassThrough, Readable, Writable } from 'stream';
 import { gzipSync } from 'zlib';
@@ -179,6 +182,8 @@ describe('BackupModule', () => {
       const args = service['getPgDumpArguments'](params);
       expect(args).not.toContain('--sslmode');
       expect(args).not.toContain('require');
+      expect(args).toContain('--no-owner');
+      expect(args).toContain('--no-acl');
       expect(service['getPostgresProcessEnvironment'](params.password, params.sslmode)).toMatchObject({
         PGPASSWORD: 'pa$$',
         PGSSLMODE: 'require',
@@ -260,6 +265,128 @@ describe('BackupModule', () => {
       const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       const validFilename = 'clinic_backup_2024-01-01T12-00-00-000Z.sql.gz';
       expect(() => service['resolveSafePath'](validFilename)).not.toThrow();
+    });
+  });
+
+  describe('BackupService - Permanent deletion', () => {
+    beforeEach(() => {
+      process.env.NODE_ENV = 'test';
+      process.env.POSTGRES_DB = 'clinic_test_db';
+    });
+
+    const makeBackup = async (
+      service: BackupService,
+      directory: string,
+      options: { filename?: string; protected?: boolean; file?: boolean; validMetadata?: boolean } = {},
+    ) => {
+      const filename = options.filename || 'clinic_backup_2024-01-01T12-00-00-000Z.sql.gz';
+      const content = gzipSync(Buffer.from('SELECT 1;'));
+      if (options.file !== false) await writeFile(`${directory}/${filename}`, content);
+      const entry = {
+        filename,
+        sizeBytes: content.length,
+        sha256: require('crypto').createHash('sha256').update(content).digest('hex'),
+        createdAt: new Date().toISOString(),
+        triggeredBy: options.protected ? 'pre-restore-safety' as const : 'manual' as const,
+        uploadedToRemote: false,
+        validation: { gzipVerified: true, databaseVerified: false, verifiedAt: new Date().toISOString() },
+        protected: options.protected || false,
+      };
+      if (options.validMetadata === false) entry.sha256 = 'invalid';
+      await service['writeManifest']({ version: 2, database: 'clinic_test_db', entries: [entry] });
+      return entry;
+    };
+
+    it('permanently deletes an eligible backup, updates metadata, and audits the action', async () => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-`);
+      process.env.BACKUP_DIR = directory;
+      const auditService = { logUserAction: jest.fn() };
+      const service = new BackupService(auditService as any, createMockPrismaService());
+      const entry = await makeBackup(service, directory);
+
+      await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN, '127.0.0.1', 'test-agent'))
+        .resolves.toEqual({ deleted: entry.filename, fileMissing: false });
+      await expect(readFile(`${directory}/${entry.filename}`)).rejects.toMatchObject({ code: 'ENOENT' });
+      await expect(service['readManifest']()).resolves.toMatchObject({ entries: [] });
+      expect(auditService.logUserAction).toHaveBeenCalledWith(
+        'admin-id', 'BACKUP_DELETED', 'System', entry.filename, '127.0.0.1', 'test-agent',
+      );
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it.each([UserRole.RECEPTIONIST, undefined])('rejects non-Admin and unauthenticated service calls', async (role) => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-auth-`);
+      process.env.BACKUP_DIR = directory;
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const entry = await makeBackup(service, directory);
+      await expect(service.deleteBackup(entry.filename, 'user-id', role as UserRole))
+        .rejects.toBeInstanceOf(ForbiddenException);
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('protects controller deletion with authentication and Admin role guards', () => {
+      const guards = Reflect.getMetadata('__guards__', BackupController);
+      expect(guards).toContain(JwtAuthGuard);
+      expect(guards).toContain(RolesGuard);
+      expect(Reflect.getMetadata('roles', BackupController)).toContain(UserRole.ADMIN);
+    });
+
+    it('refuses protected and in-use backups', async () => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-protected-`);
+      process.env.BACKUP_DIR = directory;
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const protectedEntry = await makeBackup(service, directory, { protected: true });
+      await expect(service.deleteBackup(protectedEntry.filename, 'admin-id', UserRole.ADMIN))
+        .rejects.toThrow('Protected safety backups cannot be permanently deleted');
+
+      const entry = await makeBackup(service, directory, { filename: 'clinic_backup_second.sql.gz' });
+      service['operationInProgress'] = true;
+      await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN))
+        .rejects.toBeInstanceOf(ConflictException);
+      service['operationInProgress'] = false;
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it.each([
+      '../something',
+      '/tmp/clinic_backup_outside.sql.gz',
+      'C:\\outside\\clinic_backup_outside.sql.gz',
+      'clinic_backup_%2e%2e%2foutside.sql.gz',
+      'notes.txt',
+    ])('rejects unsafe or unrecognized filename %s', async (filename) => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-path-`);
+      process.env.BACKUP_DIR = directory;
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      await expect(service.deleteBackup(filename, 'admin-id', UserRole.ADMIN)).rejects.toBeInstanceOf(BadRequestException);
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('does not delete a target represented by malformed metadata or a directory', async () => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-malformed-`);
+      process.env.BACKUP_DIR = directory;
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const malformed = await makeBackup(service, directory, { filename: 'clinic_backup_malformed.sql.gz', validMetadata: false });
+      await expect(service.deleteBackup(malformed.filename, 'admin-id', UserRole.ADMIN)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(readFile(`${directory}/${malformed.filename}`)).resolves.toBeDefined();
+
+      const directoryEntry = await makeBackup(service, directory, { filename: 'clinic_backup_directory.sql.gz', file: false });
+      await mkdir(`${directory}/${directoryEntry.filename}`);
+      await expect(service.deleteBackup(directoryEntry.filename, 'admin-id', UserRole.ADMIN)).rejects.toBeInstanceOf(BadRequestException);
+      await expect(readdir(`${directory}/${directoryEntry.filename}`)).resolves.toEqual([]);
+      await rm(directory, { recursive: true, force: true });
+    });
+
+    it('removes stale metadata safely when the valid backup file is already missing', async () => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-stale-`);
+      process.env.BACKUP_DIR = directory;
+      const auditService = { logUserAction: jest.fn() };
+      const service = new BackupService(auditService as any, createMockPrismaService());
+      const entry = await makeBackup(service, directory, { file: false });
+      await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN))
+        .resolves.toEqual({ deleted: entry.filename, fileMissing: true });
+      await expect(service['readManifest']()).resolves.toMatchObject({ entries: [] });
+      expect(auditService.logUserAction).toHaveBeenCalledWith('admin-id', 'BACKUP_DELETED', 'System', entry.filename, undefined, undefined);
+      await rm(directory, { recursive: true, force: true });
     });
   });
 
@@ -380,11 +507,59 @@ describe('BackupModule', () => {
         const psql = fakeProcess();
         const input = Readable.from(gzipSync(Buffer.from('SELECT 1;')));
         const gunzip = new (require('zlib').Gunzip)();
-        const completion = service['completeRestoreProcess'](psql, input, gunzip, () => '', () => '');
+        const managedRestore = service['createManagedRestoreFilter']();
+        const completion = service['completeRestoreProcess'](psql, input, gunzip, managedRestore.filter);
 
         psql.stdin.on('data', () => undefined);
         setImmediate(() => psql.emit('close', 0));
         await expect(completion).resolves.toBeUndefined();
+      });
+
+      it('skips only ownership, ACL, and default-privilege statements while preserving schema and COPY data', async () => {
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+        const sql = [
+          'SET search_path = public;',
+          'CREATE TABLE public.restore_fixture (id text);',
+          'COPY public.restore_fixture (id) FROM stdin;',
+          'GRANT SELECT ON TABLE public.fixture TO app_role',
+          'ALTER DEFAULT PRIVILEGES is ordinary COPY data',
+          '\\.',
+          'ALTER TABLE public.restore_fixture OWNER TO old_owner;',
+          'ALTER DEFAULT PRIVILEGES FOR ROLE old_owner',
+          '  IN SCHEMA public GRANT SELECT ON TABLES TO app_role;',
+          'GRANT SELECT ON TABLE public.restore_fixture TO app_role;',
+          'REVOKE ALL ON TABLE public.restore_fixture FROM old_owner;',
+          'SELECT count(*) FROM public.restore_fixture;',
+          'CREATE TABLE public."$not$" (id integer);',
+          'GRANT SELECT ON TABLE public."$not$" TO app_role;',
+          'CREATE FUNCTION public.restore_fixture_function() RETURNS void AS $$',
+          'BEGIN',
+          "  RAISE NOTICE 'GRANT is function text';",
+          'END;',
+          '$$ LANGUAGE plpgsql;',
+        ].join('\n') + '\n';
+        const { filter, getSkippedStatements } = service['createManagedRestoreFilter']();
+        const chunks: Buffer[] = [];
+        await new Promise<void>((resolve, reject) => {
+          Readable.from(gzipSync(Buffer.from(sql)))
+            .pipe(new (require('zlib').Gunzip)())
+            .pipe(filter)
+            .on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
+            .on('error', reject)
+            .on('end', resolve);
+        });
+
+        const filtered = Buffer.concat(chunks).toString('utf8');
+        expect(getSkippedStatements()).toBe(5);
+        expect(filtered).toContain('CREATE TABLE public.restore_fixture');
+        expect(filtered).toContain('GRANT SELECT ON TABLE public.fixture TO app_role');
+        expect(filtered).toContain('ALTER DEFAULT PRIVILEGES is ordinary COPY data');
+        expect(filtered).toContain('CREATE FUNCTION public.restore_fixture_function()');
+        expect(filtered).toContain('CREATE TABLE public."$not$"');
+        expect(filtered).not.toContain('ALTER TABLE public.restore_fixture OWNER TO');
+        expect(filtered).not.toContain('ALTER DEFAULT PRIVILEGES FOR ROLE');
+        expect(filtered).not.toContain('REVOKE ALL ON TABLE');
+        expect(filtered).not.toContain('GRANT SELECT ON TABLE public.restore_fixture TO');
       });
 
       it.each(['non-zero exit', 'spawn error', 'input read error', 'gunzip error', 'stdin error', 'truncated input'])('should reject restore on %s', async (failure) => {
@@ -392,7 +567,8 @@ describe('BackupModule', () => {
         const psql = fakeProcess();
         const input = new PassThrough();
         const gunzip = new (require('zlib').Gunzip)();
-        const completion = service['completeRestoreProcess'](psql, input, gunzip, () => 'stderr', () => 'stdout');
+        const managedRestore = service['createManagedRestoreFilter']();
+        const completion = service['completeRestoreProcess'](psql, input, gunzip, managedRestore.filter);
 
         if (failure === 'non-zero exit') psql.emit('close', 1);
         if (failure === 'spawn error') psql.emit('error', new Error('spawn failed'));
@@ -402,6 +578,17 @@ describe('BackupModule', () => {
         if (failure === 'truncated input') input.write(gzipSync(Buffer.from('partial')).subarray(0, 5));
         input.end();
         await expect(completion).rejects.toThrow();
+      });
+
+      it('reports concise sanitized restore categories without exposing SQL or credentials', () => {
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+        const message = service['getRestoreFailureMessage'](
+          service['getRestoreFailureCategory']('ERROR: insert violates a foreign key; DATABASE_URL=postgres://private'),
+        );
+        expect(message).toContain('data or constraint error');
+        expect(message).not.toContain('private');
+        expect(message).not.toContain('DATABASE_URL');
+        expect(service['getRestoreFailureCategory']('ERROR: permission denied to change default privileges')).toBe('permission');
       });
 
       it('should publish only the validated final artifact and exclude temporary files', async () => {

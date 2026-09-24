@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request, Res, Param } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, UseGuards, Request, Res, Param } from '@nestjs/common';
 import { BackupService } from './backup.service';
 import { RestoreBackupDto } from './dto/restore-backup.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -37,6 +37,13 @@ export class BackupController {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.backupService.restoreBackup(dto.filename, req.user.id, ipAddress, userAgent);
+  }
+
+  @Delete(':filename')
+  deleteBackup(@Request() req, @Param('filename') filename: string) {
+    const ipAddress = req.ip || req.connection.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.backupService.deleteBackup(filename, req.user.id, req.user.role, ipAddress, userAgent);
   }
 
   @Get('export-excel')

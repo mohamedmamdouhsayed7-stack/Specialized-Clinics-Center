@@ -82,6 +82,7 @@ export default function SettingsPage() {
 // ---------- النسخ الاحتياطي والاستعادة ----------
 function BackupSection() {
   const { t, i18n } = useTranslation();
+  const { user } = useAuth();
   const { showToast } = useToast();
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
@@ -90,7 +91,9 @@ function BackupSection() {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [confirmRestore, setConfirmRestore] = useState<BackupEntry | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<BackupEntry | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -161,6 +164,25 @@ function BackupSection() {
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.restoreFailed') });
     } finally {
       setRestoring(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await backupService.deleteBackup(confirmDelete.filename);
+      setBackups((current) => current.filter((backup) => backup.filename !== confirmDelete.filename));
+      setConfirmDelete(null);
+      await load();
+      showToast({ type: 'success', message: t('settings.backupDeleted') });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : t('settings.backupDeleteError');
+      setError(message);
+      showToast({ type: 'error', message });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -257,6 +279,11 @@ function BackupSection() {
               <div className="flex gap-2">
                 <button onClick={() => handleDownloadBackup(b.filename)} className="text-[#173B78] hover:underline text-xs">{t('settings.download')}</button>
                 <button onClick={() => setConfirmRestore(b)} className="text-[#C4362B] hover:underline text-xs">{t('settings.restore')}</button>
+                {user?.role === 'ADMIN' && !b.protected && (
+                  <button onClick={() => setConfirmDelete(b)} className="text-[#C4362B] hover:underline text-xs">
+                    {t('settings.deleteBackup')}
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -275,6 +302,19 @@ function BackupSection() {
         loading={restoring}
         onCancel={() => setConfirmRestore(null)}
         onConfirm={handleRestore}
+      />
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={t('settings.confirmDeleteBackupTitle')}
+        message={confirmDelete ? t('settings.confirmDeleteBackupBody', {
+          date: new Date(confirmDelete.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW'),
+        }) : ''}
+        confirmLabel={deleting ? t('settings.deletingBackup') : t('settings.deleteBackup')}
+        cancelLabel={t('common.cancel')}
+        destructive
+        loading={deleting}
+        onCancel={() => setConfirmDelete(null)}
+        onConfirm={handleDelete}
       />
     </div>
   );
