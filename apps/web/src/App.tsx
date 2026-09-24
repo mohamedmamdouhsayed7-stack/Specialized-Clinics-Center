@@ -184,6 +184,10 @@ function App() {
               }
             />
             <Route
+              path="/daily-closing"
+              element={<Navigate to="/reports/daily-closing" replace />}
+            />
+            <Route
               path="/reports"
               element={
                 <ProtectedRoute allowedRoles={['ADMIN']}>
