@@ -163,11 +163,31 @@ describe('Backup PostgreSQL integration', () => {
     });
     await backupService['writeManifest'](manifest);
 
-    await backupService.restoreBackup(filename, 'historical-fixture-admin');
+    const restoreUrl = `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${restoreDatabase}`;
+    process.env.POSTGRES_DB = restoreDatabase;
+    process.env.DATABASE_URL = restoreUrl;
+    const skippedStatementsLog = jest.spyOn(backupService['logger'], 'warn');
+    try {
+      await backupService.restoreBackup(filename, 'historical-fixture-admin');
 
-    const rows = await source.$queryRawUnsafe<Array<{ id: number; label: string }>>(
-      `SELECT id, label FROM public.${tableName}`,
-    );
-    expect(rows).toEqual([{ id: 1, label: 'fixture row' }]);
+      expect(skippedStatementsLog).toHaveBeenCalledWith(
+        'Restore skipped 4 unsupported ownership or ACL statement(s)',
+      );
+      expect(auditService.logUserAction).toHaveBeenCalledWith(
+        'historical-fixture-admin', 'RESTORE_EXECUTED', 'System', filename, undefined, undefined,
+      );
+
+      const restored = new PrismaClient({ datasources: { db: { url: restoreUrl } } });
+      try {
+        const rows = await restored.$queryRawUnsafe<Array<{ id: number; label: string }>>(
+          `SELECT id, label FROM public.${tableName}`,
+        );
+        expect(rows).toEqual([{ id: 1, label: 'fixture row' }]);
+      } finally {
+        await restored.$disconnect();
+      }
+    } finally {
+      skippedStatementsLog.mockRestore();
+    }
   }, 120000);
 });
