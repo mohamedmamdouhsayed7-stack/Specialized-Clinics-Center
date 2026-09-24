@@ -55,7 +55,7 @@ export default function ForgotPassword() {
       if (!response.ok) {
         throw new Error('Invalid or expired verification code');
       }
-      navigate(`/reset-password?email=${encodeURIComponent(email)}&code=${encodeURIComponent(code)}`);
+      navigate('/reset-password', { state: { email, code } });
     } catch {
       setError(t('forgotPassword.invalidCode'));
     } finally {

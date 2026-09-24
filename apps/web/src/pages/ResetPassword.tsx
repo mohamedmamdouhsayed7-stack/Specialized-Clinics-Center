@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Lock, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { apiBaseUrl } from '../config/api';
@@ -7,10 +7,11 @@ import { apiBaseUrl } from '../config/api';
 export default function ResetPassword() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const isArabic = i18n.language === 'ar';
-  const [searchParams] = useSearchParams();
-  const email = searchParams.get('email') || '';
-  const code = searchParams.get('code') || '';
+  const state = location.state as { email?: string; code?: string } | null;
+  const email = state?.email || '';
+  const code = state?.code || '';
 
   const [formData, setFormData] = useState({
     newPassword: '',
@@ -23,10 +24,10 @@ export default function ResetPassword() {
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    if (!email || !/^\d{6}$/.test(code)) {
+    if (!state || !email || !/^\d{6}$/.test(code)) {
       navigate('/forgot-password');
     }
-  }, [email, code, navigate]);
+  }, [state, email, code, navigate]);
 
   const validatePassword = (password: string): string | null => {
     if (password.length < 8) {
@@ -43,6 +44,10 @@ export default function ResetPassword() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email || !/^\d{6}$/.test(code)) {
+      navigate('/forgot-password', { replace: true });
+      return;
+    }
     setError('');
 
     const passwordError = validatePassword(formData.newPassword);
