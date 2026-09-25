@@ -81,6 +81,8 @@ describe('invoice print/PDF template', () => {
   });
 
   it('does not truncate long patient names in either copy', async () => {
+    const expectedPatientName = 'QA Wolf Targeted 20260925-094420';
+    const expectedTextLength = expectedPatientName.length;
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-zygote'],
@@ -99,19 +101,20 @@ describe('invoice print/PDF template', () => {
       const patientNameTruncation = await page.evaluate(() => {
         const copies = Array.from(document.querySelectorAll('.invoice-copy'));
         const results = copies.map((copy) => {
-          const patientValue = copy.querySelector('.p-value') as HTMLElement;
+          const patientValue = copy.querySelector('.p-value.ar') as HTMLElement;
           const computedStyle = window.getComputedStyle(patientValue);
-          const isTruncated = computedStyle.textOverflow === 'ellipsis' && computedStyle.whiteSpace === 'nowrap';
+          const isEllipsisTruncation = computedStyle.textOverflow === 'ellipsis' && computedStyle.whiteSpace === 'nowrap';
           const scrollWidth = patientValue.scrollWidth;
           const clientWidth = patientValue.clientWidth;
+          const isHorizontallyClipped = scrollWidth > clientWidth + 2;
           const text = patientValue.textContent || '';
           return {
-            isTruncated,
+            isEllipsisTruncation,
+            isHorizontallyClipped,
             scrollWidth,
             clientWidth,
             text,
             textLength: text.length,
-            overflow: computedStyle.overflow,
             textOverflow: computedStyle.textOverflow,
             whiteSpace: computedStyle.whiteSpace,
           };
@@ -121,10 +124,10 @@ describe('invoice print/PDF template', () => {
 
       expect(patientNameTruncation).toHaveLength(2);
       patientNameTruncation.forEach((result) => {
-        expect(result.isTruncated).toBe(false);
-        expect(result.text).toBe('QA Wolf Targeted 20260925-094420');
-        expect(result.textLength).toBe(30);
-        expect(result.overflow).not.toBe('hidden');
+        expect(result.text).toBe(expectedPatientName);
+        expect(result.textLength).toBe(expectedTextLength);
+        expect(result.isEllipsisTruncation).toBe(false);
+        expect(result.isHorizontallyClipped).toBe(false);
         expect(result.textOverflow).not.toBe('ellipsis');
         expect(result.whiteSpace).not.toBe('nowrap');
       });
