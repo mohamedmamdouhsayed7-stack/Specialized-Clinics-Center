@@ -7,7 +7,7 @@ import {
 import { TrendingUp, Wallet, ClipboardList, FileSpreadsheet, FileText, ClipboardCheck, ReceiptText } from 'lucide-react';
 import { reportsService } from '../services/reports.service';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import DateInput from '../components/DateInput';
 import { formatMoney } from '../utils/money';
 import { useToast } from '../contexts/ToastContext';
@@ -44,6 +44,12 @@ function todayMinus(days: number): string {
   return `${year}-${month}-${day}`;
 }
 
+function isValidDate(value: string | null): value is string {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function KpiCard({ icon: Icon, label, value, suffix }: { icon: typeof TrendingUp; label: string; value: string | number; suffix?: string }) {
   return (
     <div className="ui-card p-3">
@@ -61,6 +67,7 @@ function KpiCard({ icon: Icon, label, value, suffix }: { icon: typeof TrendingUp
 export default function ReportsPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { showToast } = useToast();
 
   const PAYMENT_METHOD_LABELS: Record<string, string> = {
@@ -82,10 +89,22 @@ export default function ReportsPage() {
     CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'),
   };
 
-  const [from, setFrom] = useState(todayMinus(29));
-  const [to, setTo] = useState(getLocalToday());
+  const [defaultFrom] = useState(todayMinus(29));
+  const [defaultTo] = useState(getLocalToday());
+  const fromParam = searchParams.get('from');
+  const toParam = searchParams.get('to');
+  const from = isValidDate(fromParam) ? fromParam : defaultFrom;
+  const to = isValidDate(toParam) ? toParam : defaultTo;
   const [exportingPdf, setExportingPdf] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+
+  const updateDateRange = (nextFrom: string, nextTo: string) => {
+    setSearchParams((current) => {
+      current.set('from', nextFrom);
+      current.set('to', nextTo);
+      return current;
+    });
+  };
 
   const summary = useQuery({ queryKey: ['reports-summary', from, to], queryFn: () => reportsService.getSummary(from, to) });
   const revenueTimeseries = useQuery({ queryKey: ['reports-revenue-ts', from, to], queryFn: () => reportsService.getRevenueTimeseries(from, to) });
@@ -139,11 +158,11 @@ export default function ReportsPage() {
       />
       <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="flex items-center gap-2 flex-1 min-w-[140px] max-w-[180px]">
-            <DateInput value={from} onChange={setFrom} className="ui-input w-full" />
+            <DateInput value={from} onChange={(value) => updateDateRange(value, to)} className="ui-input w-full" />
           </div>
           <span className="text-[#94A3B8] text-sm">{t('reports.to')}</span>
           <div className="flex items-center gap-2 flex-1 min-w-[140px] max-w-[180px]">
-            <DateInput value={to} onChange={setTo} className="ui-input w-full" />
+            <DateInput value={to} onChange={(value) => updateDateRange(from, value)} className="ui-input w-full" />
           </div>
           <div className="flex items-center gap-2 ml-auto">
             <button
