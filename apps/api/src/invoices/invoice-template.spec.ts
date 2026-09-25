@@ -16,6 +16,15 @@ const invoice: InvoicePdfData = {
   payments: [],
 };
 
+const longNameInvoice: InvoicePdfData = {
+  ...invoice,
+  patient: {
+    fullNameAr: 'QA Wolf Targeted 20260925-094420',
+    fullNameEn: 'QA Wolf Targeted 20260925-094420',
+    civilId: null,
+  },
+};
+
 describe('invoice print/PDF template', () => {
   it.each([
     ['en', 'Invoice - Sara Ahmed - INV-1788803016897'],
@@ -65,6 +74,60 @@ describe('invoice print/PDF template', () => {
       expect(layout.gap).toBeLessThan(70);
       expect(layout.secondFitsOnSheet).toBe(true);
       expect(layout.copyContentsFit).toBe(true);
+      await page.close();
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('does not truncate long patient names in either copy', async () => {
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-zygote'],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 794, height: 1123 });
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        if (request.url().startsWith('data:') || request.url() === 'about:blank') void request.continue();
+        else void request.abort();
+      });
+      await page.setContent(renderInvoiceHtml(longNameInvoice, 'en'), { waitUntil: 'domcontentloaded' });
+      await page.emulateMediaType('print');
+
+      const patientNameTruncation = await page.evaluate(() => {
+        const copies = Array.from(document.querySelectorAll('.invoice-copy'));
+        const results = copies.map((copy) => {
+          const patientValue = copy.querySelector('.p-value') as HTMLElement;
+          const computedStyle = window.getComputedStyle(patientValue);
+          const isTruncated = computedStyle.textOverflow === 'ellipsis' && computedStyle.whiteSpace === 'nowrap';
+          const scrollWidth = patientValue.scrollWidth;
+          const clientWidth = patientValue.clientWidth;
+          const text = patientValue.textContent || '';
+          return {
+            isTruncated,
+            scrollWidth,
+            clientWidth,
+            text,
+            textLength: text.length,
+            overflow: computedStyle.overflow,
+            textOverflow: computedStyle.textOverflow,
+            whiteSpace: computedStyle.whiteSpace,
+          };
+        });
+        return results;
+      });
+
+      expect(patientNameTruncation).toHaveLength(2);
+      patientNameTruncation.forEach((result) => {
+        expect(result.isTruncated).toBe(false);
+        expect(result.text).toBe('QA Wolf Targeted 20260925-094420');
+        expect(result.textLength).toBe(30);
+        expect(result.overflow).not.toBe('hidden');
+        expect(result.textOverflow).not.toBe('ellipsis');
+        expect(result.whiteSpace).not.toBe('nowrap');
+      });
       await page.close();
     } finally {
       await browser.close();

@@ -628,8 +628,8 @@ export function renderInvoiceHtml(
     font-weight: bold;
     color: #1F2430;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
   }
 
   .p-value.ar {
