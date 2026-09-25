@@ -5,6 +5,7 @@ import { InvoicesService } from './invoices.service';
 import { PdfBrowserService } from '../common/filters/pdf/pdf-browser.service';
 
 import { renderInvoiceHtml } from './pdf/invoice-template';
+import { invoicePatientDisplayName } from './invoice-filename';
 
 @Injectable()
 export class InvoicePdfService {
@@ -37,13 +38,17 @@ export class InvoicePdfService {
 
     const html = renderInvoiceHtml(pdfInvoice, language);
 
-    return this.pdfBrowserService.renderHtmlToPdf(html, {
+    const buffer = await this.pdfBrowserService.renderHtmlToPdf(html, {
       top: '0',
       bottom: '0',
       left: '0',
       right: '0',
     });
-
+    return {
+      buffer,
+      patientName: invoicePatientDisplayName(invoice.patient, language),
+      invoiceNumber: invoice.invoiceNumber,
+    };
   }
 }
 

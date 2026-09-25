@@ -10,12 +10,11 @@ import { pipeline } from 'stream/promises';
 import { Readable, Transform, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { URL } from 'node:url';
 import { AuditService } from '../audit/audit.service';
 import { MaintenanceService } from '../common/maintenance/maintenance.service';
 import { PrismaService } from '../database/prisma.service';
-import * as ExcelJS from 'exceljs';
 
 export interface BackupManifestEntry {
   filename: string;
@@ -821,14 +820,12 @@ export class BackupService implements OnModuleInit {
       }
 
       const entry = matchingEntries[0];
-      if (entry.protected) {
-        throw new ForbiddenException('Protected safety backups cannot be permanently deleted');
-      }
 
       const filepath = this.resolveSafePath(safeFilename);
       const nextManifest = { ...manifest, entries: manifest.entries.filter((candidate) => candidate !== entry) };
       let fileMissing = false;
       let tombstonePath: string | undefined;
+      let remoteDeleted = false;
       try {
         const stat = await fs.lstat(filepath);
         if (!stat.isFile() || stat.isSymbolicLink()) {
@@ -846,15 +843,40 @@ export class BackupService implements OnModuleInit {
         }
       }
 
+      if (entry.uploadedToRemote) {
+        try {
+          await this.deleteRemoteBackup(entry);
+          remoteDeleted = true;
+        } catch {
+          if (tombstonePath) await fs.rename(tombstonePath, filepath).catch(() => undefined);
+          throw new InternalServerErrorException(
+            'Remote backup could not be deleted; the local backup and metadata were preserved. Please retry.',
+          );
+        }
+      }
+
       let manifestUpdated = false;
       try {
         await this.writeManifest(nextManifest);
         manifestUpdated = true;
-        if (tombstonePath) await fs.unlink(tombstonePath);
+        if (tombstonePath) await this.unlinkStagedBackup(tombstonePath);
       } catch {
         if (manifestUpdated) await this.writeManifest(manifest).catch(() => undefined);
         if (tombstonePath) await fs.rename(tombstonePath, filepath).catch(() => undefined);
-        throw new InternalServerErrorException('Backup could not be permanently deleted. The manifest and backup file were preserved where possible.');
+        if (remoteDeleted) {
+          const retryableManifest = {
+            ...manifest,
+            entries: manifest.entries.map((candidate) =>
+              candidate === entry ? { ...entry, uploadedToRemote: false } : candidate,
+            ),
+          };
+          await this.writeManifest(retryableManifest).catch(() => undefined);
+        }
+        throw new InternalServerErrorException(
+          entry.uploadedToRemote
+            ? 'The remote copy was deleted, but local backup cleanup failed. The local backup and metadata were preserved where possible; please retry.'
+            : 'Backup could not be permanently deleted. The manifest and backup file were preserved where possible.',
+        );
       }
 
       await this.auditService.logUserAction(userId, 'BACKUP_DELETED', 'System', safeFilename, ipAddress, userAgent);
@@ -983,8 +1005,8 @@ export class BackupService implements OnModuleInit {
     return !!(process.env.BACKUP_S3_ENDPOINT && process.env.BACKUP_S3_BUCKET && process.env.BACKUP_S3_ACCESS_KEY && process.env.BACKUP_S3_SECRET_KEY);
   }
 
-  private async uploadToRemote(filepath: string, filename: string) {
-    const client = new S3Client({
+  private createRemoteClient(): S3Client {
+    return new S3Client({
       endpoint: process.env.BACKUP_S3_ENDPOINT,
       region: process.env.BACKUP_S3_REGION || 'us-east-1',
       credentials: {
@@ -993,14 +1015,47 @@ export class BackupService implements OnModuleInit {
       },
       forcePathStyle: true, // required by most non-AWS S3-compatible providers
     });
+  }
 
-    await client.send(
-      new PutObjectCommand({
-        Bucket: process.env.BACKUP_S3_BUCKET,
-        Key: `clinic-backups/${filename}`,
-        Body: createReadStream(filepath),
-      }),
-    );
+  private getRemoteObjectKey(filename: string): string {
+    return `clinic-backups/${filename}`;
+  }
+
+  private async uploadToRemote(filepath: string, filename: string) {
+    const client = this.createRemoteClient();
+    try {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: process.env.BACKUP_S3_BUCKET,
+          Key: this.getRemoteObjectKey(filename),
+          Body: createReadStream(filepath),
+        }),
+      );
+    } finally {
+      client.destroy();
+    }
+  }
+
+  private async deleteRemoteBackup(entry: BackupManifestEntry): Promise<void> {
+    if (!this.isRemoteStorageConfigured()) {
+      throw new Error('Remote backup storage is unavailable');
+    }
+
+    const client = this.createRemoteClient();
+    try {
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: process.env.BACKUP_S3_BUCKET,
+          Key: this.getRemoteObjectKey(entry.filename),
+        }),
+      );
+    } finally {
+      client.destroy();
+    }
+  }
+
+  private async unlinkStagedBackup(filepath: string): Promise<void> {
+    await fs.unlink(filepath);
   }
 
   async downloadBackup(filename: string, userId: string, ipAddress?: string, userAgent?: string): Promise<string> {
@@ -1013,332 +1068,5 @@ export class BackupService implements OnModuleInit {
 
     this.logger.log(`Backup download completed: ${filename}`);
     return filepath;
-  }
-
-  async exportToExcel(userId: string, ipAddress?: string, userAgent?: string): Promise<Buffer> {
-    this.logger.log('Starting Excel data export');
-
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Clinic Management System';
-    const exportedAt = new Date();
-    workbook.created = exportedAt;
-    workbook.modified = exportedAt;
-    workbook.lastModifiedBy = 'Clinic Management System';
-
-    const metadata = workbook.addWorksheet('Backup Info');
-    metadata.columns = [
-      { header: 'Property', key: 'property', width: 24 },
-      { header: 'Value', key: 'value', width: 80 },
-    ];
-    metadata.addRows([
-      { property: 'Exported At', value: exportedAt.toISOString() },
-      { property: 'Workbook Version', value: '1' },
-      { property: 'Source', value: 'Clinic Management System' },
-      { property: 'Scope', value: 'Business and reference data only; authentication and audit secrets are excluded.' },
-    ]);
-
-    const exportedSheets: Array<{ name: string; rowCount: number }> = [];
-    const normalizeCellValue = (value: unknown): unknown => {
-      if (value === null || value === undefined) return null;
-      if (value instanceof Date) return value;
-      if (typeof value === 'object' && value !== null && 'toNumber' in value && typeof value.toNumber === 'function') {
-        return value.toNumber();
-      }
-      if (typeof value === 'string' && /^[=+\-@]/.test(value)) return `'${value}`;
-      return value;
-    };
-
-    const addWorksheet = async (
-      name: string,
-      query: () => Promise<Array<Record<string, unknown>>>,
-      columns: Partial<ExcelJS.Column>[],
-    ) => {
-      const sheet = workbook.addWorksheet(name);
-      sheet.columns = columns;
-      const data = await query();
-      sheet.addRows(data.map(row => Object.fromEntries(
-        Object.entries(row).map(([key, value]) => [key, normalizeCellValue(value)]),
-      )));
-      sheet.getRow(1).font = { bold: true };
-      sheet.views = [{ state: 'frozen', ySplit: 1 }];
-      sheet.autoFilter = { from: 'A1', to: `${String.fromCharCode(64 + columns.length)}1` };
-      exportedSheets.push({ name, rowCount: data.length });
-    };
-
-    await addWorksheet(
-      'Patients',
-      () => this.prisma.patient.findMany({
-        select: {
-          id: true,
-          civilId: true,
-          fullNameAr: true,
-          fullNameEn: true,
-          phone: true,
-          dateOfBirth: true,
-          address: true,
-          legacySource: true,
-          legacyPatientKey: true,
-          legacyReference: true,
-          isArchived: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Civil ID', key: 'civilId' },
-        { header: 'Full Name (Arabic)', key: 'fullNameAr' },
-        { header: 'Full Name (English)', key: 'fullNameEn' },
-        { header: 'Phone', key: 'phone' },
-        { header: 'Date of Birth', key: 'dateOfBirth' },
-        { header: 'Address', key: 'address' },
-        { header: 'Legacy Source', key: 'legacySource' },
-        { header: 'Legacy Patient Key', key: 'legacyPatientKey' },
-        { header: 'Legacy Reference', key: 'legacyReference' },
-        { header: 'Archived', key: 'isArchived' },
-        { header: 'Created At', key: 'createdAt' },
-        { header: 'Updated At', key: 'updatedAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Appointments',
-      () => this.prisma.appointment.findMany({
-        select: {
-          id: true,
-          patientId: true,
-          scheduledAt: true,
-          status: true,
-          notes: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Patient ID', key: 'patientId' },
-        { header: 'Scheduled At', key: 'scheduledAt' },
-        { header: 'Status', key: 'status' },
-        { header: 'Notes', key: 'notes' },
-        { header: 'Created At', key: 'createdAt' },
-        { header: 'Updated At', key: 'updatedAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Visits',
-      () => this.prisma.visit.findMany({
-        select: {
-          id: true,
-          patientId: true,
-          appointmentId: true,
-          type: true,
-          diagnosis: true,
-          status: true,
-          visitDate: true,
-          notes: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Patient ID', key: 'patientId' },
-        { header: 'Appointment ID', key: 'appointmentId' },
-        { header: 'Type', key: 'type' },
-        { header: 'Diagnosis', key: 'diagnosis' },
-        { header: 'Status', key: 'status' },
-        { header: 'Visit Date', key: 'visitDate' },
-        { header: 'Notes', key: 'notes' },
-        { header: 'Created At', key: 'createdAt' },
-        { header: 'Updated At', key: 'updatedAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Services',
-      () => this.prisma.service.findMany({
-        select: {
-          id: true,
-          name: true,
-          code: true,
-          description: true,
-          currentPrice: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Name', key: 'name' },
-        { header: 'Code', key: 'code' },
-        { header: 'Description', key: 'description' },
-        { header: 'Current Price', key: 'currentPrice' },
-        { header: 'Active', key: 'isActive' },
-        { header: 'Created At', key: 'createdAt' },
-        { header: 'Updated At', key: 'updatedAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Invoices',
-      () => this.prisma.invoice.findMany({
-        select: {
-          id: true,
-          invoiceNumber: true,
-          patientId: true,
-          visitId: true,
-          status: true,
-          subtotal: true,
-          total: true,
-          paid: true,
-          remaining: true,
-          paymentStatus: true,
-          issuedAt: true,
-          replacedByInvoiceId: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Invoice Number', key: 'invoiceNumber' },
-        { header: 'Patient ID', key: 'patientId' },
-        { header: 'Visit ID', key: 'visitId' },
-        { header: 'Status', key: 'status' },
-        { header: 'Subtotal', key: 'subtotal' },
-        { header: 'Total', key: 'total' },
-        { header: 'Paid', key: 'paid' },
-        { header: 'Remaining', key: 'remaining' },
-        { header: 'Payment Status', key: 'paymentStatus' },
-        { header: 'Issued At', key: 'issuedAt' },
-        { header: 'Replaced By Invoice ID', key: 'replacedByInvoiceId' },
-        { header: 'Created At', key: 'createdAt' },
-        { header: 'Updated At', key: 'updatedAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Invoice Items',
-      () => this.prisma.invoiceItem.findMany({
-        select: {
-          id: true,
-          invoiceId: true,
-          serviceId: true,
-          serviceNameSnapshot: true,
-          unitPriceSnapshot: true,
-          quantity: true,
-          lineTotal: true,
-          createdAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Invoice ID', key: 'invoiceId' },
-        { header: 'Service ID', key: 'serviceId' },
-        { header: 'Service Name', key: 'serviceNameSnapshot' },
-        { header: 'Unit Price', key: 'unitPriceSnapshot' },
-        { header: 'Quantity', key: 'quantity' },
-        { header: 'Line Total', key: 'lineTotal' },
-        { header: 'Created At', key: 'createdAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Additional Charges',
-      () => this.prisma.invoiceAdditionalCharge.findMany({
-        select: {
-          id: true,
-          invoiceId: true,
-          chargeType: true,
-          chargeValue: true,
-          calculatedAmount: true,
-          description: true,
-          createdAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Invoice ID', key: 'invoiceId' },
-        { header: 'Charge Type', key: 'chargeType' },
-        { header: 'Charge Value', key: 'chargeValue' },
-        { header: 'Calculated Amount', key: 'calculatedAmount' },
-        { header: 'Description', key: 'description' },
-        { header: 'Created At', key: 'createdAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Payments',
-      () => this.prisma.payment.findMany({
-        select: {
-          id: true,
-          invoiceId: true,
-          amount: true,
-          method: true,
-          paymentDate: true,
-          status: true,
-          notes: true,
-          reversedAt: true,
-          reversalNotes: true,
-          createdAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Invoice ID', key: 'invoiceId' },
-        { header: 'Amount', key: 'amount' },
-        { header: 'Method', key: 'method' },
-        { header: 'Payment Date', key: 'paymentDate' },
-        { header: 'Status', key: 'status' },
-        { header: 'Notes', key: 'notes' },
-        { header: 'Reversed At', key: 'reversedAt' },
-        { header: 'Reversal Notes', key: 'reversalNotes' },
-        { header: 'Created At', key: 'createdAt' },
-      ],
-    );
-
-    await addWorksheet(
-      'Payment Allocations',
-      () => this.prisma.paymentAllocation.findMany({
-        select: {
-          id: true,
-          paymentId: true,
-          invoiceId: true,
-          amount: true,
-          createdAt: true,
-        },
-      }),
-      [
-        { header: 'ID', key: 'id' },
-        { header: 'Payment ID', key: 'paymentId' },
-        { header: 'Invoice ID', key: 'invoiceId' },
-        { header: 'Amount', key: 'amount' },
-        { header: 'Created At', key: 'createdAt' },
-      ],
-    );
-
-    metadata.addRow({ property: 'Sheets', value: exportedSheets.map(sheet => sheet.name).join(', ') });
-    for (const sheet of exportedSheets) {
-      metadata.addRow({ property: `${sheet.name} Rows`, value: sheet.rowCount });
-    }
-    metadata.getRow(1).font = { bold: true };
-    metadata.views = [{ state: 'frozen', ySplit: 1 }];
-
-    const buffer = await workbook.xlsx.writeBuffer();
-
-    // Audit log
-    await this.auditService.logUserAction(
-      userId,
-      'DATA_EXPORT',
-      'Backup',
-      'excel-export',
-      ipAddress,
-      userAgent,
-    );
-
-    this.logger.log('Excel data export completed');
-    return buffer as unknown as Buffer;
   }
 }

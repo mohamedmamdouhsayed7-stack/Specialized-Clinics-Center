@@ -22,6 +22,7 @@ const INVOICE_ITEM_INCLUDE = {
       id: true,
       civilId: true,
       fullNameAr: true,
+      fullNameEn: true,
       phone: true,
     },
   },

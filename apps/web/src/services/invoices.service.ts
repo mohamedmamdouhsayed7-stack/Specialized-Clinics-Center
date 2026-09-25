@@ -2,6 +2,7 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
 import { parseApiError } from './api-error';
+import { createInvoiceFilename } from '../utils/invoiceFilename';
 
 export interface InvoiceItem {
   id: string;
@@ -45,6 +46,7 @@ export interface Invoice {
     id: string;
     civilId: string | null;
     fullNameAr: string;
+    fullNameEn?: string | null;
     phone?: string;
   };
   visit: {
@@ -163,17 +165,17 @@ class InvoicesService {
     return response.blob();
   }
 
-  async getPdfFile(id: string, language: 'ar' | 'en', invoiceNumber: string): Promise<globalThis.File> {
+  async getPdfFile(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<globalThis.File> {
     const blob = await this.getPdfBlob(id, language);
-    return new globalThis.File([blob], `invoice-${invoiceNumber}.pdf`, { type: 'application/pdf' });
+    return new globalThis.File([blob], createInvoiceFilename(patientName, invoiceNumber), { type: 'application/pdf' });
   }
 
-  async downloadPdf(id: string, language: 'ar' | 'en'): Promise<void> {
+  async downloadPdf(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<void> {
     const blob = await this.getPdfBlob(id, language);
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `invoice-${id}-${language}.pdf`;
+    anchor.download = createInvoiceFilename(patientName, invoiceNumber);
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();

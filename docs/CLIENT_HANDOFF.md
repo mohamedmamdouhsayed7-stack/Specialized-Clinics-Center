@@ -30,10 +30,6 @@ The PostgreSQL backup is the technical restore backup. It is encrypted,
 retained according to the configured policy, and stored under `/app/backups`.
 The Railway Volume must remain attached at that exact path.
 
-The Excel backup is a separate, human-readable local export for offline
-preservation, inspection, and reference. It is not a replacement for the
-encrypted PostgreSQL restore backup.
-
 ## Basic health check
 
 Open the health URL above. A successful response reports a healthy API and a

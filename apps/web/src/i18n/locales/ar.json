@@ -97,9 +97,7 @@
     "backupRestored": "تمت استعادة النسخة الاحتياطية بنجاح.",
     "restoreFailed": "فشل استعادة النسخة الاحتياطية.",
     "backupDownloaded": "تم تحميل النسخة الاحتياطية بنجاح.",
-    "backupDownloadFailed": "فشل تحميل النسخة الاحتياطية.",
-    "excelExported": "تم تصدير Excel بنجاح.",
-    "excelExportFailed": "فشل تصدير Excel."
+    "backupDownloadFailed": "فشل تحميل النسخة الاحتياطية."
   },
   "roles": {
     "admin": "مدير النظام",
@@ -685,7 +683,7 @@
     "restore": "استعادة",
     "deleteBackup": "حذف نهائي",
     "confirmDeleteBackupTitle": "حذف النسخة الاحتياطية نهائيًا؟",
-    "confirmDeleteBackupBody": "سيتم حذف النسخة الاحتياطية بتاريخ {{date}} نهائيًا ولا يمكن التراجع عن ذلك. نسخ الأمان السابقة للاستعادة محمية ولا يمكن حذفها.",
+    "confirmDeleteBackupBody": "سيتم حذف النسخة الاحتياطية بتاريخ {{date}} نهائيًا، بما في ذلك نسخة الأمان السابقة للاستعادة، ولا يمكن التراجع عن ذلك.",
     "deletingBackup": "جارٍ حذف النسخة الاحتياطية...",
     "backupDeleted": "تم حذف النسخة الاحتياطية نهائيًا.",
     "backupDeleteError": "تعذر حذف النسخة الاحتياطية نهائيًا.",
@@ -697,14 +695,7 @@
     "backupCreateError": "فشل إنشاء النسخة الاحتياطية",
     "backupRestoreError": "فشل استعادة النسخة الاحتياطية",
     "backupDownloadError": "فشل تحميل النسخة الاحتياطية",
-    "downloadExcel": "تحميل Excel",
-    "structuredExcelBackup": "تحميل نسخة Excel احتياطية منظمة",
-    "exportingExcel": "جارِ التصدير...",
-    "excelExportError": "فشل تصدير Excel",
-    "technicalBackupLabel": "نسخة PostgreSQL الاحتياطية",
-    "technicalBackupHelp": "نسخة تقنية مشفرة كاملة تستخدم لاستعادة قاعدة البيانات.",
-    "excelBackupLabel": "نسخة Excel الاحتياطية",
-    "excelBackupHelp": "نسخة محلية مقروءة للحفظ والمراجعة دون اتصال."
+    "postgresBackupOnly": "يعتمد نظام النسخ الاحتياطي على نسخ PostgreSQL المشفرة لاستعادة قاعدة البيانات."
   },
   "dailyClosing": {
     "title": "الإغلاق اليومي",

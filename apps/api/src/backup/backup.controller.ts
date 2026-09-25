@@ -46,23 +46,6 @@ export class BackupController {
     return this.backupService.deleteBackup(filename, req.user.id, req.user.role, ipAddress, userAgent);
   }
 
-  @Get('export-excel')
-  async exportExcel(@Request() req, @Res() res: Response) {
-    const ipAddress = req.ip || req.connection.remoteAddress;
-    const userAgent = req.headers['user-agent'];
-    const buffer = await this.backupService.exportToExcel(req.user.id, ipAddress, userAgent);
-
-    const now = new Date();
-    const dateStr = now.toISOString().slice(0, 10);
-    const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '-');
-    const filename = `clinic-data-backup-${dateStr}-${timeStr}.xlsx`;
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('Content-Length', buffer.length);
-    res.send(buffer);
-  }
-
   @Get('download/:filename')
   async downloadBackup(@Request() req, @Res() res: Response, @Param('filename') filename: string) {
     const ipAddress = req.ip || req.connection.remoteAddress;

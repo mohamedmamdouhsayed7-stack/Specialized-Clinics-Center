@@ -1,6 +1,7 @@
 
 import { CLINIC_LOGO_BASE64 } from './clinic-logo';
 import { Decimal } from '@prisma/client/runtime/library';
+import { createInvoiceDocumentTitle, invoicePatientDisplayName } from '../invoice-filename';
 
 // Loose shape matching InvoicesService.findOne()'s include (invoiceItems + service.code,
 // patient, visit + diagnosis, payments). Kept local (rather than importing Prisma's
@@ -18,6 +19,7 @@ export interface InvoicePdfData {
   replacedByInvoiceId?: string | null;
   patient: {
     fullNameAr: string;
+    fullNameEn?: string | null;
     civilId: string | null;
     phone?: string | null;
   };
@@ -371,12 +373,17 @@ export function renderInvoiceHtml(
     };
 
   const copyHtml = renderInvoiceCopy(invoice, language, labels);
+  const documentTitle = createInvoiceDocumentTitle(
+    invoicePatientDisplayName(invoice.patient, language),
+    invoice.invoiceNumber,
+  );
 
   return `
 <!DOCTYPE html>
 <html lang="${language}" dir="${isArabic ? 'rtl' : 'ltr'}">
 <head>
 <meta charset="UTF-8" />
+<title>${escapeHtml(documentTitle)}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Naskh+Arabic:wght@400;700&display=swap" rel="stylesheet">
@@ -406,10 +413,10 @@ export function renderInvoiceHtml(
   }
 
   .invoice-copy {
-    flex: 1;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    padding: 10mm 12mm;
+    padding: 5mm 12mm;
   }
 
   .cut-line {
@@ -430,7 +437,7 @@ export function renderInvoiceHtml(
   }
 
   .copy {
-    flex: 1;
+    flex: 0 0 auto;
     position: relative;
     border: 1px solid #E1E6EF;
     border-radius: 6px;

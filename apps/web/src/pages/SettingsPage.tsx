@@ -88,7 +88,6 @@ function BackupSection() {
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [confirmRestore, setConfirmRestore] = useState<BackupEntry | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<BackupEntry | null>(null);
@@ -122,31 +121,6 @@ function BackupSection() {
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.backupFailed') });
     } finally {
       setRunning(false);
-    }
-  };
-
-  const handleExportExcel = async () => {
-    setExporting(true);
-    setError('');
-    try {
-      const blob = await backupService.exportExcel();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const now = new Date();
-      const dateStr = now.toISOString().slice(0, 10);
-      const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '-');
-      a.download = `clinic-data-backup-${dateStr}-${timeStr}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-      showToast({ type: 'success', message: t('feedback.excelExported') });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t('settings.excelExportError'));
-      showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.excelExportFailed') });
-    } finally {
-      setExporting(false);
     }
   };
 
@@ -216,6 +190,7 @@ function BackupSection() {
         {t('settings.backupIntro', { days: status?.retentionDays ?? '—' })}
         {status && !status.remoteStorageConfigured && ` ${t('settings.remoteStorageNotConfigured')}`}
       </p>
+      <p className="text-xs text-[#64748B] mb-5">{t('settings.postgresBackupOnly')}</p>
 
       {error && <div className="mb-4 px-3 py-2 bg-red-50 border border-red-100 text-[#C4362B] rounded-lg text-sm">{error}</div>}
 
@@ -251,19 +226,6 @@ function BackupSection() {
           {running ? <Loader2 size={16} className="animate-spin" /> : null}
           {running ? t('settings.creatingBackup') : t('settings.createBackupNow')}
         </button>
-        <button
-          onClick={handleExportExcel}
-          disabled={exporting}
-          aria-label={t('settings.structuredExcelBackup')}
-          className="btn-secondary px-4 py-2.5 text-sm flex items-center gap-2"
-        >
-          {exporting ? <Loader2 size={16} className="animate-spin" /> : null}
-          {exporting ? t('settings.exportingExcel') : t('settings.structuredExcelBackup')}
-        </button>
-      </div>
-      <div className="grid gap-2 mb-5 text-xs text-[#64748B]">
-        <p><strong>{t('settings.technicalBackupLabel')}:</strong> {t('settings.technicalBackupHelp')}</p>
-        <p><strong>{t('settings.excelBackupLabel')}:</strong> {t('settings.excelBackupHelp')}</p>
       </div>
 
       <h3 className="text-sm font-bold text-[#102F63] mb-3">{t('settings.availableBackups')}</h3>
@@ -279,7 +241,7 @@ function BackupSection() {
               <div className="flex gap-2">
                 <button onClick={() => handleDownloadBackup(b.filename)} className="text-[#173B78] hover:underline text-xs">{t('settings.download')}</button>
                 <button onClick={() => setConfirmRestore(b)} className="text-[#C4362B] hover:underline text-xs">{t('settings.restore')}</button>
-                {user?.role === 'ADMIN' && !b.protected && (
+                {user?.role === 'ADMIN' && (
                   <button onClick={() => setConfirmDelete(b)} className="text-[#C4362B] hover:underline text-xs">
                     {t('settings.deleteBackup')}
                   </button>

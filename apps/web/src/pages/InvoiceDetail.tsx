@@ -9,6 +9,7 @@ import { formatDateTime } from '../utils/dateFormat';
 import { formatMoney, formatNumber, moneyToCents, normalizeMoneyInput } from '../utils/money';
 import { getReturnTo } from '../utils/listState';
 import { preserveListState } from '../utils/listState';
+import { createInvoiceDocumentTitle, invoicePatientDisplayName } from '../utils/invoiceFilename';
 import {
   buildWhatsAppUrl,
   canShareInvoiceFile,
@@ -254,9 +255,12 @@ export default function InvoiceDetail() {
     setPdfLoading(true);
 
     try {
+      const language = i18n.language.startsWith('ar') ? 'ar' : 'en';
       await invoicesService.downloadPdf(
         id!,
-        i18n.language.startsWith('ar') ? 'ar' : 'en'
+        language,
+        invoicePatientDisplayName(invoice?.patient, language),
+        invoice?.invoiceNumber || id!,
       );
 
       showToast({
@@ -293,7 +297,11 @@ export default function InvoiceDetail() {
       return;
     }
 
-    printWindow.document.title = t('invoices.printInvoice');
+    const language = i18n.language.startsWith('ar') ? 'ar' : 'en';
+    printWindow.document.title = createInvoiceDocumentTitle(
+      invoicePatientDisplayName(invoice?.patient, language),
+      invoice?.invoiceNumber || id!,
+    );
     printWindow.document.body.innerHTML = `<p style="font-family: sans-serif; padding: 2rem; text-align: center">${t(
       'invoices.printLoading'
     )}</p>`;
@@ -301,7 +309,7 @@ export default function InvoiceDetail() {
     try {
       const blob = await invoicesService.getPdfBlob(
         id!,
-        i18n.language.startsWith('ar') ? 'ar' : 'en'
+        language
       );
 
       const url = window.URL.createObjectURL(blob);
@@ -413,6 +421,7 @@ export default function InvoiceDetail() {
         const file = await invoicesService.getPdfFile(
           id!,
           language,
+          invoicePatientDisplayName(invoice?.patient, language),
           invoice?.invoiceNumber || id!
         );
 
@@ -574,6 +583,7 @@ export default function InvoiceDetail() {
         const file = await invoicesService.getPdfFile(
           id!,
           language,
+          invoicePatientDisplayName(invoice.patient, language),
           invoice.invoiceNumber
         );
 
@@ -676,6 +686,7 @@ export default function InvoiceDetail() {
         const file = await invoicesService.getPdfFile(
           id!,
           language,
+          invoicePatientDisplayName(invoice.patient, language),
           invoice.invoiceNumber
         );
 

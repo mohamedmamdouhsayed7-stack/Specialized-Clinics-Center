@@ -7,7 +7,6 @@ export interface BackupEntry {
   createdAt: string;
   triggeredBy: 'manual' | 'scheduled' | 'pre-restore-safety';
   uploadedToRemote: boolean;
-  protected: boolean;
 }
 
 export interface BackupStatus {
@@ -71,15 +70,6 @@ class BackupService {
       throw new Error(error.message || 'Failed to permanently delete backup');
     }
     return response.json();
-  }
-
-  async exportExcel(): Promise<Blob> {
-    const response = await fetch(`${apiBaseUrl}/backup/export-excel`, { headers: this.getAuthHeaders() });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || 'Failed to export Excel');
-    }
-    return response.blob();
   }
 
   async downloadBackup(filename: string): Promise<Blob> {

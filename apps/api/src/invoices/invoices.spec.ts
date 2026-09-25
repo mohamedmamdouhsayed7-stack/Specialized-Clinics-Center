@@ -459,6 +459,25 @@ describe('Invoices Module Tests (E2E)', () => {
         .expect('Content-Type', /application\/pdf/);
 
       expect(response.headers['content-disposition']).toContain('.pdf');
+      expect(response.headers['content-disposition']).toContain('attachment; filename="Invoice - ');
+      expect(response.headers['content-disposition']).toContain("filename*=UTF-8''Invoice%20-%20%D8%B3%D8%A7%D8%B1%D8%A9%20%D8%A3%D8%AD%D9%85%D8%AF%20-%20INV-");
+      expect(response.body.subarray(0, 4).toString()).toBe('%PDF');
+    }, 30_000);
+
+    it('uses the English patient name in the English invoice PDF filename', async () => {
+      const response = await request(app.getHttpServer())
+        .get(`/api/invoices/${testInvoiceId}/pdf?lang=en`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .buffer(true)
+        .parse((res, callback) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => callback(null, Buffer.concat(chunks)));
+        })
+        .expect(200)
+        .expect('Content-Type', /application\/pdf/);
+
+      expect(response.headers['content-disposition']).toContain('Invoice - Sara Ahmed - INV-');
       expect(response.body.subarray(0, 4).toString()).toBe('%PDF');
     }, 30_000);
 

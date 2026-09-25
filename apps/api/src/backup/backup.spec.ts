@@ -14,7 +14,7 @@ import { gzipSync } from 'zlib';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
-import * as ExcelJS from 'exceljs';
+import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 jest.mock('child_process', () => {
   const actual = jest.requireActual('child_process');
@@ -277,7 +277,7 @@ describe('BackupModule', () => {
     const makeBackup = async (
       service: BackupService,
       directory: string,
-      options: { filename?: string; protected?: boolean; file?: boolean; validMetadata?: boolean } = {},
+      options: { filename?: string; protected?: boolean; file?: boolean; validMetadata?: boolean; createdAt?: string; uploadedToRemote?: boolean } = {},
     ) => {
       const filename = options.filename || 'clinic_backup_2024-01-01T12-00-00-000Z.sql.gz';
       const content = gzipSync(Buffer.from('SELECT 1;'));
@@ -286,14 +286,16 @@ describe('BackupModule', () => {
         filename,
         sizeBytes: content.length,
         sha256: require('crypto').createHash('sha256').update(content).digest('hex'),
-        createdAt: new Date().toISOString(),
+        createdAt: options.createdAt || new Date().toISOString(),
         triggeredBy: options.protected ? 'pre-restore-safety' as const : 'manual' as const,
-        uploadedToRemote: false,
+        uploadedToRemote: options.uploadedToRemote || false,
         validation: { gzipVerified: true, databaseVerified: false, verifiedAt: new Date().toISOString() },
         protected: options.protected || false,
       };
       if (options.validMetadata === false) entry.sha256 = 'invalid';
-      await service['writeManifest']({ version: 2, database: 'clinic_test_db', entries: [entry] });
+      const manifest = await service['readManifest']();
+      manifest.entries.push(entry);
+      await service['writeManifest'](manifest);
       return entry;
     };
 
@@ -314,6 +316,112 @@ describe('BackupModule', () => {
       await rm(directory, { recursive: true, force: true });
     });
 
+    it('deletes the trusted remote object as well as the local file and manifest entry', async () => {
+      process.env.BACKUP_S3_ENDPOINT = 'https://s3.example.test';
+      process.env.BACKUP_S3_BUCKET = 'clinic-test-backups';
+      process.env.BACKUP_S3_ACCESS_KEY = 'test-access-key';
+      process.env.BACKUP_S3_SECRET_KEY = 'test-secret-key';
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-remote-`);
+      process.env.BACKUP_DIR = directory;
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const entry = await makeBackup(service, directory, {
+        filename: 'clinic_backup_uploaded.sql.gz',
+        uploadedToRemote: true,
+      });
+      const send = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+
+      try {
+        await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN))
+          .resolves.toEqual({ deleted: entry.filename, fileMissing: false });
+
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(send.mock.calls[0][0]).toBeInstanceOf(DeleteObjectCommand);
+        expect((send.mock.calls[0][0] as DeleteObjectCommand).input).toEqual({
+          Bucket: 'clinic-test-backups',
+          Key: `clinic-backups/${entry.filename}`,
+        });
+        await expect(readFile(`${directory}/${entry.filename}`)).rejects.toMatchObject({ code: 'ENOENT' });
+        await expect(service['readManifest']()).resolves.toMatchObject({ entries: [] });
+      } finally {
+        send.mockRestore();
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('preserves local file and metadata and returns a sanitized failure when remote deletion fails', async () => {
+      process.env.BACKUP_S3_ENDPOINT = 'https://s3.example.test';
+      process.env.BACKUP_S3_BUCKET = 'clinic-test-backups';
+      process.env.BACKUP_S3_ACCESS_KEY = 'test-access-key';
+      process.env.BACKUP_S3_SECRET_KEY = 'test-secret-key';
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-remote-failure-`);
+      process.env.BACKUP_DIR = directory;
+      const audit = { logUserAction: jest.fn() };
+      const service = new BackupService(audit as any, createMockPrismaService());
+      const entry = await makeBackup(service, directory, { uploadedToRemote: true });
+      const send = jest.spyOn(S3Client.prototype, 'send').mockRejectedValue(new Error('secret-key at https://s3.example.test/private') as never);
+
+      try {
+        let failure: unknown;
+        try {
+          await service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN);
+        } catch (error) {
+          failure = error;
+        }
+        expect(failure).toBeInstanceOf(InternalServerErrorException);
+        const response = (failure as InternalServerErrorException).getResponse();
+        expect(response).toMatchObject({
+          message: 'Remote backup could not be deleted; the local backup and metadata were preserved. Please retry.',
+        });
+        expect(JSON.stringify(response)).not.toContain('secret-key');
+        expect(send).toHaveBeenCalledWith(expect.any(DeleteObjectCommand));
+        await expect(readFile(`${directory}/${entry.filename}`)).resolves.toBeDefined();
+        await expect(service['readManifest']()).resolves.toMatchObject({ entries: [expect.objectContaining({ filename: entry.filename, uploadedToRemote: true })] });
+        expect(audit.logUserAction).not.toHaveBeenCalled();
+      } finally {
+        send.mockRestore();
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
+    it('reports failure and restores the local backup and manifest if local cleanup fails after remote deletion', async () => {
+      process.env.BACKUP_S3_ENDPOINT = 'https://s3.example.test';
+      process.env.BACKUP_S3_BUCKET = 'clinic-test-backups';
+      process.env.BACKUP_S3_ACCESS_KEY = 'test-access-key';
+      process.env.BACKUP_S3_SECRET_KEY = 'test-secret-key';
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-local-failure-`);
+      process.env.BACKUP_DIR = directory;
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const entry = await makeBackup(service, directory, { uploadedToRemote: true });
+      const send = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+      const unlink = jest.spyOn(service as any, 'unlinkStagedBackup').mockRejectedValueOnce(new Error('simulated local cleanup failure'));
+
+      try {
+        let failure: unknown;
+        try {
+          await service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN);
+        } catch (error) {
+          failure = error;
+        }
+        expect(failure).toBeInstanceOf(InternalServerErrorException);
+        expect((failure as InternalServerErrorException).getResponse()).toMatchObject({
+          message: expect.stringContaining('The remote copy was deleted, but local backup cleanup failed'),
+        });
+        expect(send).toHaveBeenCalledWith(expect.any(DeleteObjectCommand));
+        await expect(readFile(`${directory}/${entry.filename}`)).resolves.toBeDefined();
+        await expect(service['readManifest']()).resolves.toMatchObject({
+          entries: [expect.objectContaining({ filename: entry.filename, uploadedToRemote: false })],
+        });
+        await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN))
+          .resolves.toEqual({ deleted: entry.filename, fileMissing: false });
+        expect(send).toHaveBeenCalledTimes(1);
+        await expect(service['readManifest']()).resolves.toMatchObject({ entries: [] });
+      } finally {
+        unlink.mockRestore();
+        send.mockRestore();
+        await rm(directory, { recursive: true, force: true });
+      }
+    });
+
     it.each([UserRole.RECEPTIONIST, undefined])('rejects non-Admin and unauthenticated service calls', async (role) => {
       const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-auth-`);
       process.env.BACKUP_DIR = directory;
@@ -331,17 +439,34 @@ describe('BackupModule', () => {
       expect(Reflect.getMetadata('roles', BackupController)).toContain(UserRole.ADMIN);
     });
 
-    it('refuses protected and in-use backups', async () => {
-      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-protected-`);
+    it('allows deleting the oldest, newest, and pre-restore safety backups while still blocking in-use backups', async () => {
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-delete-any-`);
       process.env.BACKUP_DIR = directory;
-      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
-      const protectedEntry = await makeBackup(service, directory, { protected: true });
-      await expect(service.deleteBackup(protectedEntry.filename, 'admin-id', UserRole.ADMIN))
-        .rejects.toThrow('Protected safety backups cannot be permanently deleted');
+      const auditService = { logUserAction: jest.fn() };
+      const service = new BackupService(auditService as any, createMockPrismaService());
+      const oldest = await makeBackup(service, directory, {
+        filename: 'clinic_backup_oldest.sql.gz',
+        createdAt: new Date('2024-01-01T00:00:00.000Z').toISOString(),
+      });
+      const newest = await makeBackup(service, directory, {
+        filename: 'clinic_backup_newest.sql.gz',
+        createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      });
+      const safety = await makeBackup(service, directory, {
+        filename: 'clinic_backup_pre-restore.sql.gz',
+        protected: true,
+      });
 
-      const entry = await makeBackup(service, directory, { filename: 'clinic_backup_second.sql.gz' });
+      for (const entry of [oldest, newest, safety]) {
+        await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN))
+          .resolves.toMatchObject({ deleted: entry.filename, fileMissing: false });
+        await expect(readFile(`${directory}/${entry.filename}`)).rejects.toMatchObject({ code: 'ENOENT' });
+      }
+      await expect(service.listBackups()).resolves.toEqual([]);
+
+      const inUse = await makeBackup(service, directory, { filename: 'clinic_backup_in-use.sql.gz' });
       service['operationInProgress'] = true;
-      await expect(service.deleteBackup(entry.filename, 'admin-id', UserRole.ADMIN))
+      await expect(service.deleteBackup(inUse.filename, 'admin-id', UserRole.ADMIN))
         .rejects.toBeInstanceOf(ConflictException);
       service['operationInProgress'] = false;
       await rm(directory, { recursive: true, force: true });
@@ -412,6 +537,31 @@ describe('BackupModule', () => {
       delete process.env.BACKUP_S3_SECRET_KEY;
       const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
       expect(service['isRemoteStorageConfigured']()).toBe(false);
+    });
+
+    it('continues uploading to the existing bucket and object key convention', async () => {
+      process.env.BACKUP_S3_ENDPOINT = 'https://s3.example.test';
+      process.env.BACKUP_S3_BUCKET = 'clinic-test-backups';
+      process.env.BACKUP_S3_ACCESS_KEY = 'test-access-key';
+      process.env.BACKUP_S3_SECRET_KEY = 'test-secret-key';
+      const directory = await mkdtemp(`${tmpdir()}/clinic-backup-upload-remote-`);
+      const filepath = `${directory}/clinic_backup_upload.sql.gz`;
+      await writeFile(filepath, gzipSync(Buffer.from('SELECT 1;')));
+      const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+      const send = jest.spyOn(S3Client.prototype, 'send').mockResolvedValue({} as never);
+
+      try {
+        await service['uploadToRemote'](filepath, 'clinic_backup_upload.sql.gz');
+        expect(send).toHaveBeenCalledTimes(1);
+        expect(send.mock.calls[0][0]).toBeInstanceOf(PutObjectCommand);
+        expect((send.mock.calls[0][0] as PutObjectCommand).input).toMatchObject({
+          Bucket: 'clinic-test-backups',
+          Key: 'clinic-backups/clinic_backup_upload.sql.gz',
+        });
+      } finally {
+        send.mockRestore();
+        await rm(directory, { recursive: true, force: true });
+      }
     });
   });
 
@@ -981,80 +1131,6 @@ describe('BackupModule', () => {
           throw new BadRequestException('confirm must be true to restore a backup');
         }
       }).not.toThrow();
-    });
-  });
-
-  describe('Structured Excel export', () => {
-    it('exports stable headers and metadata without authentication or audit fields', async () => {
-      const prisma = createMockPrismaService();
-      const patient = {
-        id: 'patient-1',
-        civilId: '123',
-        fullNameAr: 'مريضة',
-        fullNameEn: 'Patient',
-        phone: '555',
-        dateOfBirth: null,
-        address: null,
-        legacySource: 'legacy',
-        legacyPatientKey: 'p-1',
-        legacyReference: null,
-        isArchived: false,
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
-        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
-      };
-      prisma.patient.findMany.mockResolvedValue([patient]);
-      for (const model of ['appointment', 'visit', 'service', 'invoice', 'invoiceItem', 'invoiceAdditionalCharge', 'payment', 'paymentAllocation']) {
-        prisma[model].findMany.mockResolvedValue([]);
-      }
-
-      const auditService = { logUserAction: jest.fn() };
-      const service = new BackupService(auditService as any, prisma);
-      const buffer = await service.exportToExcel('admin-1');
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(buffer as unknown as ArrayBuffer);
-
-      expect(workbook.worksheets.map(sheet => sheet.name)).toEqual([
-        'Backup Info',
-        'Patients',
-        'Appointments',
-        'Visits',
-        'Services',
-        'Invoices',
-        'Invoice Items',
-        'Additional Charges',
-        'Payments',
-        'Payment Allocations',
-      ]);
-      expect(workbook.getWorksheet('Patients')?.getRow(1).values).toEqual([
-        undefined,
-        'ID',
-        'Civil ID',
-        'Full Name (Arabic)',
-        'Full Name (English)',
-        'Phone',
-        'Date of Birth',
-        'Address',
-        'Legacy Source',
-        'Legacy Patient Key',
-        'Legacy Reference',
-        'Archived',
-        'Created At',
-        'Updated At',
-      ]);
-      expect(workbook.getWorksheet('Patients')?.getRow(2).values).toContain('Patient');
-      expect(workbook.getWorksheet('Backup Info')?.getColumn(1).values).toContain('Exported At');
-      expect(workbook.getWorksheet('Backup Info')?.getColumn(1).values).toContain('Patients Rows');
-      expect(buffer.toString()).not.toContain('passwordHash');
-      expect(buffer.toString()).not.toContain('recordedById');
-      expect(buffer.toString()).not.toContain('createdById');
-      expect(auditService.logUserAction).toHaveBeenCalledWith(
-        'admin-1',
-        'DATA_EXPORT',
-        'Backup',
-        'excel-export',
-        undefined,
-        undefined,
-      );
     });
   });
 });

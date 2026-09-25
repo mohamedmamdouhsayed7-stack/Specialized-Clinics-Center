@@ -97,9 +97,7 @@
     "backupRestored": "Backup restored successfully.",
     "restoreFailed": "Failed to restore backup.",
     "backupDownloaded": "Backup downloaded successfully.",
-    "backupDownloadFailed": "Failed to download backup.",
-    "excelExported": "Excel exported successfully.",
-    "excelExportFailed": "Failed to export Excel."
+    "backupDownloadFailed": "Failed to download backup."
   },
   "roles": {
     "admin": "Admin",
@@ -685,7 +683,7 @@
     "restore": "Restore",
     "deleteBackup": "Delete permanently",
     "confirmDeleteBackupTitle": "Permanently delete backup?",
-    "confirmDeleteBackupBody": "This permanently deletes the backup from {{date}} and cannot be undone. The pre-restore safety backups are protected and cannot be deleted.",
+    "confirmDeleteBackupBody": "This permanently deletes the backup from {{date}}, including any pre-restore safety backup, and cannot be undone.",
     "deletingBackup": "Deleting backup...",
     "backupDeleted": "Backup permanently deleted.",
     "backupDeleteError": "Failed to permanently delete backup.",
@@ -697,14 +695,7 @@
     "backupCreateError": "Failed to create backup",
     "backupRestoreError": "Failed to restore backup",
     "backupDownloadError": "Failed to download backup",
-    "downloadExcel": "Download Excel",
-    "structuredExcelBackup": "Download structured Excel backup",
-    "exportingExcel": "Exporting...",
-    "excelExportError": "Failed to export Excel",
-    "technicalBackupLabel": "PostgreSQL backup",
-    "technicalBackupHelp": "Full encrypted technical backup used for database restoration.",
-    "excelBackupLabel": "Excel backup",
-    "excelBackupHelp": "Human-readable local copy for offline preservation and reference."
+    "postgresBackupOnly": "The backup system uses encrypted PostgreSQL backups for database recovery."
   },
   "dailyClosing": {
     "title": "Daily Closing",

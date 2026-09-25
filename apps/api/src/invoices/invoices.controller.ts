@@ -11,6 +11,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { UserRole, InvoiceStatus } from '@prisma/client';
+import { createInvoiceContentDisposition, createInvoiceFilename } from './invoice-filename';
 
 @Controller('invoices')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -56,10 +57,11 @@ export class InvoicesController {
     @Res() res: Response,
   ) {
     const language = lang === 'ar' ? 'ar' : 'en';
-    const pdfBuffer = await this.invoicePdfService.generate(id, language);
+    const { buffer: pdfBuffer, patientName, invoiceNumber } = await this.invoicePdfService.generate(id, language);
+    const filename = createInvoiceFilename(patientName, invoiceNumber);
     res.set({
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="invoice-${id}-${language}.pdf"`,
+      'Content-Disposition': createInvoiceContentDisposition(filename),
       'Content-Length': pdfBuffer.length,
     });
     res.end(pdfBuffer);
