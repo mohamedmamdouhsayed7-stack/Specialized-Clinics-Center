@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Menu, UserRound, LogOut, ChevronDown, Languages } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 import { setLanguage } from '../i18n/config';
 
 interface HeaderProps {
@@ -11,11 +12,21 @@ interface HeaderProps {
 export default function Header({ onOpenSidebar }: HeaderProps) {
   const { t, i18n } = useTranslation();
   const { user, logout } = useAuth();
+  const { showToast } = useToast();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   const toggleLanguage = () => {
     setLanguage(i18n.language === 'ar' ? 'en' : 'ar');
+  };
+
+  const handleLogout = async () => {
+    setMenuOpen(false);
+    try {
+      await logout();
+    } catch {
+      showToast({ type: 'error', message: t('common.logoutFailed') });
+    }
   };
 
   useEffect(() => {
@@ -80,7 +91,7 @@ export default function Header({ onOpenSidebar }: HeaderProps) {
           {menuOpen && (
             <div className="absolute z-50 mt-2 w-48 rounded-lg border border-[#E2E8F0] bg-white py-1 shadow-[var(--shadow-soft-lg)] ltr:right-0 rtl:left-0">
               <button
-                onClick={logout}
+                onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-4 py-2.5 text-[13px] text-[#C4362B] hover:bg-red-50 transition-colors"
               >
                 <LogOut size={15} strokeWidth={1.75} />

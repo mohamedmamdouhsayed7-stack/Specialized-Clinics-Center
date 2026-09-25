@@ -9,13 +9,18 @@ interface User {
   role: 'ADMIN' | 'RECEPTIONIST';
 }
 
+interface RefreshResponse {
+  accessToken: string;
+  user: User;
+}
+
 interface AuthContextType {
   user: User | null;
   accessToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   refreshAccessToken: () => Promise<void>;
 }
 
@@ -32,6 +37,62 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const refreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
+  const refreshRequestRef = useRef<Promise<RefreshResponse> | null>(null);
+  const logoutInProgressRef = useRef(false);
+
+  const applyAccessToken = (token: string | null) => {
+    accessTokenRef.current = token;
+    setAccessToken(token);
+    setInMemoryAccessToken(token);
+  };
+
+  const requestRefresh = () => {
+    if (logoutInProgressRef.current) {
+      return Promise.reject(new Error('Logout is in progress'));
+    }
+    if (refreshRequestRef.current) {
+      return refreshRequestRef.current;
+    }
+
+    const request = (async () => {
+      const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error('Failed to refresh token');
+      }
+      return response.json() as Promise<RefreshResponse>;
+    })();
+
+    refreshRequestRef.current = request;
+    void request.then(
+      () => {
+        if (refreshRequestRef.current === request) refreshRequestRef.current = null;
+      },
+      () => {
+        if (refreshRequestRef.current === request) refreshRequestRef.current = null;
+      },
+    );
+    return request;
+  };
+
+  const refreshAccessToken = async () => {
+    try {
+      const data = await requestRefresh();
+      if (logoutInProgressRef.current) return;
+      setUser(data.user);
+      applyAccessToken(data.accessToken);
+    } catch (error) {
+      if (!logoutInProgressRef.current) {
+        clearRefreshTimer();
+        setUser(null);
+        applyAccessToken(null);
+      }
+      throw error;
+    }
+  };
 
   const clearRefreshTimer = () => {
     if (refreshTimerRef.current) {
@@ -56,27 +117,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // This recovers the session without needing localStorage for accessToken.
     const recoverSession = async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          setUser(data.user);
-          setAccessToken(data.accessToken);
-          setInMemoryAccessToken(data.accessToken);
-          startRefreshTimer();
-        } else {
-          setUser(null);
-          setAccessToken(null);
-          setInMemoryAccessToken(null);
-        }
-      } catch (error) {
-        console.error('Session recovery failed:', error);
-        setUser(null);
-        setAccessToken(null);
-        setInMemoryAccessToken(null);
+        await refreshAccessToken();
+        if (!logoutInProgressRef.current && accessTokenRef.current) startRefreshTimer();
+      } catch {
+        // refreshAccessToken clears auth state when recovery fails.
       } finally {
         setIsLoading(false);
       }
@@ -107,52 +151,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const data = await response.json();
 
+    logoutInProgressRef.current = false;
     setUser(data.user);
-    setAccessToken(data.accessToken);
-    setInMemoryAccessToken(data.accessToken);
+    applyAccessToken(data.accessToken);
     startRefreshTimer();
   };
 
   const logout = async () => {
+    if (logoutInProgressRef.current) return;
+    logoutInProgressRef.current = true;
     clearRefreshTimer();
+
+    let tokenToRevoke = accessTokenRef.current;
+    const pendingRefresh = refreshRequestRef.current;
+    if (pendingRefresh) {
+      try {
+        const refreshed = await pendingRefresh;
+        tokenToRevoke = refreshed.accessToken;
+      } catch {
+        // Continue with the current access token; the refresh cookie may still be valid.
+      }
+    }
+
     try {
-      await fetch(`${apiBaseUrl}/auth/logout`, {
+      const response = await fetch(`${apiBaseUrl}/auth/logout`, {
         method: 'POST',
         credentials: 'include',
+        headers: tokenToRevoke ? { Authorization: `Bearer ${tokenToRevoke}` } : {},
       });
-    } catch {
-      // Ignore logout errors
+      if (!response.ok) {
+        throw new Error('Failed to invalidate the server session');
+      }
     } finally {
       setUser(null);
-      setAccessToken(null);
-      setInMemoryAccessToken(null);
-    }
-  };
-
-  const refreshAccessToken = async () => {
-    try {
-      const response = await fetch(`${apiBaseUrl}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to refresh token');
-      }
-
-      const data = await response.json();
-
-      setAccessToken(data.accessToken);
-      if (data.user) {
-        setUser(data.user);
-      }
-      setInMemoryAccessToken(data.accessToken);
-    } catch (error) {
-      clearRefreshTimer();
-      setUser(null);
-      setAccessToken(null);
-      setInMemoryAccessToken(null);
-      throw error;
+      applyAccessToken(null);
     }
   };
 

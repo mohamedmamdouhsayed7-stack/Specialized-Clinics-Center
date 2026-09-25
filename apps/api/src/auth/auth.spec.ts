@@ -482,9 +482,9 @@ describe('Authentication Security Tests (E2E)', () => {
   });
 
   describe('Logout Security', () => {
-    it('should revoke refresh token on logout', async () => {
+    it('should revoke the rotated refresh token on logout and reject session recovery after reload', async () => {
       const agent = request.agent(app.getHttpServer());
-      const loginResponse = await agent
+      await agent
         .post('/api/auth/login')
         .send({
           email: 'testadmin.auth@test.com',
@@ -492,15 +492,30 @@ describe('Authentication Security Tests (E2E)', () => {
         })
         .expect(200);
 
-      const accessToken = loginResponse.body.accessToken;
+      const refreshResponse = await agent
+        .post('/api/auth/refresh')
+        .expect(200);
+      const rotatedCookie = refreshResponse.headers['set-cookie'][0].split(';')[0];
 
-      // Test that logout works with access token
-      const logoutResponse = await request(app.getHttpServer())
+      const logoutResponse = await agent
         .post('/api/auth/logout')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Authorization', `Bearer ${refreshResponse.body.accessToken}`)
         .expect(200);
 
       expect(logoutResponse.body.message).toBe('Logged out successfully');
+      expect(logoutResponse.headers['set-cookie'][0]).toMatch(/refreshToken=; Path=\/; Expires=/i);
+
+      // A browser reload uses the HttpOnly cookie to recover its session.
+      // Even if an old cookie value is replayed, its server-side token is revoked.
+      await request(app.getHttpServer())
+        .post('/api/auth/refresh')
+        .set('Cookie', rotatedCookie)
+        .expect(401);
+
+      // The corresponding page API is protected too when no recovered access token exists.
+      await request(app.getHttpServer())
+        .get('/api/reports/daily-closing?date=2026-09-25')
+        .expect(401);
     });
 
     it('should invalidate only the logged-out session, not other active sessions', async () => {

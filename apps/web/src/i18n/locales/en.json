@@ -16,6 +16,7 @@
     "notifications": "Notifications",
     "user": "User",
     "logout": "Logout",
+    "logoutFailed": "The session could not be ended securely. Please try again.",
     "viewAll": "View all",
     "actions": "Actions",
     "status": "Status",
