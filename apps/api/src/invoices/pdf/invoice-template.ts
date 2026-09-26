@@ -322,11 +322,17 @@ function renderInvoiceCopy(
   </div>`;
 }
 
+export interface InvoiceRenderOptions {
+  copies?: 1 | 2;
+}
+
 export function renderInvoiceHtml(
   invoice: InvoicePdfData,
   language: InvoiceLocale = 'ar',
+  options: InvoiceRenderOptions = {},
 ): string {
   const isArabic = language === 'ar';
+  const copies = options.copies === 1 ? 1 : 2;
 
   const labels: InvoicePdfLabels = isArabic
     ? {
@@ -786,13 +792,17 @@ export function renderInvoiceHtml(
 
 <body>
   <div class="sheet">
-    <div class="invoice-copy">
+${copies === 2
+    ? `    <div class="invoice-copy">
       ${copyHtml}
     </div>
     <div class="cut-line"></div>
     <div class="invoice-copy">
       ${copyHtml}
-    </div>
+    </div>`
+    : `    <div class="invoice-copy">
+      ${copyHtml}
+    </div>`}
   </div>
 </body>
 </html>`;

@@ -57,7 +57,25 @@ export class InvoicesController {
     @Res() res: Response,
   ) {
     const language = lang === 'ar' ? 'ar' : 'en';
-    const { buffer: pdfBuffer, patientName, invoiceNumber } = await this.invoicePdfService.generate(id, language);
+    const { buffer: pdfBuffer, patientName, invoiceNumber } = await this.invoicePdfService.generate(id, language, { copies: 2 });
+    const filename = createInvoiceFilename(patientName, invoiceNumber);
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': createInvoiceContentDisposition(filename),
+      'Content-Length': pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  }
+
+  @Get(':id/pdf/share')
+  @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
+  async sharePdf(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('lang') lang: string | undefined,
+    @Res() res: Response,
+  ) {
+    const language = lang === 'ar' ? 'ar' : 'en';
+    const { buffer: pdfBuffer, patientName, invoiceNumber } = await this.invoicePdfService.generate(id, language, { copies: 1 });
     const filename = createInvoiceFilename(patientName, invoiceNumber);
     res.set({
       'Content-Type': 'application/pdf',

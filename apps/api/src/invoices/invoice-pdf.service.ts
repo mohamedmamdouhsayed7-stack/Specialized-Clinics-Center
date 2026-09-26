@@ -14,9 +14,8 @@ export class InvoicePdfService {
     private readonly pdfBrowserService: PdfBrowserService,
   ) { }
 
-  async generate(invoiceId: string, language: 'ar' | 'en') {
-    const invoice = await this.invoicesService.findOne(invoiceId);
-    const pdfInvoice = {
+  private buildPdfInvoice(invoice: Awaited<ReturnType<InvoicesService['findOne']>>) {
+    return {
       ...invoice,
       payments: invoice.payments
         .filter(
@@ -35,8 +34,13 @@ export class InvoicePdfService {
               : undefined,
         })),
     };
+  }
 
-    const html = renderInvoiceHtml(pdfInvoice, language);
+  async generate(invoiceId: string, language: 'ar' | 'en', options: { copies?: 1 | 2 } = {}) {
+    const invoice = await this.invoicesService.findOne(invoiceId);
+    const pdfInvoice = this.buildPdfInvoice(invoice);
+
+    const html = renderInvoiceHtml(pdfInvoice, language, { copies: options.copies ?? 2 });
 
     const buffer = await this.pdfBrowserService.renderHtmlToPdf(html, {
       top: '0',

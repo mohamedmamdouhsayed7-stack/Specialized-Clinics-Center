@@ -165,8 +165,21 @@ class InvoicesService {
     return response.blob();
   }
 
+  async getSharePdfBlob(id: string, language: 'ar' | 'en'): Promise<Blob> {
+    const response = await fetch(`${apiBaseUrl}/invoices/${id}/pdf/share?lang=${language}`, {
+      headers: this.getAuthHeaders(),
+    });
+    if (!response.ok) throw await parseApiError(response, 'Failed to prepare invoice for sharing');
+    return response.blob();
+  }
+
   async getPdfFile(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<globalThis.File> {
     const blob = await this.getPdfBlob(id, language);
+    return new globalThis.File([blob], createInvoiceFilename(patientName, invoiceNumber), { type: 'application/pdf' });
+  }
+
+  async getSharePdfFile(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<globalThis.File> {
+    const blob = await this.getSharePdfBlob(id, language);
     return new globalThis.File([blob], createInvoiceFilename(patientName, invoiceNumber), { type: 'application/pdf' });
   }
 

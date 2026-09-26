@@ -418,7 +418,7 @@ export default function InvoiceDetail() {
           message: t('invoices.preparingInvoice'),
         });
 
-        const file = await invoicesService.getPdfFile(
+        const file = await invoicesService.getSharePdfFile(
           id!,
           language,
           invoicePatientDisplayName(invoice?.patient, language),
@@ -580,7 +580,7 @@ export default function InvoiceDetail() {
           message: t('invoices.preparingInvoice'),
         });
 
-        const file = await invoicesService.getPdfFile(
+        const file = await invoicesService.getSharePdfFile(
           id!,
           language,
           invoicePatientDisplayName(invoice.patient, language),
@@ -683,7 +683,7 @@ export default function InvoiceDetail() {
           message: t('invoices.preparingInvoice'),
         });
 
-        const file = await invoicesService.getPdfFile(
+        const file = await invoicesService.getSharePdfFile(
           id!,
           language,
           invoicePatientDisplayName(invoice.patient, language),
