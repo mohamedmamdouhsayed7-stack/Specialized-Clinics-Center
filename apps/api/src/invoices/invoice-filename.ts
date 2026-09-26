@@ -31,3 +31,56 @@ export function createInvoiceContentDisposition(filename: string): string {
   );
   return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
 }
+
+export function parseContentDispositionFilename(contentDisposition: string | null | undefined): string | null {
+  if (!contentDisposition) return null;
+
+  const rfc5987Match = contentDisposition.match(/filename\*\s*=\s*([^';]+)'(?:[^']*)'([^;]+)/i);
+  if (rfc5987Match) {
+    const charset = rfc5987Match[1].trim().toUpperCase();
+    const encoded = rfc5987Match[2].trim();
+    if (charset === 'UTF-8' || charset === 'UTF8') {
+      try {
+        return decodeURIComponent(encoded);
+      } catch (e) {
+        void e;
+      }
+    }
+  }
+
+  const quotedMatch = contentDisposition.match(/filename\s*=\s*"((?:[^"\\]|\\.)*)"/i);
+  if (quotedMatch) {
+    return quotedMatch[1].replace(/\\(.)/g, '$1');
+  }
+
+  const unquotedMatch = contentDisposition.match(/filename\s*=\s*([^;]+)/i);
+  if (unquotedMatch) {
+    return unquotedMatch[1].trim();
+  }
+
+  return null;
+}
+
+function containsIllegalFilenameCharacters(value: string): boolean {
+  const symbols = '<>:"/\\|?*';
+  for (let i = 0; i < value.length; i++) {
+    const n = value.charCodeAt(i);
+    if (n <= 0x1f) return true;
+    if (symbols.indexOf(value.charAt(i)) >= 0) return true;
+  }
+  return false;
+}
+
+export function isSafeInvoiceFilename(filename: unknown, invoiceNumber?: string): filename is string {
+  if (typeof filename !== 'string') return false;
+  if (!filename.endsWith('.pdf')) return false;
+  if (!filename.startsWith('Invoice - ')) return false;
+  if (invoiceNumber && !filename.includes(invoiceNumber)) return false;
+  if (containsIllegalFilenameCharacters(filename)) return false;
+  if (/\.\./.test(filename.split(/[\\/]/).pop() || '')) return false;
+  return true;
+}
+
+export function containsMojibakeIndicators(value: string): boolean {
+  return /[ØÙÂÃ]/.test(value);
+}

@@ -100,6 +100,58 @@ export interface InvoicesListResponse {
   };
 }
 
+
+export function parseContentDispositionFilename(contentDisposition: string | null): string | null {
+  if (!contentDisposition) return null;
+
+  const header = contentDisposition;
+
+  const rfc5987Match = header.match(/filename\*\s*=\s*([^';]+)'(?:[^']*)'([^;]+)/i);
+  if (rfc5987Match) {
+    const charset = rfc5987Match[1].trim().toUpperCase();
+    const encoded = rfc5987Match[2].trim();
+    if (charset === 'UTF-8' || charset === 'UTF8') {
+      try {
+        return decodeURIComponent(encoded);
+      } catch (e) {
+        void e;
+      }
+    }
+  }
+
+  const quotedMatch = header.match(/filename\s*=\s*"((?:[^"\\]|\\.)*)"/i);
+  if (quotedMatch) {
+    return quotedMatch[1].replace(/\\(.)/g, '$1');
+  }
+
+  const unquotedMatch = header.match(/filename\s*=\s*([^;]+)/i);
+  if (unquotedMatch) {
+    return unquotedMatch[1].trim();
+  }
+
+  return null;
+}
+
+function containsIllegalFilenameCharacters(value: string): boolean {
+  const symbols = '<>:"/\\|?*';
+  for (let i = 0; i < value.length; i++) {
+    const n = value.charCodeAt(i);
+    if (n <= 0x1f) return true;
+    if (symbols.indexOf(value.charAt(i)) >= 0) return true;
+  }
+  return false;
+}
+
+export function isSafeInvoiceFilename(filename: unknown, invoiceNumber?: string): filename is string {
+  if (typeof filename !== 'string') return false;
+  if (!filename.endsWith('.pdf')) return false;
+  if (!filename.startsWith('Invoice - ')) return false;
+  if (invoiceNumber && !filename.includes(invoiceNumber)) return false;
+  if (containsIllegalFilenameCharacters(filename)) return false;
+  if (/\.\./.test(filename.split(/[\\/]/).pop() || '')) return false;
+  return true;
+}
+
 class InvoicesService {
   private getAuthHeaders() {
     const token = getAccessToken();
@@ -157,38 +209,72 @@ class InvoicesService {
     return response.json();
   }
 
-  async getPdfBlob(id: string, language: 'ar' | 'en'): Promise<Blob> {
-    const response = await fetch(`${apiBaseUrl}/invoices/${id}/pdf?lang=${language}`, {
+  private async fetchPdf(url: string, errorMessage: string): Promise<{ blob: Blob; contentDisposition: string | null }> {
+    const response = await fetch(url, {
       headers: this.getAuthHeaders(),
     });
-    if (!response.ok) throw await parseApiError(response, 'Failed to download invoice PDF');
-    return response.blob();
+    if (!response.ok) throw await parseApiError(response, errorMessage);
+    const contentDisposition = response.headers.get('Content-Disposition');
+    const blob = await response.blob();
+    return { blob, contentDisposition };
+  }
+
+  private resolveInvoiceFilename(
+    contentDispositionHeader: string | null,
+    fallbackPatientName: string,
+    fallbackInvoiceNumber: string,
+  ): string {
+    const parsed = parseContentDispositionFilename(contentDispositionHeader);
+    if (isSafeInvoiceFilename(parsed, fallbackInvoiceNumber)) {
+      return parsed;
+    }
+    return createInvoiceFilename(fallbackPatientName, fallbackInvoiceNumber);
+  }
+
+  async getPdfBlob(id: string, language: 'ar' | 'en'): Promise<Blob> {
+    const { blob } = await this.fetchPdf(
+      `${apiBaseUrl}/invoices/${id}/pdf?lang=${language}`,
+      'Failed to download invoice PDF',
+    );
+    return blob;
   }
 
   async getSharePdfBlob(id: string, language: 'ar' | 'en'): Promise<Blob> {
-    const response = await fetch(`${apiBaseUrl}/invoices/${id}/pdf/share?lang=${language}`, {
-      headers: this.getAuthHeaders(),
-    });
-    if (!response.ok) throw await parseApiError(response, 'Failed to prepare invoice for sharing');
-    return response.blob();
+    const { blob } = await this.fetchPdf(
+      `${apiBaseUrl}/invoices/${id}/pdf/share?lang=${language}`,
+      'Failed to prepare invoice for sharing',
+    );
+    return blob;
   }
 
   async getPdfFile(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<globalThis.File> {
-    const blob = await this.getPdfBlob(id, language);
-    return new globalThis.File([blob], createInvoiceFilename(patientName, invoiceNumber), { type: 'application/pdf' });
+    const { blob, contentDisposition } = await this.fetchPdf(
+      `${apiBaseUrl}/invoices/${id}/pdf?lang=${language}`,
+      'Failed to download invoice PDF',
+    );
+    const filename = this.resolveInvoiceFilename(contentDisposition, patientName, invoiceNumber);
+    return new globalThis.File([blob], filename, { type: 'application/pdf' });
   }
 
   async getSharePdfFile(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<globalThis.File> {
-    const blob = await this.getSharePdfBlob(id, language);
-    return new globalThis.File([blob], createInvoiceFilename(patientName, invoiceNumber), { type: 'application/pdf' });
+    const { blob, contentDisposition } = await this.fetchPdf(
+      `${apiBaseUrl}/invoices/${id}/pdf/share?lang=${language}`,
+      'Failed to prepare invoice for sharing',
+    );
+    const filename = this.resolveInvoiceFilename(contentDisposition, patientName, invoiceNumber);
+    return new globalThis.File([blob], filename, { type: 'application/pdf' });
   }
 
   async downloadPdf(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<void> {
-    const blob = await this.getPdfBlob(id, language);
+    const { blob, contentDisposition } = await this.fetchPdf(
+      `${apiBaseUrl}/invoices/${id}/pdf?lang=${language}`,
+      'Failed to download invoice PDF',
+    );
+    const filename = this.resolveInvoiceFilename(contentDisposition, patientName, invoiceNumber);
     const url = window.URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = createInvoiceFilename(patientName, invoiceNumber);
+    anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
