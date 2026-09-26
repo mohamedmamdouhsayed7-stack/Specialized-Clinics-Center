@@ -358,6 +358,7 @@
     "addAnotherService": "إضافة خدمة أخرى",
     "creating": "جارٍ الإنشاء...",
     "createInvoice": "إنشاء الفاتورة",
+    "invoiceWillBeCreatedAsDraft": "سيتم إنشاء هذه الفاتورة كمسودة. راجع البنود، ثم أصدر الفاتورة لتصحيحها وتسجيل أي دفعة.",
     "downloadError": "فشل في تحميل الفاتورة",
     "pdfDownloadFailed": "تعذر تحميل ملف الفاتورة",
     "backToInvoices": "رجوع للفواتير",

@@ -71,7 +71,9 @@ export interface CreateInvoiceDto {
     chargeValue: number;
     description?: string;
   }[];
-  paymentMethod: 'KNET' | 'LINK' | 'OTHER';
+  // Payment method is only needed at explicit Issue time (updateStatus -> ISSUED).
+  // New invoices are created as DRAFT so no upfront payment is recorded.
+  paymentMethod?: 'KNET' | 'LINK' | 'OTHER';
 }
 
 export interface AddChargeDto {

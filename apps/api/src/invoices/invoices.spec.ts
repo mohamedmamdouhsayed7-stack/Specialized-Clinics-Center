@@ -121,13 +121,18 @@ describe('Invoices Module Tests (E2E)', () => {
   });
 
   describe('Invoice Creation', () => {
-    it('should create an invoice as admin with multiple items, full payment, and correct totals', async () => {
-      const response = await request(app.getHttpServer())
+    it('should create an invoice as admin with multiple items as DRAFT, NO payment, no visit completion', async () => {
+      // Regression test for the financial bug:
+      //   New Invoice form displayed `invoices.invoiceWillBeCreatedAsDraft`,
+      //   so Create Invoice MUST produce a DRAFT invoice with zero paid,
+      //   no payments recorded, no INV- final number, and visit NOT marked
+      //   COMPLETED. The explicit `Issue Invoice` action (DRAFT -> ISSUED)
+      //   is the only place where payment and finalization may happen.
+      const createResponse = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: testVisitId,
-          paymentMethod: 'KNET',
           items: [
             { serviceId: testServiceAId, quantity: 1 },
             { serviceId: testServiceBId, quantity: 1 },
@@ -135,60 +140,114 @@ describe('Invoices Module Tests (E2E)', () => {
         })
         .expect(201);
 
-      expect(response.body.status).toBe('ISSUED');
-      expect(Number(response.body.subtotal)).toBe(70);
-      expect(Number(response.body.total)).toBe(70);
-      expect(Number(response.body.paid)).toBe(70);
-      expect(Number(response.body.remaining)).toBe(0);
-      expect(response.body.paymentStatus).toBe('PAID');
-      // Normal invoices get final INV-XXXXXX assigned at creation
-      expect(response.body.invoiceNumber).toMatch(/^INV-\d{6}$/);
-      expect(response.body.invoiceItems).toHaveLength(2);
-      expect(response.body.payments).toHaveLength(1);
-      expect(response.body.payments[0].method).toBe('KNET');
-      expect(response.body.payments[0].status).toBe('RECORDED');
-      expect(Number(response.body.payments[0].amount)).toBe(70);
+      // === DRAFT CONTRACT (create-time invariants) ===
+      expect(createResponse.body.status).toBe('DRAFT');
+      expect(Number(createResponse.body.subtotal)).toBe(70);
+      expect(Number(createResponse.body.total)).toBe(70);
+      expect(Number(createResponse.body.paid)).toBe(0);
+      expect(Number(createResponse.body.remaining)).toBe(70);
+      expect(createResponse.body.paymentStatus).toBe('UNPAID');
+      // Draft invoices get a temporary DRAFT-<timestamp>-<rand> number, not the
+      // final PostgreSQL-backed INV-XXXXXX sequence.
+      expect(createResponse.body.invoiceNumber).toMatch(/^DRAFT-/);
+      expect(createResponse.body.invoiceItems).toHaveLength(2);
+      // Create Invoice MUST NOT silently record a payment.
+      expect(Array.isArray(createResponse.body.payments)).toBe(true);
+      expect(createResponse.body.payments).toHaveLength(0);
+      expect(createResponse.body.issuedAt).toBeFalsy();
+      expect(createResponse.body.issuedById).toBeFalsy();
+      // Visit is NOT auto-completed on draft creation; completed only on Issue.
+      const visitAfterDraft = await prisma.visit.findUnique({
+        where: { id: testVisitId },
+        select: { status: true },
+      });
+      expect(visitAfterDraft?.status).not.toBe('COMPLETED');
+      const directPayments = await prisma.payment.count({
+        where: { invoiceId: createResponse.body.id, status: 'RECORDED' },
+      });
+      expect(directPayments).toBe(0);
+      testInvoiceId = createResponse.body.id;
+
+      // === EXPLICIT ISSUE FLOW (the legitimate full-payment-at-service workflow) ===
+      // Now the admin clicks "Issue Invoice" with KNET payment method — this is
+      // the INTENDED path. This MUST create a payment, assign the INV number,
+      // and mark the visit as COMPLETED, matching the prior end-state that the
+      // old buggy create() path reached prematurely.
+      const issueResponse = await request(app.getHttpServer())
+        .patch(`/api/invoices/${testInvoiceId}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'KNET' })
+        .expect(200);
+
+      expect(issueResponse.body.status).toBe('ISSUED');
+      expect(issueResponse.body.paymentStatus).toBe('PAID');
+      expect(Number(issueResponse.body.paid)).toBe(70);
+      expect(Number(issueResponse.body.remaining)).toBe(0);
+      expect(issueResponse.body.invoiceNumber).toMatch(/^INV-\d{6}$/);
+      expect(issueResponse.body.issuedAt).toBeTruthy();
+      expect(issueResponse.body.issuedById).toBeTruthy();
+      const issuedPayments = await prisma.payment.findMany({
+        where: { invoiceId: testInvoiceId, status: 'RECORDED' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(issuedPayments).toHaveLength(1);
+      expect(issuedPayments[0].method).toBe('KNET');
+      expect(Number(issuedPayments[0].amount)).toBe(70);
       const completedVisit = await prisma.visit.findUnique({
         where: { id: testVisitId },
         select: { status: true },
       });
       expect(completedVisit?.status).toBe('COMPLETED');
-      testInvoiceId = response.body.id;
     });
 
-    it('should reject invoice creation without paymentMethod or with invalid method', async () => {
+    it('should accept invoice creation WITHOUT paymentMethod (draft needs no upfront payment)', async () => {
       const visit = await prisma.visit.create({
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      // Missing paymentMethod
-      await request(app.getHttpServer())
+      // No paymentMethod in the body — create must still succeed because this
+      // is a DRAFT-only operation.
+      const draft = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
-        .expect(400);
+        .expect(201);
 
-      // Invalid paymentMethod (CASH and VISA are not allowed for new payments)
+      expect(draft.body.status).toBe('DRAFT');
+      expect(Number(draft.body.total)).toBe(30);
+      expect(Number(draft.body.paid)).toBe(0);
+      expect(draft.body.payments).toHaveLength(0);
+
+    });
+
+    it('should still reject invalid DTO-level paymentMethod enum when provided', async () => {
+      const visit = await prisma.visit.create({
+        data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
+      });
+
+      // An explicit invalid enum still fails class-validator's @IsEnum
+      // validation on create-time DTO, even though the payment method is
+      // not used until Issue Invoice.
       await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'CASH',
+          paymentMethod: 'NOT_A_METHOD',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(400);
     });
 
-    it('should allow OTHER as a payment method for a new invoice', async () => {
+    it('should create a DRAFT invoice when OTHER paymentMethod is passed without recording a payment', async () => {
       const visit = await prisma.visit.create({
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const response = await request(app.getHttpServer())
+      const draft = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
@@ -198,14 +257,31 @@ describe('Invoices Module Tests (E2E)', () => {
         })
         .expect(201);
 
-      expect(response.body.status).toBe('ISSUED');
-      expect(response.body.paymentStatus).toBe('PAID');
-      expect(response.body.payments).toHaveLength(1);
-      expect(response.body.payments[0].method).toBe('OTHER');
-      expect(Number(response.body.payments[0].amount)).toBe(30);
+      // PaymentMethod on create is accepted but not acted on: draft remains
+      // unpaid and no payment rows are created. The explicit Issue action
+      // below IS what actually records the payment using whatever method the
+      // operator picks then.
+      expect(draft.body.status).toBe('DRAFT');
+      expect(draft.body.paymentStatus).toBe('UNPAID');
+      expect(draft.body.payments).toHaveLength(0);
+
+      const issued = await request(app.getHttpServer())
+        .patch(`/api/invoices/${draft.body.id}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'OTHER' })
+        .expect(200);
+
+      expect(issued.body.status).toBe('ISSUED');
+      expect(issued.body.paymentStatus).toBe('PAID');
+      const directPayments = await prisma.payment.findMany({
+        where: { invoiceId: draft.body.id, status: 'RECORDED' },
+      });
+      expect(directPayments).toHaveLength(1);
+      expect(directPayments[0].method).toBe('OTHER');
+      expect(Number(directPayments[0].amount)).toBe(30);
     });
 
-    it('should reject downgrading a visit after an invoice exists', async () => {
+    it('should not auto-complete a visit when only its invoice DRAFT exists', async () => {
       await request(app.getHttpServer())
         .patch(`/api/visits/${testVisitId}/status`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
@@ -216,7 +292,27 @@ describe('Invoices Module Tests (E2E)', () => {
         where: { id: testVisitId },
         select: { status: true },
       });
-      expect(visit?.status).toBe('COMPLETED');
+      // testVisitId was already marked COMPLETED during the explicit Issue in
+      // the first create test, so its status remains COMPLETED here — confirming
+      // that Issue (not Create) drove the completion above. We use a fresh visit
+      // below to validate the true "draft does not complete" invariant.
+      const freshVisit = await prisma.visit.create({
+        data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
+      });
+      await request(app.getHttpServer())
+        .post('/api/invoices')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({
+          visitId: freshVisit.id,
+          items: [{ serviceId: testServiceAId, quantity: 1 }],
+        })
+        .expect(201);
+
+      const visitAfterDraft = await prisma.visit.findUnique({
+        where: { id: freshVisit.id },
+        select: { status: true },
+      });
+      expect(visitAfterDraft?.status).toBe('SCHEDULED');
     });
 
     it('should reject invoice prices with more than two decimal places', async () => {
@@ -274,23 +370,40 @@ describe('Invoices Module Tests (E2E)', () => {
       expect(Number(item.unitPriceSnapshot)).toBe(30);
     });
 
-    it('should create an invoice as receptionist', async () => {
-      const response = await request(app.getHttpServer())
+    it('should create an invoice as receptionist (DRAFT then explicit ISSUE with LINK payment)', async () => {
+      const draft = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${receptionistAccessToken}`)
         .send({
           visitId: secondVisitId,
-          paymentMethod: 'LINK',
           items: [{ serviceId: testServiceAId, quantity: 2 }],
         })
         .expect(201);
 
-      expect(response.body.status).toBe('ISSUED');
-      expect(response.body.paymentStatus).toBe('PAID');
-      expect(Number(response.body.total)).toBe(60);
-      expect(Number(response.body.paid)).toBe(60);
-      expect(Number(response.body.remaining)).toBe(0);
-      expect(response.body.invoiceNumber).toMatch(/^INV-\d{6}$/);
+      // Receptionist create still follows the global draft contract first.
+      expect(draft.body.status).toBe('DRAFT');
+      expect(Number(draft.body.total)).toBe(60);
+      expect(Number(draft.body.paid)).toBe(0);
+      expect(Number(draft.body.remaining)).toBe(60);
+      expect(draft.body.payments).toHaveLength(0);
+
+      // Explicit Issue step — receptionists are permitted to issue invoices.
+      const issued = await request(app.getHttpServer())
+        .patch(`/api/invoices/${draft.body.id}/status`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'LINK' })
+        .expect(200);
+
+      expect(issued.body.status).toBe('ISSUED');
+      expect(issued.body.paymentStatus).toBe('PAID');
+      expect(Number(issued.body.paid)).toBe(60);
+      expect(Number(issued.body.remaining)).toBe(0);
+      expect(issued.body.invoiceNumber).toMatch(/^INV-\d{6}$/);
+      const directPayments = await prisma.payment.findMany({
+        where: { invoiceId: draft.body.id, status: 'RECORDED' },
+      });
+      expect(directPayments).toHaveLength(1);
+      expect(directPayments[0].method).toBe('LINK');
     });
 
     it('should reject a second active invoice for the same visit', async () => {
@@ -312,45 +425,77 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      // Create first invoice
-      const firstInvoice = await request(app.getHttpServer())
+      // Create first invoice as DRAFT
+      const firstDraft = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(201);
 
-      // Reverse payment before voiding (payments must be reversed before voiding)
-      await request(app.getHttpServer())
-        .post(`/api/payments/${firstInvoice.body.payments[0].id}/reverse`)
+      // Issue it with KNET payment (so it has a recorded payment like before)
+      const firstIssued = await request(app.getHttpServer())
+        .patch(`/api/invoices/${firstDraft.body.id}/status`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ reversalNotes: 'Reversing before voiding' })
-        .expect(201);
+        .send({ status: 'ISSUED', paymentMethod: 'KNET' })
+        .expect(200);
+
+      const paymentId = firstIssued.body.payments?.[0]?.id;
+      if (!paymentId) {
+        const payments = await prisma.payment.findMany({
+          where: { invoiceId: firstDraft.body.id, status: 'RECORDED' },
+          take: 1,
+        });
+        expect(payments.length).toBe(1);
+        const pid = payments[0].id;
+
+        // Reverse payment before voiding
+        await request(app.getHttpServer())
+          .post(`/api/payments/${pid}/reverse`)
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .send({ reversalNotes: 'Reversing before voiding' })
+          .expect(201);
+      } else {
+        await request(app.getHttpServer())
+          .post(`/api/payments/${paymentId}/reverse`)
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .send({ reversalNotes: 'Reversing before voiding' })
+          .expect(201);
+      }
 
       // Void the first invoice
       await request(app.getHttpServer())
-        .patch(`/api/invoices/${firstInvoice.body.id}/status`)
+        .patch(`/api/invoices/${firstDraft.body.id}/status`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({ status: 'VOID' })
         .expect(200);
 
       // Should be able to create a new invoice for the same visit
-      const secondInvoice = await request(app.getHttpServer())
+      const secondDraft = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'LINK',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(201);
 
-      expect(secondInvoice.body.visitId).toBe(visit.id);
-      expect(secondInvoice.body.status).toBe('ISSUED');
-      expect(secondInvoice.body.paymentStatus).toBe('PAID');
+      expect(secondDraft.body.visitId).toBe(visit.id);
+      expect(secondDraft.body.status).toBe('DRAFT');
+      expect(secondDraft.body.paymentStatus).toBe('UNPAID');
+      expect(Number(secondDraft.body.paid)).toBe(0);
+
+      // Explicit issue path still works for the second invoice.
+      const secondIssued = await request(app.getHttpServer())
+        .patch(`/api/invoices/${secondDraft.body.id}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'LINK' })
+        .expect(200);
+
+      expect(secondIssued.body.status).toBe('ISSUED');
+      expect(secondIssued.body.paymentStatus).toBe('PAID');
     });
 
     it('should prevent concurrent invoice creation for same visit', async () => {

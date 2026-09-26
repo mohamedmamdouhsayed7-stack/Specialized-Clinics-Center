@@ -358,6 +358,7 @@
     "addAnotherService": "Add another service",
     "creating": "Creating...",
     "createInvoice": "Create Invoice",
+    "invoiceWillBeCreatedAsDraft": "This invoice will be created as a draft. Review the line items, then issue the invoice to finalize it and record any payment.",
     "downloadError": "Failed to load invoice",
     "pdfDownloadFailed": "Failed to download invoice file",
     "backToInvoices": "Back to invoices",

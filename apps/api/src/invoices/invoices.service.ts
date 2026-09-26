@@ -76,9 +76,18 @@ export class InvoicesService {
   }
 
   async create(createInvoiceDto: CreateInvoiceDto, userId: string, ipAddress?: string, userAgent?: string) {
-    // Normal invoices are created directly as ISSUED and fully PAID.
-    // Replacement invoices are handled separately by createReplacement()
-    // and remain DRAFT until explicitly issued.
+    // New invoices are created as DRAFT so receptionists can review
+    // line items, apply additional charges, add notes, and then
+    // explicitly issue them via the DRAFT -> ISSUED transition.
+    //
+    // Payment is NEVER recorded on draft creation. The explicit
+    // `Issue Invoice` action (updateStatus({ status: ISSUED })) is
+    // the only place where a new-invoice payment may be created for
+    // any remaining balance, and the `payments.service.create()`
+    // path handles recorded payments after an invoice is issued.
+    //
+    // Replacement invoices continue to use their own createReplacement()
+    // flow and also remain DRAFT until explicitly issued.
     return this.prisma.$transaction(async (tx) => {
       // Lock the visit row to prevent concurrent invoice creation using SELECT ... FOR UPDATE
       await tx.$queryRaw`SELECT * FROM "Visit" WHERE id = ${createInvoiceDto.visitId}::uuid FOR UPDATE`;
@@ -186,36 +195,27 @@ export class InvoicesService {
 
       const total = subtotal.add(totalCharges).toDecimalPlaces(2);
 
-      // The DTO already restricts new invoice payments to:
-      // KNET, LINK, OTHER.
-      // Keep a defensive validation here as well.
-      const validPaymentMethods = ['KNET', 'LINK', 'OTHER'];
+      // Draft invoices use a temporary number until they are explicitly issued.
+      // The PostgreSQL-backed invoice sequence (INV-XXXXXX) is only consumed by
+      // the DRAFT -> ISSUED transition, so cancelled drafts do not burn final
+      // invoice numbers and remain invisible to financial numbering.
+      const draftInvoiceNumber = `DRAFT-${Date.now()}-${Math.random()
+        .toString(36)
+        .substring(2, 8)}`;
 
-      if (!validPaymentMethods.includes(createInvoiceDto.paymentMethod)) {
-        throw new BadRequestException(
-          'Invalid payment method. Only KNET, LINK, and OTHER are allowed.',
-        );
-      }
-
-      // Generate the final invoice number inside the same transaction.
-      // This guarantees that a successful normal invoice gets an INV-XXXXXX
-      // number immediately.
-      const invoiceNumber = await this.generateInvoiceNumber(tx);
-
-      // Normal invoices are immediately ISSUED and fully PAID.
+      // Draft invoice: NO payment recorded, NO visit status change,
+      // NO final invoice number, no `Paid in Full` marker.
       const invoice = await tx.invoice.create({
         data: {
-          invoiceNumber,
+          invoiceNumber: draftInvoiceNumber,
           visitId: visit.id,
           patientId: visit.patientId,
-          status: 'ISSUED',
-          issuedAt: new Date(),
-          issuedById: userId,
+          status: 'DRAFT',
           subtotal,
           total,
-          paid: total,
-          remaining: new Decimal(0),
-          paymentStatus: 'PAID',
+          paid: new Decimal(0),
+          remaining: total,
+          paymentStatus: 'UNPAID',
           createdById: userId,
 
           invoiceItems: {
@@ -229,43 +229,8 @@ export class InvoicesService {
         include: INVOICE_ITEM_INCLUDE,
       });
 
-      // Record the full payment for the normal invoice.
-      const payment = await tx.payment.create({
-        data: {
-          invoiceId: invoice.id,
-          amount: total,
-          method: createInvoiceDto.paymentMethod,
-          status: 'RECORDED',
-          paymentDate: new Date(),
-          recordedById: userId,
-        },
-      });
-
-      // Complete the visit when its normal invoice is issued.
-      if (visit.status !== 'COMPLETED') {
-        await tx.visit.update({
-          where: { id: visit.id },
-          data: { status: 'COMPLETED' },
-        });
-
-        await tx.auditLog.create({
-          data: {
-            userId,
-            action: 'UPDATE_STATUS',
-            entityType: 'Visit',
-            entityId: visit.id,
-            beforeState: { status: visit.status },
-            afterState: {
-              status: 'COMPLETED',
-              invoiceId: invoice.id,
-            },
-            ipAddress,
-            userAgent,
-          },
-        });
-      }
-
-      // Audit log for invoice creation
+      // Audit log for draft invoice creation. Intentionally does NOT include
+      // a paymentId since no payment was created.
       await tx.auditLog.create({
         data: {
           userId,
@@ -279,40 +244,15 @@ export class InvoicesService {
             patientId: invoice.patientId,
             total: invoice.total,
             status: invoice.status,
-            paymentMethod: createInvoiceDto.paymentMethod,
-            paymentId: payment.id,
+            paymentStatus: invoice.paymentStatus,
+            createAsDraft: true,
           },
           ipAddress,
           userAgent,
         },
       });
 
-      // Audit log for the recorded payment
-      await tx.auditLog.create({
-        data: {
-          userId,
-          action: 'CREATE',
-          entityType: 'Payment',
-          entityId: payment.id,
-          beforeState: null,
-          afterState: {
-            invoiceId: invoice.id,
-            amount: total.toString(),
-            method: createInvoiceDto.paymentMethod,
-            status: 'RECORDED',
-            context: 'Normal invoice creation',
-          },
-          ipAddress,
-          userAgent,
-        },
-      });
-
-      // Re-fetch so the returned invoice contains the payment that was
-      // created after the invoice itself.
-      return tx.invoice.findUniqueOrThrow({
-        where: { id: invoice.id },
-        include: INVOICE_ITEM_INCLUDE,
-      });
+      return invoice;
     });
   }
 

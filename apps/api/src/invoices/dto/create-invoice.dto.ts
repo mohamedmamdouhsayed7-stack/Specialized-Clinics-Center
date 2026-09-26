@@ -35,8 +35,9 @@ export class CreateInvoiceDto {
   @Type(() => CreateInvoiceChargeDto)
   additionalCharges?: CreateInvoiceChargeDto[];
 
+  @IsOptional()
   @IsEnum(ALLOWED_PAYMENT_METHODS, {
     message: 'paymentMethod must be one of the following values: KNET, LINK, OTHER',
   })
-  paymentMethod: PaymentMethod;
+  paymentMethod?: PaymentMethod;
 }
