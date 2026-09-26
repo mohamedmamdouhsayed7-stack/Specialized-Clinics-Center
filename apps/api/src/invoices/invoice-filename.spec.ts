@@ -1,8 +1,11 @@
 import {
   containsMojibakeIndicators,
+  createAsciiSharePatientName,
   createInvoiceContentDisposition,
   createInvoiceDocumentTitle,
   createInvoiceFilename,
+  createShareInvoiceFilename,
+  filenameIsAsciiOnly,
   invoicePatientDisplayName,
   isSafeInvoiceFilename,
   parseContentDispositionFilename,
@@ -130,6 +133,110 @@ describe('invoice filenames', () => {
       expect(isSafeInvoiceFilename('Invoice - Bad - INV-OTHER.pdf', 'INV-999')).toBe(false);
       expect(isSafeInvoiceFilename('Invoice - ../../../etc - INV-BAD.pdf', 'INV-BAD')).toBe(false);
       expect(isSafeInvoiceFilename('Invoice - A<B - INV-BAD.pdf', 'INV-BAD')).toBe(false);
+    });
+  });
+
+  describe('ASCII-safe customer share filenames (WhatsApp / Web Share workaround)', () => {
+    it('uses fullNameEn for share filename when patient has both Arabic fullNameAr and English fullNameEn', () => {
+      const patient = {
+        fullNameAr: 'محمد ممدوح',
+        fullNameEn: 'Mohamed Mamdouh',
+      };
+      const invNum = 'INV-1788803016897';
+      const shareFilename = createShareInvoiceFilename(patient, invNum);
+
+      expect(shareFilename).toBe(`Invoice - Mohamed Mamdouh - ${invNum}.pdf`);
+      expect(shareFilename).toContain(invNum);
+      expect(shareFilename.endsWith('.pdf')).toBe(true);
+      expect(shareFilename).not.toContain('محمد');
+      expect(shareFilename).not.toContain('ممدوح');
+      expect(filenameIsAsciiOnly(shareFilename)).toBe(true);
+      expect(containsMojibakeIndicators(shareFilename)).toBe(false);
+    });
+
+    it('uses Sara Ahmed (fullNameEn) over سارة أحمد (fullNameAr) for WhatsApp share filename', () => {
+      const patient = {
+        fullNameAr: 'سارة أحمد',
+        fullNameEn: 'Sara Ahmed',
+      };
+      const shareFilename = createShareInvoiceFilename(patient, 'INV-001');
+
+      expect(shareFilename).toBe('Invoice - Sara Ahmed - INV-001.pdf');
+      expect(shareFilename).toContain('INV-001');
+      expect(filenameIsAsciiOnly(shareFilename)).toBe(true);
+    });
+
+    it('uses ASCII-sanitized deterministic fallback when fullNameEn is null/undefined', () => {
+      const patientOnlyAr = { fullNameAr: 'أحمد علي' };
+      const filenameOnlyAr = createShareInvoiceFilename(patientOnlyAr, 'INV-ONLY-AR');
+
+      expect(filenameOnlyAr.startsWith('Invoice - ')).toBe(true);
+      expect(filenameOnlyAr.endsWith('.pdf')).toBe(true);
+      expect(filenameOnlyAr).toContain('INV-ONLY-AR');
+      expect(filenameIsAsciiOnly(filenameOnlyAr)).toBe(true);
+      expect(containsMojibakeIndicators(filenameOnlyAr)).toBe(false);
+      expect(filenameOnlyAr).not.toContain('أحمد');
+      expect(filenameOnlyAr).not.toContain('علي');
+    });
+
+    it('uses civilId suffix as deterministic Patient-<id6> fallback when names yield no ASCII', () => {
+      const patientNoAscii = {
+        fullNameAr: 'محمد',
+        civilId: '294051501234',
+      };
+      const sharePatientName = createAsciiSharePatientName(patientNoAscii);
+      expect(/^Patient-\d{4,6}$/.test(sharePatientName)).toBe(true);
+      expect(sharePatientName.endsWith('501234')).toBe(true);
+
+      const filename = createShareInvoiceFilename(patientNoAscii, 'INV-CIVIL');
+      expect(filename.startsWith('Invoice - Patient-')).toBe(true);
+      expect(filename).toContain('INV-CIVIL');
+      expect(filenameIsAsciiOnly(filename)).toBe(true);
+    });
+
+    it('falls back to Patient (no fake names) when no ASCII-able name or civilId', () => {
+      expect(createAsciiSharePatientName(null)).toBe('Patient');
+      expect(createAsciiSharePatientName(undefined)).toBe('Patient');
+      expect(createAsciiSharePatientName({ fullNameAr: 'محمد' })).toBe('Patient');
+    });
+
+    it('keeps share filename ASCII-only and free of illegal FS characters or mojibake', () => {
+      const mixPatient = {
+        fullNameAr: 'محمد "Ali" /',
+        fullNameEn: 'Ahmed <Ali> |?*',
+        civilId: '123456789',
+      };
+      const fn = createShareInvoiceFilename(mixPatient, 'INV-UNSAFE');
+
+      expect(/^[\x20-\x7e]+$/.test(fn)).toBe(true);
+      expect(isSafeInvoiceFilename(fn, 'INV-UNSAFE')).toBe(true);
+      expect(containsMojibakeIndicators(fn)).toBe(false);
+    });
+
+    it('truncates long share filenames safely while preserving ASCII and required markers', () => {
+      const longEn = 'Mohamed ' + 'A'.repeat(200) + ' ' + 'B'.repeat(200);
+      const longPatient = {
+        fullNameAr: 'محمد ممدوح',
+        fullNameEn: longEn,
+      };
+      const longInvNum = 'INV-' + '9'.repeat(200);
+      const fn = createShareInvoiceFilename(longPatient, longInvNum);
+
+      expect(filenameIsAsciiOnly(fn)).toBe(true);
+      expect(containsMojibakeIndicators(fn)).toBe(false);
+      expect(fn.startsWith('Invoice - ')).toBe(true);
+      expect(fn.endsWith('.pdf')).toBe(true);
+      expect(fn).toContain('Mohamed');
+      expect(fn.length).toBeGreaterThan(20);
+      expect(fn.length).toBeLessThan(300);
+      expect(isSafeInvoiceFilename(fn)).toBe(true);
+    });
+
+    it('internal download filename still preserves Arabic UTF-8 behavior via createInvoiceFilename', () => {
+      const internalArabic = createInvoiceFilename('سارة أحمد', 'INV-INT');
+      expect(internalArabic).toBe('Invoice - سارة أحمد - INV-INT.pdf');
+      expect(internalArabic).toContain('سارة أحمد');
+      expect(filenameIsAsciiOnly(internalArabic)).toBe(false);
     });
   });
 });

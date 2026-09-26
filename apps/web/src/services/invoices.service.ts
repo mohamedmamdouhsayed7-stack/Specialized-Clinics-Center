@@ -2,7 +2,7 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
 import { parseApiError } from './api-error';
-import { createInvoiceFilename } from '../utils/invoiceFilename';
+import { createInvoiceFilename, createShareInvoiceFilename } from '../utils/invoiceFilename';
 
 export interface InvoiceItem {
   id: string;
@@ -256,12 +256,20 @@ class InvoicesService {
     return new globalThis.File([blob], filename, { type: 'application/pdf' });
   }
 
-  async getSharePdfFile(id: string, language: 'ar' | 'en', patientName: string, invoiceNumber: string): Promise<globalThis.File> {
-    const { blob, contentDisposition } = await this.fetchPdf(
+  async getSharePdfFile(
+    id: string,
+    language: 'ar' | 'en',
+    patient: { fullNameAr: string; fullNameEn?: string | null; civilId?: string | null } | null | undefined,
+    invoiceNumber: string,
+  ): Promise<globalThis.File> {
+    const { blob } = await this.fetchPdf(
       `${apiBaseUrl}/invoices/${id}/pdf/share?lang=${language}`,
       'Failed to prepare invoice for sharing',
     );
-    const filename = this.resolveInvoiceFilename(contentDisposition, patientName, invoiceNumber);
+    const safePatient = patient
+      ? patient
+      : { fullNameAr: '' };
+    const filename = createShareInvoiceFilename(safePatient, invoiceNumber);
     return new globalThis.File([blob], filename, { type: 'application/pdf' });
   }
 

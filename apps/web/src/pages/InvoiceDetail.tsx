@@ -421,7 +421,7 @@ export default function InvoiceDetail() {
         const file = await invoicesService.getSharePdfFile(
           id!,
           language,
-          invoicePatientDisplayName(invoice?.patient, language),
+          invoice?.patient,
           invoice?.invoiceNumber || id!
         );
 
@@ -583,7 +583,7 @@ export default function InvoiceDetail() {
         const file = await invoicesService.getSharePdfFile(
           id!,
           language,
-          invoicePatientDisplayName(invoice.patient, language),
+          invoice.patient,
           invoice.invoiceNumber
         );
 
@@ -686,7 +686,7 @@ export default function InvoiceDetail() {
         const file = await invoicesService.getSharePdfFile(
           id!,
           language,
-          invoicePatientDisplayName(invoice.patient, language),
+          invoice.patient,
           invoice.invoiceNumber
         );
 
