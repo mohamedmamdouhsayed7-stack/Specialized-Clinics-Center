@@ -120,6 +120,28 @@ describe('Invoices Module Tests (E2E)', () => {
     await app.close();
   });
 
+  async function createIssuedInvoice(
+    visitId: string,
+    serviceId: string,
+    paymentMethod: 'KNET' | 'LINK' | 'OTHER' = 'KNET',
+  ) {
+    const draft = await request(app.getHttpServer())
+      .post('/api/invoices')
+      .set('Authorization', `Bearer ${adminAccessToken}`)
+      .send({ visitId, items: [{ serviceId, quantity: 1 }] })
+      .expect(201);
+
+    expect(draft.body.status).toBe('DRAFT');
+    expect(draft.body.paymentStatus).toBe('UNPAID');
+    expect(draft.body.payments).toHaveLength(0);
+
+    return request(app.getHttpServer())
+      .patch(`/api/invoices/${draft.body.id}/status`)
+      .set('Authorization', `Bearer ${adminAccessToken}`)
+      .send({ status: 'ISSUED', paymentMethod })
+      .expect(200);
+  }
+
   describe('Invoice Creation', () => {
     it('should create an invoice as admin with multiple items as DRAFT, NO payment, no visit completion', async () => {
       // Regression test for the financial bug:
@@ -292,6 +314,7 @@ describe('Invoices Module Tests (E2E)', () => {
         where: { id: testVisitId },
         select: { status: true },
       });
+      expect(visit?.status).toBe('COMPLETED');
       // testVisitId was already marked COMPLETED during the explicit Issue in
       // the first create test, so its status remains COMPLETED here — confirming
       // that Issue (not Create) drove the completion above. We use a fresh visit
@@ -325,7 +348,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1, unitPrice: 1.001 }],
         })
         .expect(400);
@@ -347,7 +369,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: cancelledVisit.id,
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(400);
@@ -412,7 +433,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: testVisitId,
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(409);
@@ -510,7 +530,6 @@ describe('Invoices Module Tests (E2E)', () => {
           .set('Authorization', `Bearer ${adminAccessToken}`)
           .send({
             visitId: visit.id,
-            paymentMethod: 'KNET',
             items: [{ serviceId: testServiceAId, quantity: 1 }],
           }),
         request(app.getHttpServer())
@@ -518,7 +537,6 @@ describe('Invoices Module Tests (E2E)', () => {
           .set('Authorization', `Bearer ${adminAccessToken}`)
           .send({
             visitId: visit.id,
-            paymentMethod: 'KNET',
             items: [{ serviceId: testServiceAId, quantity: 1 }],
           }),
       ]);
@@ -547,7 +565,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: '00000000-0000-0000-0000-000000000000',
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(404);
@@ -563,7 +580,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'KNET',
           items: [{ serviceId: inactiveServiceId, quantity: 1 }],
         })
         .expect(400);
@@ -577,14 +593,14 @@ describe('Invoices Module Tests (E2E)', () => {
       await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ visitId: visit.id, paymentMethod: 'KNET', items: [] })
+        .send({ visitId: visit.id, items: [] })
         .expect(400);
     });
 
     it('should reject unauthenticated invoice creation', async () => {
       await request(app.getHttpServer())
         .post('/api/invoices')
-        .send({ visitId: testVisitId, paymentMethod: 'KNET', items: [{ serviceId: testServiceAId, quantity: 1 }] })
+        .send({ visitId: testVisitId, items: [{ serviceId: testServiceAId, quantity: 1 }] })
         .expect(401);
     });
   });
@@ -831,8 +847,6 @@ describe('Invoices Module Tests (E2E)', () => {
   });
 
   describe('Additional Charges', () => {
-    let chargeInvoiceId: string;
-
     it('should create invoice with percentage charge', async () => {
       const visit = await prisma.visit.create({
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
@@ -843,7 +857,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
           additionalCharges: [
             { chargeType: 'PERCENTAGE', chargeValue: 10, description: 'Tax' },
@@ -851,16 +864,23 @@ describe('Invoices Module Tests (E2E)', () => {
         })
         .expect(201);
 
-      expect(response.body.status).toBe('ISSUED');
-      expect(response.body.paymentStatus).toBe('PAID');
+      expect(response.body.status).toBe('DRAFT');
+      expect(response.body.paymentStatus).toBe('UNPAID');
       expect(Number(response.body.subtotal)).toBe(30);
       expect(Number(response.body.total)).toBe(33); // 30 + 10%
-      expect(Number(response.body.paid)).toBe(33);
-      expect(Number(response.body.remaining)).toBe(0);
+      expect(Number(response.body.paid)).toBe(0);
+      expect(Number(response.body.remaining)).toBe(33);
+      expect(response.body.payments).toHaveLength(0);
       expect(response.body.additionalCharges).toHaveLength(1);
       expect(response.body.additionalCharges[0].chargeType).toBe('PERCENTAGE');
       expect(Number(response.body.additionalCharges[0].calculatedAmount)).toBe(3);
-      chargeInvoiceId = response.body.id;
+      const issued = await request(app.getHttpServer())
+        .patch(`/api/invoices/${response.body.id}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'KNET' })
+        .expect(200);
+      expect(issued.body.paymentStatus).toBe('PAID');
+      expect(Number(issued.body.paid)).toBe(33);
     });
 
     it('should create invoice with fixed charge', async () => {
@@ -873,7 +893,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'LINK',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
           additionalCharges: [
             { chargeType: 'FIXED', chargeValue: 5, description: 'Service Fee' },
@@ -881,15 +900,24 @@ describe('Invoices Module Tests (E2E)', () => {
         })
         .expect(201);
 
-      expect(response.body.status).toBe('ISSUED');
-      expect(response.body.paymentStatus).toBe('PAID');
+      expect(response.body.status).toBe('DRAFT');
+      expect(response.body.paymentStatus).toBe('UNPAID');
       expect(Number(response.body.subtotal)).toBe(30);
       expect(Number(response.body.total)).toBe(35); // 30 + 5
-      expect(Number(response.body.paid)).toBe(35);
-      expect(Number(response.body.remaining)).toBe(0);
+      expect(Number(response.body.paid)).toBe(0);
+      expect(Number(response.body.remaining)).toBe(35);
+      expect(response.body.payments).toHaveLength(0);
       expect(response.body.additionalCharges).toHaveLength(1);
       expect(response.body.additionalCharges[0].chargeType).toBe('FIXED');
       expect(Number(response.body.additionalCharges[0].calculatedAmount)).toBe(5);
+
+      const issued = await request(app.getHttpServer())
+        .patch(`/api/invoices/${response.body.id}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'LINK' })
+        .expect(200);
+      expect(issued.body.paymentStatus).toBe('PAID');
+      expect(Number(issued.body.paid)).toBe(35);
     });
 
     it('should reject charges with more than two decimal places', async () => {
@@ -902,7 +930,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           visitId: visit.id,
-          paymentMethod: 'KNET',
           items: [{ serviceId: testServiceAId, quantity: 1 }],
           additionalCharges: [{ chargeType: 'FIXED', chargeValue: 12.345 }],
         })
@@ -917,25 +944,15 @@ describe('Invoices Module Tests (E2E)', () => {
       const invoice = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
+        .send({ visitId: visit.id, items: [{ serviceId: testServiceAId, quantity: 1 }] })
         .expect(201);
 
-      const replacement = await request(app.getHttpServer())
-        .post(`/api/invoices/${invoice.body.id}/replacement`)
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
-
-      expect(replacement.body.status).toBe('DRAFT');
+      expect(invoice.body.status).toBe('DRAFT');
+      expect(invoice.body.paymentStatus).toBe('UNPAID');
+      expect(invoice.body.payments).toHaveLength(0);
 
       const response = await request(app.getHttpServer())
-        .post(`/api/invoices/${replacement.body.id}/charges`)
+        .post(`/api/invoices/${invoice.body.id}/charges`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           chargeType: 'PERCENTAGE',
@@ -945,15 +962,20 @@ describe('Invoices Module Tests (E2E)', () => {
         .expect(201);
 
       expect(Number(response.body.total)).toBe(34.5); // 30 + 15%
-      expect(Number(response.body.paid)).toBe(30);
-      expect(Number(response.body.remaining)).toBe(4.5);
-      expect(response.body.paymentStatus).toBe('PARTIALLY_PAID');
+      expect(Number(response.body.paid)).toBe(0);
+      expect(Number(response.body.remaining)).toBe(34.5);
+      expect(response.body.paymentStatus).toBe('UNPAID');
       expect(response.body.additionalCharges).toHaveLength(1);
     });
 
     it('should reject adding charge to issued invoice', async () => {
+      const visit = await prisma.visit.create({
+        data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
+      });
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
+
       const response = await request(app.getHttpServer())
-        .post(`/api/invoices/${chargeInvoiceId}/charges`)
+        .post(`/api/invoices/${invoice.body.id}/charges`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           chargeType: 'FIXED',
@@ -969,15 +991,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const replacement = await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
@@ -1026,22 +1040,12 @@ describe('Invoices Module Tests (E2E)', () => {
   });
 
   describe('Invoice Revision and Replacement', () => {
-    let originalInvoiceId: string;
-
     it('should allow admin to void issued invoice after payment reversal', async () => {
       const visit = await prisma.visit.create({
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       // Must reverse the recorded payment before voiding
       await request(app.getHttpServer())
@@ -1057,7 +1061,6 @@ describe('Invoices Module Tests (E2E)', () => {
         .expect(200);
 
       expect(response.body.status).toBe('VOID');
-      originalInvoiceId = invoice.body.id;
     });
 
     it('should reject voiding an issued invoice with a recorded payment', async () => {
@@ -1065,15 +1068,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const response = await request(app.getHttpServer())
         .patch(`/api/invoices/${invoice.body.id}/status`)
@@ -1101,15 +1096,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       await request(app.getHttpServer())
         .post(`/api/payments/${invoice.body.payments[0].id}/reverse`)
@@ -1136,15 +1123,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       await request(app.getHttpServer())
         .patch(`/api/invoices/${invoice.body.id}/status`)
@@ -1153,20 +1132,12 @@ describe('Invoices Module Tests (E2E)', () => {
         .expect(403);
     });
 
-    it('should create replacement invoice for voided invoice', async () => {
+    it('should create replacement for issued invoice and void the original', async () => {
       const visit = await prisma.visit.create({
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       // Create replacement - the service voids the original automatically
       const response = await request(app.getHttpServer())
@@ -1199,17 +1170,9 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
-      // Invoice is already fully paid upon creation (paid: 30, total: 30)
+      // Issuance records the payment (paid: 30, total: 30).
 
       // Create replacement with higher amount
       const response = await request(app.getHttpServer())
@@ -1238,15 +1201,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       // Reverse the initial payment to make invoice unpaid
       await request(app.getHttpServer())
@@ -1287,17 +1242,9 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
-      // Reverse the initial payment
+      // Reverse the payment recorded during explicit issuance.
       await request(app.getHttpServer())
         .post(`/api/payments/${invoice.body.payments[0].id}/reverse`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
@@ -1326,16 +1273,8 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      // Create original invoice (40 KWD, KNET) -> fully paid upon creation
-      const originalInvoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceBId, quantity: 1 }],
-        })
-        .expect(201);
+      // Create a draft, then issue it to record the 40 KWD KNET payment.
+      const originalInvoice = await createIssuedInvoice(visit.id, testServiceBId);
 
       const payment = originalInvoice.body.payments[0];
       expect(payment.amount).toBe("40");
@@ -1431,18 +1370,9 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      // Create invoice
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
-      // Reverse payment to make it UNPAID
+      // Reverse the payment recorded at issuance to make the source unpaid.
       await request(app.getHttpServer())
         .post(`/api/payments/${invoice.body.payments[0].id}/reverse`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
@@ -1486,15 +1416,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       // Simulate two concurrent replacement requests
       const [replacement1, replacement2] = await Promise.allSettled([
@@ -1540,8 +1462,13 @@ describe('Invoices Module Tests (E2E)', () => {
     });
 
     it('should reject receptionist creating replacement', async () => {
+      const visit = await prisma.visit.create({
+        data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
+      });
+      const originalInvoice = await createIssuedInvoice(visit.id, testServiceAId);
+
       await request(app.getHttpServer())
-        .post(`/api/invoices/${originalInvoiceId}/replacement`)
+        .post(`/api/invoices/${originalInvoice.body.id}/replacement`)
         .set('Authorization', `Bearer ${receptionistAccessToken}`)
         .send({
           items: [{ serviceId: testServiceAId, quantity: 1 }],
@@ -1557,28 +1484,16 @@ describe('Invoices Module Tests (E2E)', () => {
       const invoice = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
+        .send({ visitId: visit.id, items: [{ serviceId: testServiceAId, quantity: 1 }] })
         .expect(201);
 
-      const draftReplacement = await request(app.getHttpServer())
+      expect(invoice.body.status).toBe('DRAFT');
+
+      await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
           items: [{ serviceId: testServiceBId, quantity: 1 }],
-        })
-        .expect(201);
-
-      expect(draftReplacement.body.status).toBe('DRAFT');
-
-      await request(app.getHttpServer())
-        .post(`/api/invoices/${draftReplacement.body.id}/replacement`)
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
         })
         .expect(400);
     });
@@ -1588,15 +1503,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const replacement = await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
@@ -1631,15 +1538,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const replacement = await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
@@ -1695,15 +1594,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const replacement = await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
@@ -1737,15 +1628,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const draftInvoice = await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
@@ -1773,16 +1656,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      // Normal invoice is already ISSUED upon creation
-      const issuedInvoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({
-          visitId: visit.id,
-          paymentMethod: 'KNET',
-          items: [{ serviceId: testServiceAId, quantity: 1 }],
-        })
-        .expect(201);
+      const issuedInvoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       expect(issuedInvoice.body.status).toBe('ISSUED');
 
@@ -1815,11 +1689,7 @@ describe('Invoices Module Tests (E2E)', () => {
         data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId },
       });
 
-      const invoice = await request(app.getHttpServer())
-        .post('/api/invoices')
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ visitId: visit.id, paymentMethod: 'KNET', items: [{ serviceId: testServiceAId, quantity: 1 }] })
-        .expect(201);
+      const invoice = await createIssuedInvoice(visit.id, testServiceAId);
 
       const draft = await request(app.getHttpServer())
         .post(`/api/invoices/${invoice.body.id}/replacement`)
@@ -1843,7 +1713,7 @@ describe('Invoices Module Tests (E2E)', () => {
       expect(persisted.issuedById).toBe(succeeded[0].body.issuedById);
     });
 
-    it('should generate unique sequential invoice numbers on invoice creation', async () => {
+    it('should generate unique sequential invoice numbers when invoices are issued', async () => {
       const visits = await Promise.all([
         prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
         prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
@@ -1852,22 +1722,37 @@ describe('Invoices Module Tests (E2E)', () => {
       const invoice1 = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ visitId: visits[0].id, paymentMethod: 'KNET', items: [{ serviceId: testServiceAId, quantity: 1 }] })
+        .send({ visitId: visits[0].id, items: [{ serviceId: testServiceAId, quantity: 1 }] })
         .expect(201);
 
       const invoice2 = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ visitId: visits[1].id, paymentMethod: 'KNET', items: [{ serviceId: testServiceAId, quantity: 1 }] })
+        .send({ visitId: visits[1].id, items: [{ serviceId: testServiceAId, quantity: 1 }] })
         .expect(201);
 
-      // Both invoices are immediately assigned sequential numbers
-      const num1 = parseInt(invoice1.body.invoiceNumber.replace('INV-', ''), 10);
-      const num2 = parseInt(invoice2.body.invoiceNumber.replace('INV-', ''), 10);
+      expect(invoice1.body.status).toBe('DRAFT');
+      expect(invoice1.body.payments).toHaveLength(0);
+      expect(invoice2.body.status).toBe('DRAFT');
+      expect(invoice2.body.payments).toHaveLength(0);
+
+      const issued1 = await request(app.getHttpServer())
+        .patch(`/api/invoices/${invoice1.body.id}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'KNET' })
+        .expect(200);
+      const issued2 = await request(app.getHttpServer())
+        .patch(`/api/invoices/${invoice2.body.id}/status`)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ status: 'ISSUED', paymentMethod: 'KNET' })
+        .expect(200);
+
+      const num1 = parseInt(issued1.body.invoiceNumber.replace('INV-', ''), 10);
+      const num2 = parseInt(issued2.body.invoiceNumber.replace('INV-', ''), 10);
       expect(Math.abs(num1 - num2)).toBe(1);
     });
 
-    it('should prevent duplicate invoice numbers through concurrent invoice creation', async () => {
+    it('should prevent duplicate invoice numbers through concurrent issuance', async () => {
       // This test verifies that the PostgreSQL sequence + UNIQUE constraint
       // prevent duplicate invoice numbers even under concurrent load
       const visits = await Promise.all([
@@ -1878,23 +1763,35 @@ describe('Invoices Module Tests (E2E)', () => {
         prisma.visit.create({ data: { patientId: testPatientId, type: 'OTHER', createdById: adminUserId } }),
       ]);
 
-      // Create 5 invoices concurrently
-      const responses = await Promise.all(
+      // Create five drafts concurrently, then explicitly issue each one.
+      const drafts = await Promise.all(
         visits.map((visit) =>
           request(app.getHttpServer())
             .post('/api/invoices')
             .set('Authorization', `Bearer ${adminAccessToken}`)
             .send({
               visitId: visit.id,
-              paymentMethod: 'KNET',
               items: [{ serviceId: testServiceAId, quantity: 1 }],
             }),
         ),
       );
 
-      // All should succeed
-      responses.forEach((response) => {
+      drafts.forEach((response) => {
         expect(response.status).toBe(201);
+        expect(response.body.status).toBe('DRAFT');
+        expect(response.body.paymentStatus).toBe('UNPAID');
+        expect(response.body.payments).toHaveLength(0);
+      });
+
+      const responses = await Promise.all(drafts.map((draft) =>
+        request(app.getHttpServer())
+          .patch(`/api/invoices/${draft.body.id}/status`)
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .send({ status: 'ISSUED', paymentMethod: 'KNET' }),
+      ));
+      responses.forEach((response) => {
+        expect(response.status).toBe(200);
+        expect(response.body.status).toBe('ISSUED');
         expect(response.body.invoiceNumber).toMatch(/^INV-\d{6}$/);
       });
 
@@ -1918,24 +1815,18 @@ describe('Invoices Module Tests (E2E)', () => {
       const invoice = await request(app.getHttpServer())
         .post('/api/invoices')
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ visitId: visit.id, paymentMethod: 'KNET', items: [{ serviceId: testServiceAId, quantity: 1 }] })
+        .send({ visitId: visit.id, items: [{ serviceId: testServiceAId, quantity: 1 }] })
         .expect(201);
 
-      const draftInvoice = await request(app.getHttpServer())
-        .post(`/api/invoices/${invoice.body.id}/replacement`)
-        .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ items: [{ serviceId: testServiceAId, quantity: 1 }] })
-        .expect(201);
+      expect(invoice.body.invoiceNumber).toMatch(/^DRAFT-/);
+      expect(invoice.body.status).toBe('DRAFT');
+      expect(invoice.body.payments).toHaveLength(0);
 
-      // Verify draft has temporary number
-      expect(draftInvoice.body.invoiceNumber).toMatch(/^DRAFT-/);
-      expect(draftInvoice.body.status).toBe('DRAFT');
-
-      // Issue the draft replacement - this should allocate final number and change status atomically
+      // Issuing the draft allocates the final number and changes status atomically.
       const issuedInvoice = await request(app.getHttpServer())
-        .patch(`/api/invoices/${draftInvoice.body.id}/status`)
+        .patch(`/api/invoices/${invoice.body.id}/status`)
         .set('Authorization', `Bearer ${adminAccessToken}`)
-        .send({ status: 'ISSUED' })
+        .send({ status: 'ISSUED', paymentMethod: 'KNET' })
         .expect(200);
 
       // Verify both status and number changed together (atomic transaction)
@@ -1945,7 +1836,7 @@ describe('Invoices Module Tests (E2E)', () => {
       expect(issuedInvoice.body.issuedById).toBeTruthy();
 
       // Verify the number is not the temporary draft number
-      expect(issuedInvoice.body.invoiceNumber).not.toBe(draftInvoice.body.invoiceNumber);
+      expect(issuedInvoice.body.invoiceNumber).not.toBe(invoice.body.invoiceNumber);
     });
   });
 
