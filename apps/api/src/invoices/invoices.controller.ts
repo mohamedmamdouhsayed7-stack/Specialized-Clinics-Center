@@ -57,7 +57,7 @@ export class InvoicesController {
     @Res() res: Response,
   ) {
     const language = lang === 'ar' ? 'ar' : 'en';
-    const { buffer: pdfBuffer, patientName, invoiceNumber } = await this.invoicePdfService.generate(id, language, { copies: 2 });
+    const { buffer: pdfBuffer, patientName, invoiceNumber } = await this.invoicePdfService.generate(id, language, { copies: 1 });
     const filename = createInvoiceFilename(patientName, invoiceNumber);
     res.set({
       'Content-Type': 'application/pdf',

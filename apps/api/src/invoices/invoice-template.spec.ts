@@ -29,26 +29,36 @@ describe('invoice print/PDF template', () => {
   it.each([
     ['en', 'Invoice - Sara Ahmed - INV-1788803016897'],
     ['ar', 'Invoice - سارة أحمد - INV-1788803016897'],
-  ] as const)('sets a patient-identifying document title and keeps both compact copies for %s', (language, title) => {
+  ] as const)('sets a patient-identifying document title and renders one copy for %s', (language, title) => {
     const html = renderInvoiceHtml(invoice, language);
 
     expect(html).toContain(`<title>${title}</title>`);
-    expect(html.match(/class="invoice-copy"/g)).toHaveLength(2);
+    expect(html.match(/class="invoice-copy"/g)).toHaveLength(1);
+    expect(html).not.toContain('<div class="cut-line">');
     expect(html).toContain('.invoice-copy {\n    flex: 0 0 auto;');
     expect(html).toContain('.copy {\n    flex: 0 0 auto;');
     expect(html).toContain('height: 297mm;');
   });
 
-  it('defaults to two copies when options are not provided', () => {
+  it('defaults to one copy when options are not provided', () => {
     const html = renderInvoiceHtml(invoice, 'en');
-    expect(html.match(/class="invoice-copy"/g)).toHaveLength(2);
-    expect(html).toContain('cut-line');
+    expect(html.match(/class="invoice-copy"/g)).toHaveLength(1);
+    expect(html).not.toContain('<div class="cut-line">');
   });
 
-  it('renders exactly two copies for internal print/download mode', () => {
-    const html = renderInvoiceHtml(invoice, 'en', { copies: 2 });
-    expect(html.match(/class="invoice-copy"/g)).toHaveLength(2);
-    expect(html).toContain('cut-line');
+  it('formats the invoice business date in Asia/Kuwait at a UTC midnight boundary', () => {
+    const html = renderInvoiceHtml({
+      ...invoice,
+      issuedAt: '2026-09-25T21:00:00.000Z',
+    }, 'en', { copies: 1 });
+
+    expect(html).toContain('Date:</b> 26/09/2026');
+  });
+
+  it('renders exactly one copy for internal print/download mode', () => {
+    const html = renderInvoiceHtml(invoice, 'en', { copies: 1 });
+    expect(html.match(/class="invoice-copy"/g)).toHaveLength(1);
+    expect(html).not.toContain('<div class="cut-line">');
     expect(html).toContain('height: 297mm;');
   });
 
@@ -83,7 +93,7 @@ describe('invoice print/PDF template', () => {
     expect(htmlOne).toContain('height: 297mm;');
   });
 
-  it('renders two non-overlapping copies with a reduced gap on the A4 sheet', async () => {
+  it('renders one non-clipped copy on the A4 sheet', async () => {
     const browser = await puppeteer.launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-zygote'],
@@ -103,20 +113,16 @@ describe('invoice print/PDF template', () => {
         const sheet = document.querySelector('.sheet')!.getBoundingClientRect();
         const copies = Array.from(document.querySelectorAll('.invoice-copy'));
         const first = copies[0].getBoundingClientRect();
-        const second = copies[1].getBoundingClientRect();
         const copyContentsFit = copies.every((copy) => copy.scrollHeight <= copy.clientHeight + 1);
         return {
           count: copies.length,
-          gap: second.top - first.bottom,
-          secondFitsOnSheet: second.bottom <= sheet.bottom,
+          copyFitsOnSheet: first.bottom <= sheet.bottom,
           copyContentsFit,
         };
       });
 
-      expect(layout.count).toBe(2);
-      expect(layout.gap).toBeGreaterThan(0);
-      expect(layout.gap).toBeLessThan(70);
-      expect(layout.secondFitsOnSheet).toBe(true);
+      expect(layout.count).toBe(1);
+      expect(layout.copyFitsOnSheet).toBe(true);
       expect(layout.copyContentsFit).toBe(true);
       await page.close();
     } finally {
@@ -124,7 +130,7 @@ describe('invoice print/PDF template', () => {
     }
   });
 
-  it('does not truncate long patient names in either copy', async () => {
+  it('does not truncate long patient names in the internal copy', async () => {
     const expectedPatientName = 'QA Wolf Targeted 20260925-094420';
     const expectedTextLength = expectedPatientName.length;
     const browser = await puppeteer.launch({
@@ -166,7 +172,7 @@ describe('invoice print/PDF template', () => {
         return results;
       });
 
-      expect(patientNameTruncation).toHaveLength(2);
+      expect(patientNameTruncation).toHaveLength(1);
       patientNameTruncation.forEach((result) => {
         expect(result.text).toBe(expectedPatientName);
         expect(result.textLength).toBe(expectedTextLength);

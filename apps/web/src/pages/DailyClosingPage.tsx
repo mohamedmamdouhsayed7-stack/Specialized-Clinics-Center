@@ -371,7 +371,7 @@ export default function DailyClosingPage() {
 
           {/* Print-only footer */}
           <div className="hidden print:block print-footer">
-            {t('dailyClosing.generatedAt')}: {new Date().toLocaleString(i18n.language)}
+            {t('dailyClosing.generatedAt')}: {new Date().toLocaleString(i18n.language, { timeZone: 'Asia/Kuwait' })}
           </div>
         </>
       )}

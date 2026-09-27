@@ -21,6 +21,7 @@ const APP_VERSION = 'v1.0.0';
 
 function formatDateTime(dateString: string): string {
   return new Date(dateString).toLocaleString('ar-KW', {
+    timeZone: 'Asia/Kuwait',
     year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 }
@@ -201,7 +202,7 @@ function BackupSection() {
           <div className="p-4 rounded-xl border border-[#E2E8F0]">
             <div className="text-xs text-[#94A3B8] mb-1">{t('settings.lastBackup')}</div>
             <div className="font-bold text-[#1F2430] text-sm">
-              {status?.lastBackup ? new Date(status.lastBackup.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW') : t('settings.noPreviousBackups')}
+              {status?.lastBackup ? new Date(status.lastBackup.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW', { timeZone: 'Asia/Kuwait' }) : t('settings.noPreviousBackups')}
             </div>
           </div>
           <div className="p-4 rounded-xl border border-[#E2E8F0]">
@@ -235,7 +236,7 @@ function BackupSection() {
           {backups.map((b) => (
             <div key={b.filename} className="flex items-center justify-between p-3 rounded-lg border border-[#E2E8F0] text-sm">
               <div>
-                <div className="text-[#1F2430]">{new Date(b.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW')}</div>
+                <div className="text-[#1F2430]">{new Date(b.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW', { timeZone: 'Asia/Kuwait' })}</div>
                 <div className="text-xs text-[#94A3B8]">{formatSize(b.sizeBytes)} · {b.triggeredBy === 'manual' ? t('settings.triggerManual') : b.triggeredBy === 'scheduled' ? t('settings.triggerScheduled') : t('settings.triggerPreRestore')}{b.uploadedToRemote ? ` · ${t('settings.uploadedRemotely')}` : ''}</div>
               </div>
               <div className="flex gap-2">
@@ -256,7 +257,7 @@ function BackupSection() {
         open={!!confirmRestore}
         title={t('settings.confirmRestoreTitle')}
         message={confirmRestore ? t('settings.confirmRestoreBody', {
-          date: new Date(confirmRestore.createdAt).toLocaleString('ar-KW'),
+          date: new Date(confirmRestore.createdAt).toLocaleString('ar-KW', { timeZone: 'Asia/Kuwait' }),
         }) : ''}
         confirmLabel={restoring ? t('settings.restoring') : t('settings.confirmRestoreBtn')}
         cancelLabel={t('common.cancel')}
@@ -269,7 +270,7 @@ function BackupSection() {
         open={!!confirmDelete}
         title={t('settings.confirmDeleteBackupTitle')}
         message={confirmDelete ? t('settings.confirmDeleteBackupBody', {
-          date: new Date(confirmDelete.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW'),
+          date: new Date(confirmDelete.createdAt).toLocaleString(i18n.language === 'ar' ? 'ar-KW' : 'en-KW', { timeZone: 'Asia/Kuwait' }),
         }) : ''}
         confirmLabel={deleting ? t('settings.deletingBackup') : t('settings.deleteBackup')}
         cancelLabel={t('common.cancel')}

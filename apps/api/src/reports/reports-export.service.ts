@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import ExcelJS from 'exceljs';
-import { ReportsService } from './reports.service';
+import { getLocalCalendarDate, ReportsService } from './reports.service';
 import { PdfBrowserService } from '../common/filters/pdf/pdf-browser.service';
 import { renderReportsHtml, ReportsExportData } from './templates/reports-pdf-template';
 
@@ -44,8 +44,8 @@ export class ReportsExportService {
       ]);
 
     return {
-      from: summary.range.from.toISOString().slice(0, 10),
-      to: summary.range.to.toISOString().slice(0, 10),
+      from: getLocalCalendarDate(summary.range.from),
+      to: getLocalCalendarDate(summary.range.to),
       summary: {
         totalRevenue: summary.totalRevenue,
         totalCollected: summary.totalCollected,

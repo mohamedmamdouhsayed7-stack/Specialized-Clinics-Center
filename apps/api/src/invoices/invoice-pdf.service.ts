@@ -40,7 +40,7 @@ export class InvoicePdfService {
     const invoice = await this.invoicesService.findOne(invoiceId);
     const pdfInvoice = this.buildPdfInvoice(invoice);
 
-    const html = renderInvoiceHtml(pdfInvoice, language, { copies: options.copies ?? 2 });
+    const html = renderInvoiceHtml(pdfInvoice, language, { copies: options.copies ?? 1 });
 
     const buffer = await this.pdfBrowserService.renderHtmlToPdf(html, {
       top: '0',

@@ -229,7 +229,7 @@ export default function AppointmentDetail() {
                   <div className="space-y-4">
                     <div>
                       <label className="text-sm text-gray-500 block mb-1">{t('appointments.createdAt')}</label>
-                      <p className="text-gray-900">{new Date(appointment.createdAt).toLocaleString('ar-KW')}</p>
+                      <p className="text-gray-900">{new Date(appointment.createdAt).toLocaleString('ar-KW', { timeZone: 'Asia/Kuwait' })}</p>
                     </div>
                   </div>
                 </div>

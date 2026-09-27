@@ -12,6 +12,10 @@ describe('Backup PostgreSQL integration', () => {
   let backupDir: string;
   let restoreDatabase: string;
   let auditService: { logUserAction: jest.Mock };
+  let databaseHost: string;
+  let databasePort: string;
+  let databaseUser: string;
+  let databasePassword: string;
   const originalEnv = { ...process.env };
 
   const runCommand = (command: string, args: string[], env: NodeJS.ProcessEnv = process.env) =>
@@ -30,17 +34,21 @@ describe('Backup PostgreSQL integration', () => {
     process.env.BACKUP_ENCRYPTION_REQUIRED = 'true';
     process.env.BACKUP_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
     const databaseUrl = new URL(process.env.DATABASE_URL);
-    process.env.DB_HOST = process.env.DB_HOST || databaseUrl.hostname;
-    process.env.DB_PORT = process.env.DB_PORT || databaseUrl.port || '5432';
-    process.env.POSTGRES_USER = 'clinic_test_user';
-    process.env.POSTGRES_PASSWORD = 'clinic_test_password';
-    process.env.POSTGRES_DB = 'clinic_test_db';
+    databaseHost = process.env.DB_HOST || databaseUrl.hostname;
+    databasePort = process.env.DB_PORT || databaseUrl.port || '5432';
+    databaseUser = decodeURIComponent(databaseUrl.username);
+    databasePassword = decodeURIComponent(databaseUrl.password);
+    process.env.DB_HOST = databaseHost;
+    process.env.DB_PORT = databasePort;
+    process.env.POSTGRES_USER = databaseUser;
+    process.env.POSTGRES_PASSWORD = databasePassword;
+    process.env.POSTGRES_DB = databaseUrl.pathname.slice(1);
 
     source = new PrismaClient({ datasources: { db: { url: process.env.DATABASE_URL } } });
     await source.$connect();
-    await runCommand('createdb', ['--host', process.env.DB_HOST, '--port', process.env.DB_PORT, '--username', process.env.POSTGRES_USER, restoreDatabase], {
+    await runCommand('createdb', ['--host', databaseHost, '--port', databasePort, '--username', databaseUser, restoreDatabase], {
       ...process.env,
-      PGPASSWORD: process.env.POSTGRES_PASSWORD,
+      PGPASSWORD: databasePassword,
     });
     auditService = { logUserAction: jest.fn() };
     backupService = new BackupService(auditService as any, source as any);
@@ -58,9 +66,9 @@ describe('Backup PostgreSQL integration', () => {
     await source?.auditLog.deleteMany({ where: { user: { email: { contains: 'backup.integration.' } } } }).catch(() => undefined);
     await source?.user.deleteMany({ where: { email: { contains: 'backup.integration.' } } }).catch(() => undefined);
     await source?.$disconnect();
-    await runCommand('dropdb', ['--if-exists', '--host', originalEnv.DB_HOST!, '--port', originalEnv.DB_PORT!, '--username', originalEnv.POSTGRES_USER!, restoreDatabase], {
+    await runCommand('dropdb', ['--if-exists', '--host', databaseHost, '--port', databasePort, '--username', databaseUser, restoreDatabase], {
       ...originalEnv,
-      PGPASSWORD: originalEnv.POSTGRES_PASSWORD,
+      PGPASSWORD: databasePassword,
     }).catch(() => undefined);
     if (backupDir) await rm(backupDir, { recursive: true, force: true });
     process.env = { ...originalEnv };
@@ -163,7 +171,9 @@ describe('Backup PostgreSQL integration', () => {
     });
     await backupService['writeManifest'](manifest);
 
-    const restoreUrl = `postgresql://${process.env.POSTGRES_USER}:${process.env.POSTGRES_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${restoreDatabase}`;
+    const restoreDatabaseUrl = new URL(process.env.DATABASE_URL!);
+    restoreDatabaseUrl.pathname = `/${restoreDatabase}`;
+    const restoreUrl = restoreDatabaseUrl.toString();
     process.env.POSTGRES_DB = restoreDatabase;
     process.env.DATABASE_URL = restoreUrl;
     const skippedStatementsLog = jest.spyOn(backupService['logger'], 'warn');

@@ -102,10 +102,14 @@ function formatMoney(value: number | string | Decimal): string {
 
 function formatDate(value: string | Date): string {
   const d = new Date(value);
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuwait',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).formatToParts(d);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? '';
+  return `${part('day')}/${part('month')}/${part('year')}`;
 }
 
 function escapeHtml(input: string): string {
@@ -332,7 +336,7 @@ export function renderInvoiceHtml(
   options: InvoiceRenderOptions = {},
 ): string {
   const isArabic = language === 'ar';
-  const copies = options.copies === 1 ? 1 : 2;
+  const copies = options.copies === 2 ? 2 : 1;
 
   const labels: InvoicePdfLabels = isArabic
     ? {

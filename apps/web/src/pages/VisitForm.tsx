@@ -10,6 +10,7 @@ import PageHeader from '../components/PageHeader';
 import { useToast } from '../contexts/ToastContext';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import { kuwaitDateTimeLocalToIso, toKuwaitDateTimeLocal } from '../utils/kuwaitDateTime';
 
 const VISIT_TYPES = [
   { value: 'CHECKUP' as const, labelKey: 'visits.typeCheckup' },
@@ -25,7 +26,7 @@ export default function VisitForm() {
   const prefillAppointmentId = searchParams.get('appointmentId') || '';
   const returnTo = getReturnTo(searchParams.toString(), prefillPatientId ? `/patients/${prefillPatientId}` : '/visits');
   const { showToast } = useToast();
-  const [initialVisitDate] = useState(() => new Date().toISOString());
+  const [initialVisitDate] = useState(() => toKuwaitDateTimeLocal(new Date()));
 
   const [formData, setFormData] = useState<CreateVisitDto>({
     patientId: prefillPatientId,
@@ -120,6 +121,7 @@ export default function VisitForm() {
     const { appointmentId, ...visitData } = formData;
     createMutation.mutate({
       ...visitData,
+      visitDate: visitData.visitDate ? kuwaitDateTimeLocalToIso(visitData.visitDate) : visitData.visitDate,
       ...(appointmentId ? { appointmentId } : {}),
       type: VISIT_TYPES.find((visitType) => visitType.value === formData.type)?.value || 'CHECKUP',
     });
@@ -228,7 +230,7 @@ export default function VisitForm() {
               </label>
               <input
                 type="datetime-local"
-                value={formData.visitDate ? formData.visitDate.slice(0, 16) : ''}
+                value={formData.visitDate || ''}
                 onChange={(e) => setFormData((prev) => ({ ...prev, visitDate: e.target.value }))}
                 className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[#111844] ${
                   errors.visitDate ? 'border-red-500' : 'border-gray-300'

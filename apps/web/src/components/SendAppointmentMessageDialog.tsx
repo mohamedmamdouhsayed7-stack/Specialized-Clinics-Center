@@ -69,7 +69,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
     const appointmentTimeLabel = useMemo(() => {
         if (!selectedAppointment) return '';
         const locale = i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US';
-        return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit' }).format(
+        return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' }).format(
             new Date(selectedAppointment.scheduledAt),
         );
     }, [selectedAppointment, i18n.language]);
@@ -101,6 +101,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
             time: new Intl.DateTimeFormat(i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US', {
                 hour: '2-digit',
                 minute: '2-digit',
+                timeZone: 'Asia/Kuwait',
             }).format(new Date(appointment.scheduledAt)),
         };
         switch (type) {
@@ -221,6 +222,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
                                                     {new Intl.DateTimeFormat(i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US', {
                                                         hour: '2-digit',
                                                         minute: '2-digit',
+                                                        timeZone: 'Asia/Kuwait',
                                                     }).format(new Date(appointment.scheduledAt))}
                                                 </div>
                                             </div>

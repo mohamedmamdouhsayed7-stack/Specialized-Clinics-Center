@@ -11,6 +11,7 @@ import { useToast } from '../contexts/ToastContext';
 import PageHeader from '../components/PageHeader';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges';
+import { kuwaitDateTimeLocalToIso, toKuwaitDateTimeLocal } from '../utils/kuwaitDateTime';
 
 export default function AppointmentForm() {
   const { t } = useTranslation();
@@ -39,7 +40,7 @@ export default function AppointmentForm() {
     enabled: isEdit,
   });
   const baseline = existingAppointment
-    ? { patientId: existingAppointment.patientId, scheduledAt: existingAppointment.scheduledAt.slice(0, 16), notes: existingAppointment.notes || '' }
+    ? { patientId: existingAppointment.patientId, scheduledAt: toKuwaitDateTimeLocal(existingAppointment.scheduledAt), notes: existingAppointment.notes || '' }
     : initialFormData;
   const isDirty = JSON.stringify(formData) !== JSON.stringify(baseline);
   const { confirmOpen, requestNavigation, stay, leave } = useUnsavedChanges(isDirty);
@@ -48,7 +49,7 @@ export default function AppointmentForm() {
     if (!existingAppointment) return;
     const next = {
       patientId: existingAppointment.patientId,
-      scheduledAt: existingAppointment.scheduledAt.slice(0, 16),
+      scheduledAt: toKuwaitDateTimeLocal(existingAppointment.scheduledAt),
       notes: existingAppointment.notes || '',
     };
     setFormData(next);
@@ -133,7 +134,7 @@ export default function AppointmentForm() {
       return;
     }
 
-    saveMutation.mutate(formData);
+    saveMutation.mutate({ ...formData, scheduledAt: kuwaitDateTimeLocalToIso(formData.scheduledAt) });
   };
 
   const handlePatientSelect = (patient: Patient) => {
@@ -292,7 +293,7 @@ export default function AppointmentForm() {
                 <TimeInput
                   value={formData.scheduledAt ? formData.scheduledAt.split('T')[1] || '10:00' : '10:00'}
                   onChange={(timeStr) => {
-                    const date = formData.scheduledAt ? formData.scheduledAt.split('T')[0] : new Date().toISOString().split('T')[0];
+                    const date = formData.scheduledAt ? formData.scheduledAt.split('T')[0] : toKuwaitDateTimeLocal(new Date()).split('T')[0];
                     setFormData((prev) => ({ ...prev, scheduledAt: `${date}T${timeStr}` }));
                   }}
                   className={`w-full px-4 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-[#111844] ${errors.scheduledAt ? 'border-red-500' : 'border-gray-300'
