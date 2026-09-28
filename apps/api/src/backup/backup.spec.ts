@@ -15,6 +15,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { DeleteObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { SCHEDULE_CRON_OPTIONS } from '@nestjs/schedule/dist/schedule.constants';
 
 jest.mock('child_process', () => {
   const actual = jest.requireActual('child_process');
@@ -75,6 +76,11 @@ describe('BackupModule', () => {
   });
 
   describe('BackupService - Environment Validation', () => {
+    it('schedules the automatic backup weekly on Sunday at 03:00 in Kuwait', () => {
+      const schedule = Reflect.getMetadata(SCHEDULE_CRON_OPTIONS, BackupService.prototype.handleScheduledBackup);
+      expect(schedule).toMatchObject({ cronTime: '0 3 * * 0', timeZone: 'Asia/Kuwait' });
+    });
+
     it('should extract database name from DATABASE_URL if POSTGRES_DB not set', () => {
       delete process.env.POSTGRES_DB;
       process.env.DATABASE_URL = 'postgresql://user:pass@host:5432/my_database';

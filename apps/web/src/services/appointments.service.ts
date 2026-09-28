@@ -1,6 +1,7 @@
 import { apiBaseUrl } from '../config/api';
 import { getAccessToken } from '../config/auth-token';
 import { parseApiError } from './api-error';
+import { collectAppointmentPages } from '../utils/appointmentPages';
 
 export interface Appointment {
   id: string;
@@ -85,6 +86,11 @@ class AppointmentsService {
     }
 
     return response.json();
+  }
+
+  async getAllAppointments(date: string, status?: string): Promise<AppointmentsListResponse> {
+    return collectAppointmentPages((page, limit) =>
+      this.getAppointments(date, status, undefined, page, limit));
   }
 
   async getAppointment(id: string): Promise<Appointment> {

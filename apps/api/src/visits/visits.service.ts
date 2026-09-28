@@ -6,6 +6,7 @@ import { CreateVisitDto } from './dto/create-visit.dto';
 import { UpdateVisitDto } from './dto/update-visit.dto';
 import { UpdateVisitStatusDto } from './dto/update-visit-status.dto';
 import { localDayStartToUtc, localDayEndToUtc, getLocalTodayInClinicTimezone } from '../reports/reports.service';
+import { runPermanentDelete } from '../common/permanent-delete';
 
 const VISIT_INCLUDE = {
   patient: {
@@ -242,7 +243,7 @@ export class VisitsService {
   }
 
   async hardDelete(id: string, userId: string, ipAddress?: string, userAgent?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return runPermanentDelete(() => this.prisma.$transaction(async (tx) => {
       const visit = await tx.visit.findUnique({
         where: { id },
         include: { invoices: { select: { invoiceNumber: true } } },
@@ -276,7 +277,7 @@ export class VisitsService {
         },
       });
       return { id, deleted: true };
-    });
+    }), 'Visit cannot be permanently deleted because related records still depend on it.');
   }
 
   async update(id: string, updateVisitDto: UpdateVisitDto, userId: string, ipAddress?: string, userAgent?: string) {

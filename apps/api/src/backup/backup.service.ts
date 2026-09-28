@@ -610,12 +610,10 @@ export class BackupService implements OnModuleInit {
     }
   }
 
-  // Runs every day at 3:00 AM server time. This is a real cron registration
-  // via @nestjs/schedule â€” it will actually fire in production, not a
-  // decorative comment.
-  @Cron('0 3 * * *')
+  // Real @nestjs/schedule registration: every Sunday at 3:00 AM in Kuwait.
+  @Cron('0 3 * * 0', { timeZone: 'Asia/Kuwait' })
   async handleScheduledBackup() {
-    this.logger.log('Running scheduled daily backup...');
+    this.logger.log('Running scheduled weekly backup...');
     try {
       await this.runBackup('scheduled');
     } catch (err) {

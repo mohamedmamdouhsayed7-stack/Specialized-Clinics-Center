@@ -7,6 +7,7 @@ import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
 import { AddChargeDto } from './dto/add-charge.dto';
 import { CreateReplacementDto } from './dto/create-replacement.dto';
 import { Decimal } from '@prisma/client/runtime/library';
+import { runPermanentDelete } from '../common/permanent-delete';
 
 const INVOICE_ITEM_INCLUDE = {
   invoiceItems: {
@@ -325,7 +326,7 @@ export class InvoicesService {
       throw new ForbiddenException('Only admin can permanently delete invoices');
     }
 
-    return this.prisma.$transaction(async (tx) => {
+    return runPermanentDelete(() => this.prisma.$transaction(async (tx) => {
       const invoice = await tx.invoice.findUnique({
         where: { id },
         select: {
@@ -355,17 +356,19 @@ export class InvoicesService {
         );
       }
 
-      const allocationsForOwnedPayments = await tx.paymentAllocation.findMany({
+      const crossInvoiceAllocations = await tx.paymentAllocation.findMany({
         where: {
-          payment: { invoiceId: id },
-          invoiceId: { not: id },
+          OR: [
+            { payment: { invoiceId: id }, invoiceId: { not: id } },
+            { invoiceId: id, payment: { invoiceId: { not: id } } },
+          ],
         },
-        select: { invoiceId: true },
+        select: { id: true },
       }) ?? [];
 
-      if (allocationsForOwnedPayments.length > 0) {
+      if (crossInvoiceAllocations.length > 0) {
         throw new BadRequestException(
-          'This invoice cannot be permanently deleted because its payment credit is referenced by another invoice.',
+          'This invoice cannot be permanently deleted because a payment allocation is linked to another invoice.',
         );
       }
 
@@ -407,7 +410,7 @@ export class InvoicesService {
       });
 
       return { id, deleted: true };
-    });
+    }), 'Invoice cannot be permanently deleted because related financial or historical records still depend on it.');
   }
 
   async updateStatus(

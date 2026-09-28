@@ -7,6 +7,7 @@ import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { localDayStartToUtc, localDayEndToUtc } from '../reports/reports.service';
+import { runPermanentDelete } from '../common/permanent-delete';
 
 @Injectable()
 export class AppointmentsService {
@@ -124,7 +125,7 @@ export class AppointmentsService {
         where,
         skip,
         take: limit,
-        orderBy: { scheduledAt: 'asc' },
+        orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
         include: {
           patient: {
             select: {
@@ -257,7 +258,7 @@ export class AppointmentsService {
   }
 
   async hardDelete(id: string, userId: string, ipAddress?: string, userAgent?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return runPermanentDelete(() => this.prisma.$transaction(async (tx) => {
       const appointment = await tx.appointment.findUnique({
         where: { id },
         include: { visit: { select: { id: true } } },
@@ -287,7 +288,7 @@ export class AppointmentsService {
         },
       });
       return { id, deleted: true };
-    });
+    }), 'Appointment cannot be permanently deleted because a related visit still depends on it.');
   }
 
   async cancel(id: string, cancelDto: CancelAppointmentDto, userId: string, ipAddress?: string, userAgent?: string) {

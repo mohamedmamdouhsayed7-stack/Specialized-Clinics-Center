@@ -3,6 +3,8 @@ import { PrismaService } from '../database/prisma.service';
 import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { AuditService } from '../audit/audit.service';
+import { runPermanentDelete } from '../common/permanent-delete';
+import { VisitStatus } from '@prisma/client';
 
 function normalizeCivilIdSearch(value: string): string {
   return value
@@ -247,57 +249,79 @@ export class PatientsService {
   }
 
   async hardDelete(id: string, userId: string, ipAddress?: string, userAgent?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return runPermanentDelete(() => this.prisma.$transaction(async (tx) => {
       const patient = await tx.patient.findUnique({
         where: { id },
       });
       if (!patient) throw new NotFoundException('Patient not found');
 
+      const protectedVisit = await tx.visit.findFirst({
+        where: { patientId: id, status: { in: [VisitStatus.COMPLETED, VisitStatus.IN_PROGRESS] } },
+        select: { id: true },
+      });
+      if (protectedVisit) {
+        throw new ConflictException('Patient cannot be permanently deleted because completed or in-progress visits are protected medical history.');
+      }
+
+      const invoices = await tx.invoice.findMany({
+        where: { OR: [{ patientId: id }, { visit: { patientId: id } }] },
+        select: {
+          id: true,
+          patientId: true,
+          replacedByInvoiceId: true,
+          replacementInvoices: { select: { id: true } },
+          visit: { select: { patientId: true } },
+        },
+      }) ?? [];
+      const invoiceIds = invoices.map((invoice) => invoice.id);
+
+      if (invoices.some((invoice) => invoice.patientId !== id || invoice.visit.patientId !== id)) {
+        throw new ConflictException('Patient cannot be permanently deleted because an invoice links to another patient’s visit.');
+      }
+
+      if (invoices.some((invoice) => invoice.replacedByInvoiceId || invoice.replacementInvoices.length > 0)) {
+        throw new ConflictException('Patient cannot be permanently deleted because an invoice has a replacement relationship.');
+      }
+
+      if (invoiceIds.length > 0) {
+        const crossInvoiceAllocations = await tx.paymentAllocation.findMany({
+          where: {
+            OR: [
+              { invoiceId: { in: invoiceIds }, payment: { invoiceId: { notIn: invoiceIds } } },
+              { payment: { invoiceId: { in: invoiceIds } }, invoiceId: { notIn: invoiceIds } },
+            ],
+          },
+          select: { id: true },
+        }) ?? [];
+        if (crossInvoiceAllocations.length > 0) {
+          throw new ConflictException('Patient cannot be permanently deleted because a payment allocation is linked to another invoice.');
+        }
+      }
+
       // Delete all dependent records in the correct order to respect foreign key constraints
-      // 1. Delete payment allocations (links payments to invoices)
-      await tx.paymentAllocation.deleteMany({
-        where: {
-          payment: {
-            invoice: {
-              visit: { patientId: id },
-            },
+      // 1. Delete allocations between invoices in this patient's aggregate.
+      if (invoiceIds.length > 0) {
+        await tx.paymentAllocation.deleteMany({
+          where: {
+            OR: [
+              { invoiceId: { in: invoiceIds } },
+              { payment: { invoiceId: { in: invoiceIds } } },
+            ],
           },
-        },
-      });
+        });
 
-      // 2. Delete payments
-      await tx.payment.deleteMany({
-        where: {
-          invoice: {
-            visit: { patientId: id },
-          },
-        },
-      });
+        // 2. Delete payments.
+        await tx.payment.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
 
-      // 3. Delete invoice items
-      await tx.invoiceItem.deleteMany({
-        where: {
-          invoice: {
-            visit: { patientId: id },
-          },
-        },
-      });
+        // 3. Delete invoice items.
+        await tx.invoiceItem.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
 
-      // 4. Delete additional charges
-      await tx.invoiceAdditionalCharge.deleteMany({
-        where: {
-          invoice: {
-            visit: { patientId: id },
-          },
-        },
-      });
+        // 4. Delete additional charges.
+        await tx.invoiceAdditionalCharge.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
 
-      // 5. Delete invoices
-      await tx.invoice.deleteMany({
-        where: {
-          visit: { patientId: id },
-        },
-      });
+        // 5. Delete invoices.
+        await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
+      }
 
       // 6. Delete visits
       await tx.visit.deleteMany({
@@ -329,6 +353,6 @@ export class PatientsService {
         },
       });
       return { id, deleted: true };
-    });
+    }), 'Patient cannot be permanently deleted because related business records still depend on it.');
   }
 }

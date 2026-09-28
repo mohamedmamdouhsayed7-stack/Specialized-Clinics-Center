@@ -5,6 +5,7 @@ import { AuditService } from '../audit/audit.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
+import { runPermanentDelete } from '../common/permanent-delete';
 
 @Injectable()
 export class ServicesService {
@@ -193,7 +194,7 @@ export class ServicesService {
   }
 
   async hardDelete(id: string, userId: string, ipAddress?: string, userAgent?: string) {
-    return this.prisma.$transaction(async (tx) => {
+    return runPermanentDelete(() => this.prisma.$transaction(async (tx) => {
       const service = await tx.service.findUnique({
         where: { id },
       });
@@ -223,6 +224,6 @@ export class ServicesService {
         },
       });
       return { id, deleted: true };
-    });
+    }), 'Service cannot be permanently deleted because related invoice history still depends on it.');
   }
 }

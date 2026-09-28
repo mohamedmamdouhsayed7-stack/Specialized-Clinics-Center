@@ -9,9 +9,9 @@ function transactionClient() {
   const client = {
     patient: { findUnique: jest.fn(), delete: jest.fn() },
     appointment: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
-    visit: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
+    visit: { findUnique: jest.fn(), findFirst: jest.fn().mockResolvedValue(null), delete: jest.fn(), deleteMany: jest.fn() },
     service: { findUnique: jest.fn(), delete: jest.fn() },
-    invoice: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
+    invoice: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), delete: jest.fn(), deleteMany: jest.fn() },
     invoiceItem: { findUnique: jest.fn(), deleteMany: jest.fn(), updateMany: jest.fn() },
     invoiceAdditionalCharge: { findUnique: jest.fn(), deleteMany: jest.fn() },
     payment: { findUnique: jest.fn(), deleteMany: jest.fn() },
@@ -53,6 +53,13 @@ describe('focused permanent-delete safety', () => {
 
   it('deletes a patient with appointments, visits, and invoices', async () => {
     const { prisma, client } = transactionClient();
+    client.invoice.findMany.mockResolvedValue([{
+      id: 'invoice-id',
+      patientId: 'patient-id',
+      replacedByInvoiceId: null,
+      replacementInvoices: [],
+      visit: { patientId: 'patient-id' },
+    }]);
     client.patient.findUnique.mockResolvedValue({
       id: 'patient-id',
       civilId: '123',
@@ -217,7 +224,7 @@ describe('focused permanent-delete safety', () => {
       'invoice-id',
       'user-id',
       UserRole.ADMIN,
-    )).rejects.toThrow('payment credit is referenced by another invoice');
+    )).rejects.toThrow('payment allocation is linked to another invoice');
     expect(client.paymentAllocation.deleteMany).not.toHaveBeenCalled();
     expect(client.payment.deleteMany).not.toHaveBeenCalled();
     expect(client.invoice.delete).not.toHaveBeenCalled();

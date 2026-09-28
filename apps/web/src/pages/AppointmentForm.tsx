@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { appointmentsService, CreateAppointmentDto, UpdateAppointmentDto } from '../services/appointments.service';
 import { Patient, patientsService } from '../services/patients.service';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import { kuwaitDateTimeLocalToIso, toKuwaitDateTimeLocal } from '../utils/kuwait
 
 export default function AppointmentForm() {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const isEdit = Boolean(id);
@@ -92,6 +93,7 @@ export default function AppointmentForm() {
     mutationFn: (data: CreateAppointmentDto | UpdateAppointmentDto) =>
       isEdit ? appointmentsService.updateAppointment(id!, data) : appointmentsService.createAppointment(data as CreateAppointmentDto),
     onSuccess: (data) => {
+      void queryClient.invalidateQueries({ queryKey: ['appointments'] });
       showToast({ type: 'success', message: t(isEdit ? 'feedback.appointmentUpdated' : 'feedback.appointmentCreated') });
       navigate(`/appointments/${data.id}?returnTo=${encodeURIComponent(returnTo)}`);
     },

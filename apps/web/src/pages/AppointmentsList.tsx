@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { appointmentsService, Appointment } from '../services/appointments.service';
 import { useTranslation } from 'react-i18next';
 import { formatTime as formatTimeUtil } from '../utils/dateFormat';
+import { addCalendarDays, formatKuwaitCalendarDate, getSelectedKuwaitCalendarDate, groupAppointmentsByKuwaitTime } from '../utils/kuwaitDateTime';
 import { preserveListState } from '../utils/listState';
 import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/EmptyState';
@@ -20,23 +21,15 @@ export default function AppointmentsList() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewType, setViewType] = useState<ViewType>((searchParams.get('view') as ViewType) || 'calendar');
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const value = searchParams.get('date');
-    const date = value ? new Date(`${value}T00:00:00`) : new Date();
-    return Number.isNaN(date.getTime()) ? new Date() : date;
-  });
+  const selectedDate = getSelectedKuwaitCalendarDate(searchParams.get('date'));
   const initialStatus = searchParams.get('status') as AppointmentStatus | null;
   const [statusFilter, setStatusFilter] = useState<AppointmentStatus | ''>(
     initialStatus && APPOINTMENT_STATUSES.includes(initialStatus) ? initialStatus : '',
   );
 
-  const formatDate = (date: Date) => {
-    return date.toISOString().split('T')[0];
-  };
-
   const { data, isLoading, error } = useQuery({
-    queryKey: ['appointments', formatDate(selectedDate), statusFilter],
-    queryFn: () => appointmentsService.getAppointments(formatDate(selectedDate), statusFilter),
+    queryKey: ['appointments', selectedDate, statusFilter],
+    queryFn: () => appointmentsService.getAllAppointments(selectedDate, statusFilter),
   });
 
   const getStatusBadge = (status: string) => {
@@ -61,10 +54,8 @@ export default function AppointmentsList() {
   };
 
   const handleDateChange = (days: number) => {
-    const newDate = new Date(selectedDate);
-    newDate.setDate(newDate.getDate() + days);
-    setSelectedDate(newDate);
-    setSearchParams((current) => { current.set('date', formatDate(newDate)); return current; });
+    const newDate = addCalendarDays(selectedDate, days);
+    setSearchParams((current) => { current.set('date', newDate); return current; });
   };
 
   const handleAppointmentClick = (appointment: Appointment) => {
@@ -73,9 +64,9 @@ export default function AppointmentsList() {
 
   const formatTime = (dateString: string) => formatTimeUtil(dateString, i18n.language);
 
-  const formatDateDisplay = (date: Date) => {
+  const formatDateDisplay = (date: string) => {
     const locale = i18n.language === 'ar' ? 'ar-KW' : 'en-GB';
-    return date.toLocaleDateString(locale, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    return formatKuwaitCalendarDate(date, locale);
   };
 
   if (isLoading) {
@@ -103,11 +94,14 @@ export default function AppointmentsList() {
   );
 
   // Generate time slots for calendar view
-  const timeSlots = [];
+  const defaultTimeSlots = [];
   for (let hour = 8; hour <= 20; hour++) {
-    timeSlots.push(`${hour.toString().padStart(2, '0')}:00`);
-    timeSlots.push(`${hour.toString().padStart(2, '0')}:30`);
+    defaultTimeSlots.push(`${hour.toString().padStart(2, '0')}:00`);
+    defaultTimeSlots.push(`${hour.toString().padStart(2, '0')}:30`);
   }
+
+  const appointmentsByTime = groupAppointmentsByKuwaitTime(appointments);
+  const timeSlots = [...new Set([...defaultTimeSlots, ...appointmentsByTime.keys()])].sort();
 
   return (
     <div className="page-container">
@@ -191,10 +185,7 @@ export default function AppointmentsList() {
           <div className="bg-white rounded-lg shadow-md overflow-hidden">
             <div className="divide-y divide-gray-200">
               {timeSlots.map((time) => {
-                const slotAppointments = appointments.filter((apt) => {
-                  const aptTime = formatTime(apt.scheduledAt);
-                  return aptTime === time;
-                });
+                const slotAppointments = appointmentsByTime.get(time) || [];
 
                 return (
                   <div
