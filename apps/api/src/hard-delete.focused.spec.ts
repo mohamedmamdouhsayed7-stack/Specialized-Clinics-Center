@@ -11,7 +11,7 @@ function transactionClient() {
     appointment: { findUnique: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
     visit: { findUnique: jest.fn(), findFirst: jest.fn().mockResolvedValue(null), delete: jest.fn(), deleteMany: jest.fn() },
     service: { findUnique: jest.fn(), delete: jest.fn() },
-    invoice: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), delete: jest.fn(), deleteMany: jest.fn() },
+    invoice: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]), updateMany: jest.fn(), delete: jest.fn(), deleteMany: jest.fn() },
     invoiceItem: { findUnique: jest.fn(), deleteMany: jest.fn(), updateMany: jest.fn() },
     invoiceAdditionalCharge: { findUnique: jest.fn(), deleteMany: jest.fn() },
     payment: { findUnique: jest.fn(), deleteMany: jest.fn() },
@@ -85,15 +85,17 @@ describe('focused permanent-delete safety', () => {
     expect(client.auditLog.create).toHaveBeenCalled();
   });
 
-  it('blocks appointments linked to visits and deletes unlinked appointments', async () => {
+  it('deletes appointments linked to visits and deletes unlinked appointments', async () => {
     const linked = transactionClient();
     linked.client.appointment.findUnique.mockResolvedValue({
       id: 'appointment-id',
-      visit: { id: 'visit-id' },
+      patientId: 'patient-id',
+      visit: { id: 'visit-id', patientId: 'patient-id' },
     });
     await expect(new AppointmentsService(linked.prisma as never, auditService as never).hardDelete('appointment-id', 'user-id'))
-      .rejects.toThrow('linked to a visit');
-    expect(linked.client.appointment.delete).not.toHaveBeenCalled();
+      .resolves.toEqual({ id: 'appointment-id', deleted: true });
+    expect(linked.client.visit.delete).toHaveBeenCalledWith({ where: { id: 'visit-id' } });
+    expect(linked.client.appointment.delete).toHaveBeenCalled();
 
     const eligible = transactionClient();
     eligible.client.appointment.findUnique.mockResolvedValue({
@@ -109,15 +111,17 @@ describe('focused permanent-delete safety', () => {
     expect(eligible.client.auditLog.create).toHaveBeenCalled();
   });
 
-  it('blocks visits with invoices or protected medical history', async () => {
+  it('deletes visits with invoices and protected medical history', async () => {
     const invoiced = transactionClient();
     invoiced.client.visit.findUnique.mockResolvedValue({
       id: 'visit-id',
-      invoices: [{ invoiceNumber: 'INV-1' }],
+      invoices: [{ id: 'invoice-id', patientId: 'patient-id' }],
+      patientId: 'patient-id',
     });
     await expect(new VisitsService(invoiced.prisma as never, auditService as never).hardDelete('visit-id', 'user-id'))
-      .rejects.toThrow('linked to invoice');
-    expect(invoiced.client.visit.delete).not.toHaveBeenCalled();
+      .resolves.toEqual({ id: 'visit-id', deleted: true });
+    expect(invoiced.client.invoice.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['invoice-id'] } } });
+    expect(invoiced.client.visit.delete).toHaveBeenCalled();
 
     const completed = transactionClient();
     completed.client.visit.findUnique.mockResolvedValue({
@@ -130,8 +134,8 @@ describe('focused permanent-delete safety', () => {
       invoices: [],
     });
     await expect(new VisitsService(completed.prisma as never, auditService as never).hardDelete('visit-id', 'user-id'))
-      .rejects.toThrow('medical history');
-    expect(completed.client.visit.delete).not.toHaveBeenCalled();
+      .resolves.toEqual({ id: 'visit-id', deleted: true });
+    expect(completed.client.visit.delete).toHaveBeenCalled();
   });
 
   it('deletes a service referenced by invoice items (sets serviceId to NULL)', async () => {
@@ -185,15 +189,15 @@ describe('focused permanent-delete safety', () => {
     expect(client.paymentAllocation.deleteMany).toHaveBeenCalledWith({
       where: {
         OR: [
-          { invoiceId: 'invoice-id' },
-          { payment: { invoiceId: 'invoice-id' } },
+          { invoiceId: { in: ['invoice-id'] } },
+          { payment: { invoiceId: { in: ['invoice-id'] } } },
         ],
       },
     });
-    expect(client.payment.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: 'invoice-id' } });
-    expect(client.invoiceItem.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: 'invoice-id' } });
-    expect(client.invoiceAdditionalCharge.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: 'invoice-id' } });
-    expect(client.invoice.delete).toHaveBeenCalledWith({ where: { id: 'invoice-id' } });
+    expect(client.payment.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: { in: ['invoice-id'] } } });
+    expect(client.invoiceItem.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: { in: ['invoice-id'] } } });
+    expect(client.invoiceAdditionalCharge.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: { in: ['invoice-id'] } } });
+    expect(client.invoice.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['invoice-id'] } } });
     expect(client.auditLog.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         action: 'DELETE_PERMANENT',
@@ -203,7 +207,7 @@ describe('focused permanent-delete safety', () => {
     }));
   });
 
-  it('rejects deletion when an owned payment credits another invoice', async () => {
+  it('removes cross-invoice allocations without deleting the other invoice or its payment', async () => {
     const { prisma, client } = transactionClient();
     client.invoice.findUnique.mockResolvedValue({
       id: 'invoice-id',
@@ -218,19 +222,17 @@ describe('focused permanent-delete safety', () => {
       replacedByInvoiceId: null,
       replacementInvoices: [],
     });
-    client.paymentAllocation.findMany.mockResolvedValue([{ invoiceId: 'replacement-id' }]);
-
     await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(
       'invoice-id',
       'user-id',
       UserRole.ADMIN,
-    )).rejects.toThrow('payment allocation is linked to another invoice');
-    expect(client.paymentAllocation.deleteMany).not.toHaveBeenCalled();
-    expect(client.payment.deleteMany).not.toHaveBeenCalled();
-    expect(client.invoice.delete).not.toHaveBeenCalled();
+    )).resolves.toEqual({ id: 'invoice-id', deleted: true });
+    expect(client.paymentAllocation.deleteMany).toHaveBeenCalled();
+    expect(client.payment.deleteMany).toHaveBeenCalledWith({ where: { invoiceId: { in: ['invoice-id'] } } });
+    expect(client.invoice.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['invoice-id'] } } });
   });
 
-  it('rejects deletion when the invoice has a replacement relationship', async () => {
+  it('clears replacement references when deleting an invoice', async () => {
     const { prisma, client } = transactionClient();
     client.invoice.findUnique.mockResolvedValue({
       id: 'invoice-id',
@@ -250,8 +252,11 @@ describe('focused permanent-delete safety', () => {
       'invoice-id',
       'user-id',
       UserRole.ADMIN,
-    )).rejects.toThrow('replacement relationship');
-    expect(client.paymentAllocation.deleteMany).not.toHaveBeenCalled();
-    expect(client.invoice.delete).not.toHaveBeenCalled();
+    )).resolves.toEqual({ id: 'invoice-id', deleted: true });
+    expect(client.invoice.updateMany).toHaveBeenCalledWith({
+      where: { replacedByInvoiceId: { in: ['invoice-id'] } },
+      data: { replacedByInvoiceId: null },
+    });
+    expect(client.invoice.deleteMany).toHaveBeenCalled();
   });
 });

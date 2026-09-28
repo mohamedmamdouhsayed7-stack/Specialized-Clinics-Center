@@ -247,7 +247,7 @@ export default function PatientProfile() {
                   {t('patients.archivedNotice')}
                 </div>
               )}
-              {(user?.role === 'ADMIN' || user?.role === 'RECEPTIONIST') && (
+              {user?.role === 'ADMIN' && (
                 <button type="button" onClick={() => setShowDeleteDialog(true)} className="mt-3 w-full rounded-md border border-red-300 bg-red-50 py-2 text-red-700 transition-colors hover:bg-red-100">
                   {t('patients.deletePermanently')}
                 </button>

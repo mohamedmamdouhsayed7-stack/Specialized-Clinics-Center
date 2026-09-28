@@ -8,6 +8,7 @@ import { AddChargeDto } from './dto/add-charge.dto';
 import { CreateReplacementDto } from './dto/create-replacement.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { runPermanentDelete } from '../common/permanent-delete';
+import { deleteInvoiceTree } from '../common/delete-invoice-tree';
 
 const INVOICE_ITEM_INCLUDE = {
   invoiceItems: {
@@ -339,10 +340,6 @@ export class InvoicesService {
           paid: true,
           remaining: true,
           paymentStatus: true,
-          replacedByInvoiceId: true,
-          replacementInvoices: {
-            select: { id: true },
-          },
         },
       });
 
@@ -350,42 +347,7 @@ export class InvoicesService {
         throw new NotFoundException('Invoice not found');
       }
 
-      if (invoice.replacedByInvoiceId || (invoice.replacementInvoices?.length ?? 0) > 0) {
-        throw new BadRequestException(
-          'This invoice cannot be permanently deleted because it has a replacement relationship.',
-        );
-      }
-
-      const crossInvoiceAllocations = await tx.paymentAllocation.findMany({
-        where: {
-          OR: [
-            { payment: { invoiceId: id }, invoiceId: { not: id } },
-            { invoiceId: id, payment: { invoiceId: { not: id } } },
-          ],
-        },
-        select: { id: true },
-      }) ?? [];
-
-      if (crossInvoiceAllocations.length > 0) {
-        throw new BadRequestException(
-          'This invoice cannot be permanently deleted because a payment allocation is linked to another invoice.',
-        );
-      }
-
-      // Allocations belonging to this invoice can be removed only after the
-      // cross-invoice payment-credit check above has passed.
-      await tx.paymentAllocation.deleteMany({
-        where: {
-          OR: [
-            { invoiceId: id },
-            { payment: { invoiceId: id } },
-          ],
-        },
-      });
-      await tx.payment.deleteMany({ where: { invoiceId: id } });
-      await tx.invoiceItem.deleteMany({ where: { invoiceId: id } });
-      await tx.invoiceAdditionalCharge.deleteMany({ where: { invoiceId: id } });
-      await tx.invoice.delete({ where: { id } });
+      await deleteInvoiceTree(tx, [id]);
 
       await tx.auditLog.create({
         data: {

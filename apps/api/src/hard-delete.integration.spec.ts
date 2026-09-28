@@ -143,7 +143,7 @@ describe('permanent delete relations (disposable PostgreSQL)', () => {
     expect(await prisma.payment.count({ where: { invoiceId: invoice.id } })).toBe(1);
   });
 
-  it('keeps cross-invoice payment allocations protected for patient and invoice deletes', async () => {
+  it('deletes allocations touching the target tree while preserving external payments and invoices', async () => {
     const sourcePatient = await createPatient();
     const targetPatient = await createPatient();
     const sourceVisit = await createVisit(sourcePatient.id);
@@ -156,49 +156,89 @@ describe('permanent delete relations (disposable PostgreSQL)', () => {
     });
 
     await expect(new PatientsService(prisma as never, auditService as never).hardDelete(targetPatient.id, userId))
-      .rejects.toThrow('payment allocation is linked to another invoice');
-    await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(
-      targetInvoice.id, userId, UserRole.ADMIN,
-    )).rejects.toThrow('payment allocation is linked to another invoice');
+      .resolves.toEqual({ id: targetPatient.id, deleted: true });
 
-    expect(await prisma.paymentAllocation.findUnique({ where: { id: allocation.id } })).not.toBeNull();
+    expect(await prisma.paymentAllocation.findUnique({ where: { id: allocation.id } })).toBeNull();
     expect(await prisma.invoice.findUnique({ where: { id: sourceInvoice.id } })).not.toBeNull();
-    expect(await prisma.invoice.findUnique({ where: { id: targetInvoice.id } })).not.toBeNull();
+    expect(await prisma.payment.findUnique({ where: { id: payment.id } })).not.toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: targetInvoice.id } })).toBeNull();
   });
 
-  it('protects a patient whose invoices participate in a replacement relationship', async () => {
+  it('deletes one invoice replacement and allocation tree without deleting external financial records', async () => {
     const patient = await createPatient();
+    const externalPatient = await createPatient();
+    const visit = await createVisit(patient.id);
+    const externalVisit = await createVisit(externalPatient.id);
+    const invoice = await createInvoice(patient.id, visit.id);
+    const externalInvoice = await createInvoice(externalPatient.id, externalVisit.id);
+    const ownedPayment = await prisma.payment.create({ data: { invoiceId: invoice.id, amount: 20, method: 'CASH' } });
+    const externalPayment = await prisma.payment.create({ data: { invoiceId: externalInvoice.id, amount: 20, method: 'CASH' } });
+    const ownedAllocation = await prisma.paymentAllocation.create({
+      data: { paymentId: ownedPayment.id, invoiceId: externalInvoice.id, amount: 10 },
+    });
+    const incomingAllocation = await prisma.paymentAllocation.create({
+      data: { paymentId: externalPayment.id, invoiceId: invoice.id, amount: 10 },
+    });
+    await prisma.invoice.update({ where: { id: externalInvoice.id }, data: { replacedByInvoiceId: invoice.id } });
+
+    await expect(new InvoicesService(prisma as never, auditService as never).hardDelete(invoice.id, userId, UserRole.ADMIN))
+      .resolves.toEqual({ id: invoice.id, deleted: true });
+
+    expect(await prisma.invoice.findUnique({ where: { id: invoice.id } })).toBeNull();
+    expect(await prisma.payment.findUnique({ where: { id: ownedPayment.id } })).toBeNull();
+    expect(await prisma.paymentAllocation.findUnique({ where: { id: ownedAllocation.id } })).toBeNull();
+    expect(await prisma.paymentAllocation.findUnique({ where: { id: incomingAllocation.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: externalInvoice.id } })).toMatchObject({ replacedByInvoiceId: null });
+    expect(await prisma.payment.findUnique({ where: { id: externalPayment.id } })).not.toBeNull();
+  });
+
+  it('deletes in-scope replacements and clears external replacement references without deleting external invoices', async () => {
+    const patient = await createPatient();
+    const otherPatient = await createPatient();
     const firstVisit = await createVisit(patient.id);
     const replacementVisit = await createVisit(patient.id);
+    const externalVisit = await createVisit(otherPatient.id);
     const originalInvoice = await createInvoice(patient.id, firstVisit.id);
     const replacementInvoice = await createInvoice(patient.id, replacementVisit.id);
+    const externalInvoice = await createInvoice(otherPatient.id, externalVisit.id);
     await prisma.invoice.update({
       where: { id: originalInvoice.id },
       data: { replacedByInvoiceId: replacementInvoice.id },
     });
+    await prisma.invoice.update({
+      where: { id: externalInvoice.id },
+      data: { replacedByInvoiceId: originalInvoice.id },
+    });
 
     await expect(new PatientsService(prisma as never, auditService as never).hardDelete(patient.id, userId))
-      .rejects.toThrow('replacement relationship');
-    expect(await prisma.patient.findUnique({ where: { id: patient.id } })).not.toBeNull();
-    expect(await prisma.invoice.findUnique({ where: { id: originalInvoice.id } })).not.toBeNull();
-    expect(await prisma.invoice.findUnique({ where: { id: replacementInvoice.id } })).not.toBeNull();
+      .resolves.toEqual({ id: patient.id, deleted: true });
+    expect(await prisma.patient.findUnique({ where: { id: patient.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: originalInvoice.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: replacementInvoice.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: externalInvoice.id } })).toMatchObject({ replacedByInvoiceId: null });
   });
 
-  it('protects completed patient medical history before deleting any dependent rows', async () => {
+  it('deletes completed and in-progress patient history with the full related tree', async () => {
     const patient = await createPatient();
     const appointment = await prisma.appointment.create({
       data: { patientId: patient.id, scheduledAt: new Date(), status: AppointmentStatus.DONE },
     });
     const completedVisit = await createVisit(patient.id, VisitStatus.COMPLETED, appointment.id);
+    const inProgressVisit = await createVisit(patient.id, VisitStatus.IN_PROGRESS);
+    const invoice = await createInvoice(patient.id, completedVisit.id);
+    const payment = await prisma.payment.create({ data: { invoiceId: invoice.id, amount: 20, method: 'CASH' } });
 
     await expect(new PatientsService(prisma as never, auditService as never).hardDelete(patient.id, userId))
-      .rejects.toThrow('protected medical history');
-    expect(await prisma.patient.findUnique({ where: { id: patient.id } })).not.toBeNull();
-    expect(await prisma.appointment.findUnique({ where: { id: appointment.id } })).not.toBeNull();
-    expect(await prisma.visit.findUnique({ where: { id: completedVisit.id } })).not.toBeNull();
+      .resolves.toEqual({ id: patient.id, deleted: true });
+    expect(await prisma.patient.findUnique({ where: { id: patient.id } })).toBeNull();
+    expect(await prisma.appointment.findUnique({ where: { id: appointment.id } })).toBeNull();
+    expect(await prisma.visit.findUnique({ where: { id: completedVisit.id } })).toBeNull();
+    expect(await prisma.visit.findUnique({ where: { id: inProgressVisit.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: invoice.id } })).toBeNull();
+    expect(await prisma.payment.findUnique({ where: { id: payment.id } })).toBeNull();
   });
 
-  it('deletes an eligible cancelled visit and unlinked appointment; protects linked and completed history', async () => {
+  it('cascades appointment and visit deletes through invoices and payments regardless of visit status', async () => {
     const patient = await createPatient();
     const eligibleVisit = await createVisit(patient.id);
     const linkedAppointment = await prisma.appointment.create({
@@ -211,22 +251,28 @@ describe('permanent delete relations (disposable PostgreSQL)', () => {
     const completedVisit = await createVisit(patient.id, VisitStatus.COMPLETED);
     const invoicedVisit = await createVisit(patient.id);
     const protectedInvoice = await createInvoice(patient.id, invoicedVisit.id);
+    const linkedInvoice = await createInvoice(patient.id, linkedVisit.id);
+    const payment = await prisma.payment.create({ data: { invoiceId: linkedInvoice.id, amount: 10, method: 'CASH' } });
 
     await expect(new VisitsService(prisma as never, auditService as never).hardDelete(eligibleVisit.id, userId))
       .resolves.toEqual({ id: eligibleVisit.id, deleted: true });
     await expect(new AppointmentsService(prisma as never, auditService as never).hardDelete(unlinkedAppointment.id, userId))
       .resolves.toEqual({ id: unlinkedAppointment.id, deleted: true });
     await expect(new AppointmentsService(prisma as never, auditService as never).hardDelete(linkedAppointment.id, userId))
-      .rejects.toThrow('linked to a visit');
+      .resolves.toEqual({ id: linkedAppointment.id, deleted: true });
     await expect(new VisitsService(prisma as never, auditService as never).hardDelete(completedVisit.id, userId))
-      .rejects.toThrow('medical history');
+      .resolves.toEqual({ id: completedVisit.id, deleted: true });
     await expect(new VisitsService(prisma as never, auditService as never).hardDelete(invoicedVisit.id, userId))
-      .rejects.toThrow('linked to invoice');
+      .resolves.toEqual({ id: invoicedVisit.id, deleted: true });
 
-    expect(await prisma.visit.findUnique({ where: { id: linkedVisit.id } })).not.toBeNull();
-    expect(await prisma.appointment.findUnique({ where: { id: linkedAppointment.id } })).not.toBeNull();
-    expect(await prisma.visit.findUnique({ where: { id: completedVisit.id } })).not.toBeNull();
-    expect(await prisma.invoice.findUnique({ where: { id: protectedInvoice.id } })).not.toBeNull();
+    expect(await prisma.visit.findUnique({ where: { id: linkedVisit.id } })).toBeNull();
+    expect(await prisma.appointment.findUnique({ where: { id: linkedAppointment.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: linkedInvoice.id } })).toBeNull();
+    expect(await prisma.payment.findUnique({ where: { id: payment.id } })).toBeNull();
+    expect(await prisma.visit.findUnique({ where: { id: completedVisit.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: protectedInvoice.id } })).toBeNull();
+    expect(await prisma.visit.findUnique({ where: { id: invoicedVisit.id } })).toBeNull();
+    expect(await prisma.invoice.findUnique({ where: { id: protectedInvoice.id } })).toBeNull();
   });
 
   it('deletes invoice dependencies, preserves historical service snapshots, and nulls service references', async () => {

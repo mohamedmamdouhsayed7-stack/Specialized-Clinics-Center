@@ -23,7 +23,7 @@ export default function VisitDetail() {
   const returnTo = getReturnTo(searchParams.toString(), '/visits');
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const { refreshAccessToken } = useAuth();
+  const { user, refreshAccessToken } = useAuth();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const STATUS_LABELS: Record<VisitStatus, string> = {
@@ -101,10 +101,10 @@ export default function VisitDetail() {
         title={t('visits.detailsTitle')}
         subtitle={formatDateTime(visit.visitDate, i18n.language)}
         breadcrumbs={[{ label: t('sidebar.visits'), href: returnTo }, { label: t('visits.detailsTitle') }]}
-        actions={<div className="flex flex-wrap items-center gap-2"><span className="ui-badge" style={{ background: 'rgba(23,59,120,0.1)', color: 'var(--brand-blue)' }}>{STATUS_LABELS[visit.status]}</span><button onClick={() => setShowDeleteDialog(true)} className="btn-danger-outline px-3 py-1.5 text-sm">{t('visits.deletePermanently')}</button></div>}
+        actions={<div className="flex flex-wrap items-center gap-2"><span className="ui-badge" style={{ background: 'rgba(23,59,120,0.1)', color: 'var(--brand-blue)' }}>{STATUS_LABELS[visit.status]}</span>{user?.role === 'ADMIN' && <button onClick={() => setShowDeleteDialog(true)} className="btn-danger-outline px-3 py-1.5 text-sm">{t('visits.deletePermanently')}</button>}</div>}
       />
       <ConfirmDialog
-        open={showDeleteDialog}
+        open={user?.role === 'ADMIN' && showDeleteDialog}
         title={t('visits.deletePermanently')}
         message={t('visits.deleteWarning')}
         confirmLabel={deleteMutation.isPending ? t('common.loading') : t('common.confirm')}

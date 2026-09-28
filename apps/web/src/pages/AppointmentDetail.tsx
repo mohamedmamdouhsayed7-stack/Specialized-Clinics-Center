@@ -27,7 +27,7 @@ export default function AppointmentDetail() {
   const [searchParams] = useSearchParams();
   const returnTo = getReturnTo(searchParams.toString(), '/appointments');
   const { showToast } = useToast();
-  const { refreshAccessToken } = useAuth();
+  const { user, refreshAccessToken } = useAuth();
   const queryClient = useQueryClient();
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
@@ -157,15 +157,15 @@ export default function AppointmentDetail() {
               <button onClick={() => navigate(`/appointments/${appointment.id}/edit?returnTo=${encodeURIComponent(returnTo)}`)} className="btn-primary px-4 py-2">
                 {t('common.edit')}
               </button>
-              <button onClick={() => setShowDeleteDialog(true)} className="btn-danger-outline px-4 py-2">
+              {user?.role === 'ADMIN' && <button onClick={() => setShowDeleteDialog(true)} className="btn-danger-outline px-4 py-2">
                 {t('appointments.deletePermanently')}
-              </button>
+              </button>}
               <button onClick={() => navigate(returnTo)} className="rounded-md bg-gray-200 px-4 py-2 text-gray-700">{t('common.back')}</button>
             </div>
           }
         />
         <ConfirmDialog
-          open={showDeleteDialog}
+          open={user?.role === 'ADMIN' && showDeleteDialog}
           title={t('appointments.deletePermanently')}
           message={t('appointments.deleteWarning')}
           confirmLabel={deleteMutation.isPending ? t('common.loading') : t('common.confirm')}

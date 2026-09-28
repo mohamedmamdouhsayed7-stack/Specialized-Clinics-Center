@@ -8,6 +8,7 @@ import { UpdateStatusDto } from './dto/update-status.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
 import { localDayStartToUtc, localDayEndToUtc } from '../reports/reports.service';
 import { runPermanentDelete } from '../common/permanent-delete';
+import { deleteInvoiceTree } from '../common/delete-invoice-tree';
 
 @Injectable()
 export class AppointmentsService {
@@ -261,13 +262,22 @@ export class AppointmentsService {
     return runPermanentDelete(() => this.prisma.$transaction(async (tx) => {
       const appointment = await tx.appointment.findUnique({
         where: { id },
-        include: { visit: { select: { id: true } } },
+        include: { visit: { select: { id: true, patientId: true } } },
       });
       if (!appointment) throw new NotFoundException('Appointment not found');
       if (appointment.visit) {
-        throw new ConflictException(
-          'Appointment cannot be permanently deleted because it is linked to a visit. Preserve the appointment and visit history.',
-        );
+        if (appointment.visit.patientId !== appointment.patientId) {
+          throw new ConflictException('Appointment cannot be permanently deleted because its visit belongs to another patient.');
+        }
+        const invoices = await tx.invoice.findMany({
+          where: { visitId: appointment.visit.id },
+          select: { id: true, patientId: true },
+        });
+        if (invoices.some((invoice) => invoice.patientId !== appointment.patientId)) {
+          throw new ConflictException('Appointment cannot be permanently deleted because an invoice belongs to another patient.');
+        }
+        await deleteInvoiceTree(tx, invoices.map(({ id: invoiceId }) => invoiceId));
+        await tx.visit.delete({ where: { id: appointment.visit.id } });
       }
 
       await tx.appointment.delete({ where: { id } });
@@ -288,7 +298,7 @@ export class AppointmentsService {
         },
       });
       return { id, deleted: true };
-    }), 'Appointment cannot be permanently deleted because a related visit still depends on it.');
+    }), 'Appointment cannot be permanently deleted because related records still depend on it.');
   }
 
   async cancel(id: string, cancelDto: CancelAppointmentDto, userId: string, ipAddress?: string, userAgent?: string) {

@@ -4,7 +4,7 @@ import { CreatePatientDto } from './dto/create-patient.dto';
 import { UpdatePatientDto } from './dto/update-patient.dto';
 import { AuditService } from '../audit/audit.service';
 import { runPermanentDelete } from '../common/permanent-delete';
-import { VisitStatus } from '@prisma/client';
+import { deleteInvoiceTree } from '../common/delete-invoice-tree';
 
 function normalizeCivilIdSearch(value: string): string {
   return value
@@ -255,21 +255,11 @@ export class PatientsService {
       });
       if (!patient) throw new NotFoundException('Patient not found');
 
-      const protectedVisit = await tx.visit.findFirst({
-        where: { patientId: id, status: { in: [VisitStatus.COMPLETED, VisitStatus.IN_PROGRESS] } },
-        select: { id: true },
-      });
-      if (protectedVisit) {
-        throw new ConflictException('Patient cannot be permanently deleted because completed or in-progress visits are protected medical history.');
-      }
-
       const invoices = await tx.invoice.findMany({
         where: { OR: [{ patientId: id }, { visit: { patientId: id } }] },
         select: {
           id: true,
           patientId: true,
-          replacedByInvoiceId: true,
-          replacementInvoices: { select: { id: true } },
           visit: { select: { patientId: true } },
         },
       }) ?? [];
@@ -279,49 +269,8 @@ export class PatientsService {
         throw new ConflictException('Patient cannot be permanently deleted because an invoice links to another patient’s visit.');
       }
 
-      if (invoices.some((invoice) => invoice.replacedByInvoiceId || invoice.replacementInvoices.length > 0)) {
-        throw new ConflictException('Patient cannot be permanently deleted because an invoice has a replacement relationship.');
-      }
-
-      if (invoiceIds.length > 0) {
-        const crossInvoiceAllocations = await tx.paymentAllocation.findMany({
-          where: {
-            OR: [
-              { invoiceId: { in: invoiceIds }, payment: { invoiceId: { notIn: invoiceIds } } },
-              { payment: { invoiceId: { in: invoiceIds } }, invoiceId: { notIn: invoiceIds } },
-            ],
-          },
-          select: { id: true },
-        }) ?? [];
-        if (crossInvoiceAllocations.length > 0) {
-          throw new ConflictException('Patient cannot be permanently deleted because a payment allocation is linked to another invoice.');
-        }
-      }
-
-      // Delete all dependent records in the correct order to respect foreign key constraints
-      // 1. Delete allocations between invoices in this patient's aggregate.
-      if (invoiceIds.length > 0) {
-        await tx.paymentAllocation.deleteMany({
-          where: {
-            OR: [
-              { invoiceId: { in: invoiceIds } },
-              { payment: { invoiceId: { in: invoiceIds } } },
-            ],
-          },
-        });
-
-        // 2. Delete payments.
-        await tx.payment.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
-
-        // 3. Delete invoice items.
-        await tx.invoiceItem.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
-
-        // 4. Delete additional charges.
-        await tx.invoiceAdditionalCharge.deleteMany({ where: { invoiceId: { in: invoiceIds } } });
-
-        // 5. Delete invoices.
-        await tx.invoice.deleteMany({ where: { id: { in: invoiceIds } } });
-      }
+      // Remove all financial dependents first while preserving external payments/invoices.
+      await deleteInvoiceTree(tx, invoiceIds);
 
       // 6. Delete visits
       await tx.visit.deleteMany({
