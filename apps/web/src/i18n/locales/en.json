@@ -30,6 +30,8 @@
     "next": "Next",
     "allStatuses": "All statuses",
     "cancel": "Cancel",
+    "select": "Select",
+    "change": "Change",
     "saving": "Saving...",
     "saveChanges": "Save changes",
     "delete": "Delete",
@@ -183,6 +185,8 @@
     "loadError": "Failed to load patient data",
     "name": "Patient Name",
     "civilId": "Civil ID",
+    "optional": "optional",
+    "civilIdDigitsOnly": "Civil ID must contain digits only",
     "civilIdMissing": "Not provided",
     "legacyRecord": "Legacy record",
     "phone": "Phone",
@@ -281,6 +285,7 @@
     "createInvoiceBtn": "Create Invoice",
     "createError": "Failed to create visit",
     "patientRequired": "Patient is required",
+    "typeTelephoneConsultation": "Telephone consultation",
     "typeRequired": "Visit type is required",
     "invalidDateTime": "Invalid date/time",
     "notesTooLong": "Notes must not exceed 1000 characters",
@@ -523,7 +528,18 @@
     "confirmCancel": "Confirm Cancellation",
     "dateTimeLabel": "Date & Time",
     "patientArchived": "Archived patients cannot be booked for new appointments.",
-    "selectedPatient": "Selected patient"
+    "selectedPatient": "Selected patient",
+    "quickUnregistered": "Quick / unregistered appointment",
+    "quickUnregisteredHelp": "This appointment is not linked to a patient record. Link a registered patient before creating a visit.",
+    "linkPatient": "Link a registered patient",
+    "patientLinked": "Patient linked to appointment",
+    "linkPatientBeforeVisit": "Link a registered patient to this appointment before creating a visit."
+  },
+  "telephoneConsultation": {
+    "title": "Telephone consultation",
+    "noAttendance": "Record and bill a telephone consultation without clinic attendance or a regular appointment.",
+    "createDraft": "Create draft invoice",
+    "draftCreated": "Telephone consultation draft invoice created"
   },
   "reports": {
     "subtitle": "Comprehensive analytics on clinic performance and financial growth indicators",

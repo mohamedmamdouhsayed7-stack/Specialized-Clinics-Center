@@ -227,12 +227,13 @@ export class BackupService implements OnModuleInit {
     ];
   }
 
-  private createManagedRestoreFilter() {
+  private createManagedRestoreFilter(serverVersionNum: number) {
     let pending = '';
     let skippingStatement = false;
     let copyData = false;
     let dollarQuote: string | undefined;
     let skippedStatements = 0;
+    let skippedVersionSpecificSettings = 0;
     let blockCommentDepth = 0;
 
     const shouldSkipStatement = (line: string) => {
@@ -240,6 +241,9 @@ export class BackupService implements OnModuleInit {
       return /^(?:GRANT\b|REVOKE\b|ALTER\s+DEFAULT\s+PRIVILEGES\b|SET\s+SESSION\s+AUTHORIZATION\b|RESET\s+SESSION\s+AUTHORIZATION\b)/i.test(statement) ||
         (/^ALTER\b/i.test(statement) && /\bOWNER\s+TO\b/i.test(statement));
     };
+
+    const isUnsupportedVersionSetting = (line: string) =>
+      serverVersionNum < 170000 && /^SET\s+transaction_timeout\s*=\s*0\s*;$/i.test(line.trim());
 
     const updateDollarQuote = (line: string) => {
       let singleQuoted = false;
@@ -331,6 +335,12 @@ export class BackupService implements OnModuleInit {
               continue;
             }
 
+            if (isUnsupportedVersionSetting(normalized)) {
+              skippedVersionSpecificSettings += 1;
+              skippingStatement = !statement.endsWith(';');
+              continue;
+            }
+
             if (shouldSkipStatement(normalized)) {
               skippedStatements += 1;
               skippingStatement = !statement.endsWith(';');
@@ -348,7 +358,10 @@ export class BackupService implements OnModuleInit {
       flush: (callback) => {
         if (pending) {
           const statement = pending.trim();
-          if (!skippingStatement && shouldSkipStatement(pending)) {
+          if (!skippingStatement && isUnsupportedVersionSetting(pending)) {
+            skippedVersionSpecificSettings += 1;
+            skippingStatement = !statement.endsWith(';');
+          } else if (!skippingStatement && shouldSkipStatement(pending)) {
             skippedStatements += 1;
             skippingStatement = !statement.endsWith(';');
           } else if (!skippingStatement) {
@@ -363,7 +376,11 @@ export class BackupService implements OnModuleInit {
       },
     });
 
-    return { filter, getSkippedStatements: () => skippedStatements };
+    return {
+      filter,
+      getSkippedStatements: () => skippedStatements,
+      getSkippedVersionSpecificSettings: () => skippedVersionSpecificSettings,
+    };
   }
 
   private getRestoreFailureCategory(stderr: string): 'permission' | 'schema' | 'data' | 'database' {
@@ -608,6 +625,38 @@ export class BackupService implements OnModuleInit {
     if (exitCode !== 0) {
       throw new Error(`psql exited with code ${exitCode}`);
     }
+  }
+
+  private async getPostgresServerVersionNum(connection: ReturnType<BackupService['getDbConnectionParams']>): Promise<number> {
+    const { host, port, user, password, sslmode, database } = connection;
+    const versionProcess = spawn(
+      'psql',
+      [
+        '--host', host,
+        '--port', port,
+        '--username', user,
+        '--dbname', database,
+        '--no-psqlrc',
+        '--set=ON_ERROR_STOP=on',
+        '--tuples-only',
+        '--no-align',
+        '--command', 'SHOW server_version_num',
+      ],
+      { env: this.getPostgresProcessEnvironment(password, sslmode) },
+    );
+    let stdout = '';
+    let stderr = '';
+    versionProcess.stdout.on('data', (chunk) => { stdout = `${stdout}${chunk.toString()}`.slice(-128); });
+    versionProcess.stderr.on('data', (chunk) => { stderr = `${stderr}${chunk.toString()}`.slice(-4096); });
+    const exitCode = await this.waitForProcessExit(versionProcess);
+    if (exitCode !== 0) {
+      throw new Error(`Unable to determine PostgreSQL server version (psql exit code ${exitCode}): ${stderr}`);
+    }
+    const versionNum = Number(stdout.trim());
+    if (!Number.isInteger(versionNum) || versionNum < 10000) {
+      throw new Error('Unable to determine a valid PostgreSQL server_version_num');
+    }
+    return versionNum;
   }
 
   // Real @nestjs/schedule registration: every Sunday at 3:00 AM in Kuwait.
@@ -928,6 +977,7 @@ export class BackupService implements OnModuleInit {
         try {
         const connection = this.getDbConnectionParams();
         const { host, port, user, password, database, sslmode } = connection;
+        const serverVersionNum = await this.getPostgresServerVersionNum(connection);
 
         // Use ON_ERROR_STOP to ensure psql stops on first SQL error
         // Use single-transaction to ensure atomic restore
@@ -951,11 +1001,14 @@ export class BackupService implements OnModuleInit {
         });
 
         const gunzip = createGunzip();
-        const managedRestore = this.createManagedRestoreFilter();
+        const managedRestore = this.createManagedRestoreFilter(serverVersionNum);
         const input = createReadStream(validatedSnapshot);
         await this.completeRestoreProcess(psql, input, gunzip, managedRestore.filter);
         if (managedRestore.getSkippedStatements() > 0) {
           this.logger.warn(`Restore skipped ${managedRestore.getSkippedStatements()} unsupported ownership or ACL statement(s)`);
+        }
+        if (managedRestore.getSkippedVersionSpecificSettings() > 0) {
+          this.logger.warn(`Restore skipped ${managedRestore.getSkippedVersionSpecificSettings()} pg_dump PostgreSQL-version-specific setting(s) for server version ${serverVersionNum}`);
         }
         } catch (err) {
         // Restore failed - pre-restore safety backup remains available

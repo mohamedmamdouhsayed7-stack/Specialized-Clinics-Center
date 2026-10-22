@@ -41,7 +41,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     currency: 'KD', clinic: 'Specialized Clinics Center', noData: 'No data',
     UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid in Full',
     CASH: 'Cash', VISA: 'Visa', KNET: 'KNET', LINK: 'Payment Link', OTHER: 'Other',
-    CHECKUP: 'Checkup', FOLLOW_UP: 'Follow-up',
+    CHECKUP: 'Checkup', FOLLOW_UP: 'Follow-up', TELEPHONE_CONSULTATION: 'Telephone consultation',
     BOOKED: 'Booked', CONFIRMED: 'Confirmed', DONE: 'Done', CANCELLED: 'Cancelled', NO_SHOW: 'No Show',
   },
   ar: {
@@ -59,7 +59,7 @@ const TEXT: Record<Lang, Record<string, string>> = {
     currency: 'د.ك', clinic: 'مركز العيادات التخصصية', noData: 'لا توجد بيانات',
     UNPAID: 'غير مدفوعة', PARTIALLY_PAID: 'مدفوعة جزئيًا', PAID: 'مدفوعة بالكامل',
     CASH: 'نقداً', VISA: 'فيزا', KNET: 'كي نت', LINK: 'رابط دفع', OTHER: 'أخرى',
-    CHECKUP: 'كشف', FOLLOW_UP: 'متابعة',
+    CHECKUP: 'كشف', FOLLOW_UP: 'متابعة', TELEPHONE_CONSULTATION: 'استشارة هاتفية',
     BOOKED: 'محجوز', CONFIRMED: 'مؤكد', DONE: 'تم', CANCELLED: 'ملغي', NO_SHOW: 'لم يحضر',
   },
 };
@@ -72,6 +72,13 @@ function label(t: Record<string, string>, key: string): string {
 }
 function escapeHtml(input: string): string {
   return input.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function formatKuwaitDateTime(value: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuwait', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(value);
 }
 
 export function renderReportsHtml(data: ReportsExportData, lang: Lang): string {
@@ -180,7 +187,7 @@ export function renderReportsHtml(data: ReportsExportData, lang: Lang): string {
     </div>
     <div class="meta">
       <div>${t.period}: ${data.from} — ${data.to}</div>
-      <div>${t.generatedAt}: ${now.toISOString().slice(0, 16).replace('T', ' ')}</div>
+      <div>${t.generatedAt}: ${formatKuwaitDateTime(now)}</div>
     </div>
   </div>
 

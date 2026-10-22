@@ -98,7 +98,9 @@ export default function InvoicesList() {
 
   return (
     <div className="page-container">
-        <PageHeader title={t('sidebar.invoices')} breadcrumbs={[{ label: t('sidebar.invoices') }]} />
+        <PageHeader title={t('sidebar.invoices')} breadcrumbs={[{ label: t('sidebar.invoices') }]} actions={
+          <button onClick={() => navigate('/invoices/telephone-consultation')} className="btn-primary px-4 py-2">{t('telephoneConsultation.title')}</button>
+        } />
 
         <div className="ui-card mb-6 p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">

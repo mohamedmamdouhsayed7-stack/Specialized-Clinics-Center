@@ -13,6 +13,7 @@ import { visitsService } from '../services/visits.service';
 import { reportsService } from '../services/reports.service';
 import { formatMoney } from '../utils/money';
 import { formatDate } from '../utils/dateFormat';
+import { addCalendarDays, getKuwaitCalendarDate } from '../utils/kuwaitDateTime';
 
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
@@ -23,17 +24,8 @@ export default function Dashboard() {
 
   const roleLabel = user?.role === 'ADMIN' ? t('roles.admin') : t('roles.receptionist');
 
-  // Helper to format date as YYYY-MM-DD in local timezone
-  const formatDateLocal = (date: Date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // Get today's date in YYYY-MM-DD format for API calls (local timezone)
-  const today = formatDateLocal(new Date());
-  const weekAgo = formatDateLocal(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const today = getKuwaitCalendarDate();
+  const weekAgo = addCalendarDays(today, -7);
 
   // Fetch total patients count
   const { data: patientsData, isLoading: patientsLoading } = useQuery({
@@ -52,7 +44,7 @@ export default function Dashboard() {
   // Fetch week visits count
   const { data: visitsData, isLoading: visitsLoading } = useQuery({
     queryKey: ['visits', 'week', weekAgo, today],
-    queryFn: () => visitsService.getVisits(undefined, undefined, undefined, undefined, weekAgo, today, undefined, 1, 1),
+    queryFn: () => visitsService.getVisits(undefined, undefined, undefined, undefined, weekAgo, today, undefined, 1, 1, true),
     select: (data) => data.meta.total,
   });
 

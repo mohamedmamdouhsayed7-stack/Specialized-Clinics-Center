@@ -30,6 +30,8 @@
     "next": "التالي",
     "allStatuses": "كل الحالات",
     "cancel": "إلغاء",
+    "select": "اختر",
+    "change": "تغيير",
     "saving": "جاري الحفظ...",
     "saveChanges": "حفظ التغييرات",
     "delete": "حذف",
@@ -183,6 +185,8 @@
     "loadError": "فشل في تحميل بيانات المرضى",
     "name": "اسم المريض",
     "civilId": "الرقم المدني",
+    "optional": "اختياري",
+    "civilIdDigitsOnly": "يجب أن يتكون الرقم المدني من أرقام فقط",
     "civilIdMissing": "غير متوفر",
     "legacyRecord": "سجل قديم",
     "phone": "هاتف",
@@ -281,6 +285,7 @@
     "createInvoiceBtn": "إنشاء فاتورة",
     "createError": "فشل في إنشاء الزيارة",
     "patientRequired": "المريض مطلوب",
+    "typeTelephoneConsultation": "استشارة هاتفية",
     "typeRequired": "نوع الزيارة مطلوب",
     "invalidDateTime": "تاريخ ووقت غير صالح",
     "notesTooLong": "الملاحظات يجب أن لا تتجاوز 1000 حرف",
@@ -523,7 +528,18 @@
     "confirmCancel": "تأكيد الإلغاء",
     "dateTimeLabel": "التاريخ والوقت",
     "patientArchived": "لا يمكن حجز مواعيد جديدة للمرضى المؤرشفين.",
-    "selectedPatient": "المريض المحدد"
+    "selectedPatient": "المريض المحدد",
+    "quickUnregistered": "موعد سريع / غير مسجل",
+    "quickUnregisteredHelp": "هذا الموعد غير مرتبط بملف مريض. اربط مريضًا مسجلًا قبل إنشاء زيارة.",
+    "linkPatient": "ربط مريض مسجل",
+    "patientLinked": "تم ربط المريض بالموعد",
+    "linkPatientBeforeVisit": "اربط مريضًا مسجلًا بهذا الموعد قبل إنشاء زيارة."
+  },
+  "telephoneConsultation": {
+    "title": "استشارة هاتفية",
+    "noAttendance": "سجل الاستشارة الهاتفية وأصدر فاتورتها دون حضور المريض إلى العيادة أو الحاجة إلى موعد عادي.",
+    "createDraft": "إنشاء فاتورة مسودة",
+    "draftCreated": "تم إنشاء مسودة فاتورة الاستشارة الهاتفية"
   },
   "reports": {
     "subtitle": "تحليلات شاملة لأداء العيادة ومؤشرات النمو المالية",

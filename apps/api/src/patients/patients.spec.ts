@@ -118,6 +118,15 @@ describe('Patients Module Tests (E2E)', () => {
       expect(response.body.fullNameAr).toBe('مريم علي');
     });
 
+    it.each(['omitted', 'empty', 'whitespace'])('should create patient when Civil ID is %s', async (civilIdState) => {
+      const body: Record<string, string> = { fullNameAr: `بدون رقم ${civilIdState}` };
+      if (civilIdState === 'empty') body.civilId = '';
+      if (civilIdState === 'whitespace') body.civilId = '   ';
+      const response = await request(app.getHttpServer())
+        .post('/api/patients').set('Authorization', `Bearer ${adminAccessToken}`).send(body).expect(201);
+      expect(response.body.civilId).toBeNull();
+    });
+
     it('should reject duplicate Civil ID', async () => {
       await request(app.getHttpServer())
         .post('/api/patients')
@@ -139,20 +148,16 @@ describe('Patients Module Tests (E2E)', () => {
         .expect(401);
     });
 
-    it('should validate required fields', async () => {
+    it('should still require the Arabic patient name', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/patients')
         .set('Authorization', `Bearer ${adminAccessToken}`)
         .send({
-          fullNameAr: 'Test Name',
+          civilId: '12345678912',
         })
         .expect(400);
 
-      expect(response.body.message).toEqual(
-        expect.arrayContaining([
-          expect.stringContaining('civilId')
-        ])
-      );
+      expect(response.body.message).toEqual(expect.arrayContaining([expect.stringContaining('fullNameAr')]));
     });
   });
 

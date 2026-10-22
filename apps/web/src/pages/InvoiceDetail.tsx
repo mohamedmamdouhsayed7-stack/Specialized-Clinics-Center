@@ -925,6 +925,8 @@ export default function InvoiceDetail() {
                 </Link>
 
                 {invoice.visit && (
+                  <>
+                  {invoice.visit.type === 'TELEPHONE_CONSULTATION' && <div className="mt-2 inline-block rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{t('visits.typeTelephoneConsultation')}</div>}
                   <Link
                     to={preserveListState(
                       `/visits/${invoice.visit.id}`,
@@ -937,6 +939,7 @@ export default function InvoiceDetail() {
                   >
                     {t('visits.detailsTitle')}
                   </Link>
+                  </>
                 )}
 
                 {(invoice.replacedByInvoiceId ||

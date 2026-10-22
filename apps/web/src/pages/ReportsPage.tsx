@@ -86,7 +86,7 @@ export default function ReportsPage() {
   };
   const reportPaymentMethods = new Set(['KNET', 'LINK', 'OTHER']);
   const VISIT_TYPE_LABELS: Record<string, string> = {
-    CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'),
+    CHECKUP: t('visits.typeCheckup'), FOLLOW_UP: t('visits.typeFollowUp'), OTHER: t('visits.typeOther'), TELEPHONE_CONSULTATION: t('visits.typeTelephoneConsultation'),
   };
 
   const [defaultFrom] = useState(todayMinus(29));

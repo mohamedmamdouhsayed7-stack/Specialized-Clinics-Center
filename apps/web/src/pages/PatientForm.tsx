@@ -94,9 +94,9 @@ export default function PatientForm({ patientId }: PatientFormProps) {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.civilId || !formData.civilId.trim()) {
-      newErrors.civilId = t('patients.civilIdRequired');
-    } else if (formData.civilId.length > 12) {
+    if (formData.civilId && !/^\d+$/.test(formData.civilId.trim())) {
+      newErrors.civilId = t('patients.civilIdDigitsOnly');
+    } else if (formData.civilId && formData.civilId.trim().length > 12) {
       newErrors.civilId = t('patients.civilIdTooLong');
     }
 
@@ -134,6 +134,7 @@ export default function PatientForm({ patientId }: PatientFormProps) {
     // become undefined (not sent) rather than an invalid empty date.
     const payload = {
       ...formData,
+      civilId: formData.civilId?.trim() || undefined,
       dateOfBirth: formData.dateOfBirth ? `${formData.dateOfBirth}T00:00:00.000Z` : undefined,
     };
 
@@ -192,7 +193,7 @@ export default function PatientForm({ patientId }: PatientFormProps) {
             {/* Civil ID */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                {t('patients.civilId')} <span className="text-red-500">*</span>
+                {t('patients.civilId')} <span className="text-gray-500">({t('patients.optional')})</span>
               </label>
               <input
                 type="text"

@@ -202,8 +202,8 @@ export default function AppointmentsList() {
                             className="mb-2 flex cursor-pointer items-center justify-between rounded bg-gray-50 p-3 hover:bg-gray-100"
                           >
                             <div>
-                              <div className="font-medium text-gray-900">{apt.patient.fullNameAr}</div>
-                              <div className="text-sm text-gray-500">{apt.patient.civilId}</div>
+                              <div className="font-medium text-gray-900">{apt.patient?.fullNameAr || t('appointments.quickUnregistered')}</div>
+                              {apt.patient?.civilId && <div className="text-sm text-gray-500">{apt.patient.civilId}</div>}
                             </div>
                             {getStatusBadge(apt.status)}
                           </div>
@@ -233,11 +233,11 @@ export default function AppointmentsList() {
                   .map((apt) => (
                     <MobileRecordCard
                       key={apt.id}
-                      title={apt.patient.fullNameAr}
+                      title={apt.patient?.fullNameAr || t('appointments.quickUnregistered')}
                       subtitle={formatTime(apt.scheduledAt)}
                       onClick={() => handleAppointmentClick(apt)}
                     >
-                      <MobileRecordField label={t('patients.civilId')} value={apt.patient.civilId} />
+                      {apt.patient?.civilId && <MobileRecordField label={t('patients.civilId')} value={apt.patient.civilId} />}
                       <MobileRecordField label={t('common.status')} value={getStatusBadge(apt.status)} />
                     </MobileRecordCard>
                   ))}
@@ -262,8 +262,8 @@ export default function AppointmentsList() {
                         className="hover:bg-gray-50 cursor-pointer"
                       >
                         <td className="px-6 py-4 text-gray-900">{formatTime(apt.scheduledAt)}</td>
-                        <td className="px-6 py-4 font-medium text-gray-900">{apt.patient.fullNameAr}</td>
-                        <td className="px-6 py-4 text-gray-600">{apt.patient.civilId}</td>
+                        <td className="px-6 py-4 font-medium text-gray-900">{apt.patient?.fullNameAr || t('appointments.quickUnregistered')}</td>
+                        <td className="px-6 py-4 text-gray-600">{apt.patient?.civilId || '—'}</td>
                         <td className="px-6 py-4">{getStatusBadge(apt.status)}</td>
                       </tr>
                     ))}

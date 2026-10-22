@@ -71,6 +71,9 @@ export class VisitsService {
   ) {}
 
   async create(createVisitDto: CreateVisitDto, userId: string, ipAddress?: string, userAgent?: string) {
+    if (createVisitDto.type === VisitType.TELEPHONE_CONSULTATION) {
+      throw new BadRequestException('Create telephone consultations through the consultation billing workflow');
+    }
     // Validate patient exists and is not archived
     const patient = await this.prisma.patient.findUnique({
       where: { id: createVisitDto.patientId },
@@ -142,13 +145,14 @@ export class VisitsService {
     search?: string,
     page: number = 1,
     limit: number = 20,
+    physicalOnly = false,
   ) {
     const skip = (page - 1) * limit;
 
     const where: {
       patientId?: string;
       appointmentId?: string;
-      type?: VisitType;
+      type?: VisitType | { not: VisitType };
       status?: VisitStatus;
       visitDate?: { gte?: Date; lte?: Date };
       patient?: {
@@ -159,6 +163,7 @@ export class VisitsService {
     if (patientId) where.patientId = patientId;
     if (appointmentId) where.appointmentId = appointmentId;
     if (type) where.type = type;
+    else if (physicalOnly) where.type = { not: VisitType.TELEPHONE_CONSULTATION };
     if (status) where.status = status;
 
     if (from || to) {
@@ -205,7 +210,7 @@ export class VisitsService {
 
     const counts = await this.prisma.visit.groupBy({
       by: ['status'],
-      where: { visitDate: { gte: startOfDay, lte: endOfDay } },
+      where: { visitDate: { gte: startOfDay, lte: endOfDay }, type: { not: VisitType.TELEPHONE_CONSULTATION } },
       _count: { status: true },
     });
 
@@ -278,6 +283,9 @@ export class VisitsService {
   }
 
   async update(id: string, updateVisitDto: UpdateVisitDto, userId: string, ipAddress?: string, userAgent?: string) {
+    if (updateVisitDto.type === VisitType.TELEPHONE_CONSULTATION) {
+      throw new BadRequestException('Telephone consultations are managed through their invoice workflow');
+    }
     const visit = await this.findOne(id);
 
     // Validate patient if changing

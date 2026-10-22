@@ -7,15 +7,22 @@ import { renderReportsHtml, ReportsExportData } from './templates/reports-pdf-te
 const LABELS_EN: Record<string, string> = {
   CASH: 'Cash', VISA: 'Visa', KNET: 'KNET', LINK: 'Payment Link', OTHER: 'Other',
   UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially Paid', PAID: 'Paid in Full',
-  CHECKUP: 'Checkup', FOLLOW_UP: 'Follow-up',
+  CHECKUP: 'Checkup', FOLLOW_UP: 'Follow-up', TELEPHONE_CONSULTATION: 'Telephone consultation',
   BOOKED: 'Booked', CONFIRMED: 'Confirmed', DONE: 'Done', CANCELLED: 'Cancelled', NO_SHOW: 'No Show',
 };
 const LABELS_AR: Record<string, string> = {
   CASH: 'نقداً', VISA: 'فيزا', KNET: 'كي نت', LINK: 'رابط دفع', OTHER: 'أخرى',
   UNPAID: 'غير مدفوعة', PARTIALLY_PAID: 'مدفوعة جزئيًا', PAID: 'مدفوعة بالكامل',
-  CHECKUP: 'كشف', FOLLOW_UP: 'متابعة',
+  CHECKUP: 'كشف', FOLLOW_UP: 'متابعة', TELEPHONE_CONSULTATION: 'استشارة هاتفية',
   BOOKED: 'محجوز', CONFIRMED: 'مؤكد', DONE: 'تم', CANCELLED: 'ملغي', NO_SHOW: 'لم يحضر',
 };
+
+function formatKuwaitDateTime(value: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kuwait', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(value);
+}
 
 @Injectable()
 export class ReportsExportService {
@@ -107,7 +114,7 @@ export class ReportsExportService {
     summarySheet.columns = [{ width: 28 }, { width: 20 }];
     summarySheet.addRow([lang === 'ar' ? 'التقارير والتحليلات' : 'Reports & Analytics']);
     summarySheet.addRow([lang === 'ar' ? 'الفترة' : 'Period', `${f} — ${t}`]);
-    summarySheet.addRow([lang === 'ar' ? 'تاريخ الإنشاء' : 'Generated At', new Date().toISOString().slice(0, 16).replace('T', ' ')]);
+    summarySheet.addRow([lang === 'ar' ? 'تاريخ الإنشاء' : 'Generated At', formatKuwaitDateTime(new Date())]);
     summarySheet.addRow([]);
     const summaryHeaderRow = summarySheet.addRow([lang === 'ar' ? 'المؤشر' : 'Metric', lang === 'ar' ? 'القيمة' : 'Value']);
     styleHeader(summaryHeaderRow);

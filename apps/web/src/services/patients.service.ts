@@ -22,7 +22,7 @@ export interface Patient {
 }
 
 export interface CreatePatientDto {
-  civilId: string;
+  civilId?: string;
   fullNameAr: string;
   fullNameEn?: string;
   phone?: string;

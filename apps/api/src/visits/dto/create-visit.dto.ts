@@ -1,4 +1,4 @@
-import { IsString, IsUUID, IsDateString, IsOptional, IsNotEmpty, IsEnum, MaxLength } from 'class-validator';
+import { IsString, IsUUID, IsDateString, IsOptional, IsNotEmpty, IsEnum, MaxLength, Matches } from 'class-validator';
 import { VisitType } from '@prisma/client';
 
 export class CreateVisitDto {
@@ -15,6 +15,7 @@ export class CreateVisitDto {
   appointmentId?: string;
 
   @IsDateString()
+  @Matches(/(?:Z|[+-]\d{2}:?\d{2})$/i, { message: 'visitDate must include an explicit timezone offset' })
   @IsOptional()
   visitDate?: string;
 

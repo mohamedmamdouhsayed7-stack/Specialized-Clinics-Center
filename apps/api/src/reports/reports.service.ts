@@ -1,42 +1,30 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { Decimal } from '@prisma/client/runtime/library';
-
-// Clinic business timezone (Kuwait - used for KNET, KD, ar-KW localization)
-// Kuwait is UTC+3 year-round (no DST)
-const CLINIC_TIMEZONE_OFFSET_HOURS = 3; // UTC+3
+import { addCalendarDays, kuwaitLocalDateTimeToUtc } from '../common/kuwait-time';
 
 /**
  * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
  * the corresponding UTC instant for the start of that day (00:00:00 local).
  * This ensures PostgreSQL timestamp comparisons represent the exact local day.
  *
- * Example: "2026-09-18" in Kuwait (UTC+3) becomes "2026-09-17T21:00:00.000Z"
+ * Example: Kuwait midnight is resolved with the Asia/Kuwait timezone database.
  */
 export function localDayStartToUtc(dateStr: string): Date {
   const [year, month, day] = dateStr.split('-').map(Number);
-  
-  // Create a Date representing midnight UTC on the target date
-  const utcMidnight = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
-  
-  // Subtract the timezone offset to get the UTC instant that represents
-  // midnight in the clinic's local timezone
-  // For UTC+3: midnight local = 21:00 UTC previous day
-  const utcInstant = new Date(utcMidnight.getTime() - (CLINIC_TIMEZONE_OFFSET_HOURS * 60 * 60 * 1000));
-  
-  return utcInstant;
+  return kuwaitLocalDateTimeToUtc(year, month, day);
 }
 
 /**
  * Convert a local calendar date (YYYY-MM-DD) in the clinic's timezone to
  * the corresponding UTC instant for the end of that day (23:59:59.999 local).
  *
- * Example: "2026-09-18" in Kuwait (UTC+3) becomes "2026-09-18T20:59:59.999Z"
+ * Example: the local day ends one millisecond before the next Kuwait midnight.
  */
 export function localDayEndToUtc(dateStr: string): Date {
-  const start = localDayStartToUtc(dateStr);
-  // Add 24 hours and subtract 1 millisecond to get end of day
-  return new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+  const nextDate = addCalendarDays(dateStr, 1);
+  const [year, month, day] = nextDate.split('-').map(Number);
+  return new Date(kuwaitLocalDateTimeToUtc(year, month, day).getTime() - 1);
 }
 
 /**
@@ -81,9 +69,7 @@ export class ReportsService {
       }
       // If only 'to' is provided, calculate 29 days before it
       // We work with date strings (YYYY-MM-DD) which are timezone-independent
-      const toDateObj = new Date(to);
-      const fromDateObj = new Date(toDateObj.getTime() - 29 * 24 * 60 * 60 * 1000);
-      const fromDateStr = fromDateObj.toISOString().slice(0, 10);
+      const fromDateStr = addCalendarDays(to, -29);
       const fromDate = localDayStartToUtc(fromDateStr);
       return { fromDate, toDate };
     }
@@ -93,9 +79,7 @@ export class ReportsService {
     const toDate = localDayEndToUtc(todayStr);
     
     // Calculate 29 days ago using date strings (timezone-independent)
-    const todayDate = new Date(todayStr);
-    const fromDateDate = new Date(todayDate.getTime() - 29 * 24 * 60 * 60 * 1000);
-    const fromDateStr = fromDateDate.toISOString().slice(0, 10);
+    const fromDateStr = addCalendarDays(todayStr, -29);
     const fromDate = localDayStartToUtc(fromDateStr);
     
     return { fromDate, toDate };
@@ -132,7 +116,7 @@ export class ReportsService {
         where: { status: 'ISSUED', issuedAt: { gte: fromDate, lte: toDate } },
       }),
       this.prisma.visit.count({
-        where: { visitDate: { gte: fromDate, lte: toDate } },
+        where: { visitDate: { gte: fromDate, lte: toDate }, type: { not: 'TELEPHONE_CONSULTATION' } },
       }),
       this.prisma.patient.count({
         where: { createdAt: { gte: fromDate, lte: toDate } },
@@ -446,10 +430,10 @@ export class ReportsService {
         _count: { _all: true },
       }),
       this.prisma.visit.count({
-        where: { visitDate: { gte: dayStart, lte: dayEnd } },
+        where: { visitDate: { gte: dayStart, lte: dayEnd }, type: { not: 'TELEPHONE_CONSULTATION' } },
       }),
       this.prisma.visit.count({
-        where: { visitDate: { gte: dayStart, lte: dayEnd }, status: 'COMPLETED' },
+        where: { visitDate: { gte: dayStart, lte: dayEnd }, status: 'COMPLETED', type: { not: 'TELEPHONE_CONSULTATION' } },
       }),
       this.prisma.appointment.count({
         where: { scheduledAt: { gte: dayStart, lte: dayEnd } },

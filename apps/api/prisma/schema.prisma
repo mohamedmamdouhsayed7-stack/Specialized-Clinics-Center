@@ -27,6 +27,7 @@ enum VisitType {
   CHECKUP
   FOLLOW_UP
   OTHER
+  TELEPHONE_CONSULTATION
 }
 
 enum VisitStatus {
@@ -127,7 +128,7 @@ model Patient {
 
 model Appointment {
   id           String            @id @default(uuid()) @db.Uuid
-  patientId    String            @db.Uuid
+  patientId    String?           @db.Uuid
   scheduledAt  DateTime
   status       AppointmentStatus
   notes        String?
@@ -138,7 +139,7 @@ model Appointment {
   createdById String? @db.Uuid
 
   // Relations
-  patient Patient @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Restrict)
+  patient Patient? @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Restrict)
   visit   Visit?  @relation("AppointmentVisit")
 
   @@index([patientId, scheduledAt])

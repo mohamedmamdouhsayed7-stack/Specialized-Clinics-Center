@@ -27,7 +27,7 @@ export interface Visit {
   id: string;
   patientId: string;
   appointmentId?: string;
-  type: 'CHECKUP' | 'FOLLOW_UP' | 'OTHER';
+  type: 'CHECKUP' | 'FOLLOW_UP' | 'OTHER' | 'TELEPHONE_CONSULTATION';
   status: VisitStatus;
   visitDate: string;
   notes?: string;
@@ -106,7 +106,8 @@ class VisitsService {
     to?: string,
     search?: string,
     page: number = 1,
-    limit: number = 20
+    limit: number = 20,
+    physicalOnly = false,
   ): Promise<VisitsListResponse> {
     const params = new URLSearchParams();
     if (patientId) params.append('patientId', patientId);
@@ -116,6 +117,7 @@ class VisitsService {
     if (from) params.append('from', from);
     if (to) params.append('to', to);
     if (search) params.append('search', search);
+    if (physicalOnly) params.append('physicalOnly', 'true');
     params.append('page', page.toString());
     params.append('limit', limit.toString());
 

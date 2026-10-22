@@ -6,7 +6,7 @@ export function formatDate(value: string | Date | null | undefined, language: st
   const locale = language === 'ar' ? 'ar-KW' : 'en-GB';
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
     const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit' });
+    return new Date(Date.UTC(year, month - 1, day, 12)).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Kuwait' });
   }
   return new Date(value).toLocaleDateString(locale, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Kuwait' });
 }

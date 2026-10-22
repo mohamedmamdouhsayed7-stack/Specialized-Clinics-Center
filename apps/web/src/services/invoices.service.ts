@@ -76,6 +76,11 @@ export interface CreateInvoiceDto {
   paymentMethod?: 'KNET' | 'LINK' | 'OTHER';
 }
 
+export interface CreateTelephoneConsultationDto {
+  patientId: string;
+  items: CreateInvoiceItemDto[];
+}
+
 export interface AddChargeDto {
   chargeType: 'PERCENTAGE' | 'FIXED';
   chargeValue: number;
@@ -302,6 +307,14 @@ class InvoicesService {
       throw await parseApiError(response, 'Failed to create invoice');
     }
 
+    return response.json();
+  }
+
+  async createTelephoneConsultation(data: CreateTelephoneConsultationDto): Promise<Invoice> {
+    const response = await fetch(`${apiBaseUrl}/invoices/telephone-consultation`, {
+      method: 'POST', headers: this.getAuthHeaders(), body: JSON.stringify(data),
+    });
+    if (!response.ok) throw await parseApiError(response, 'Failed to create telephone consultation invoice');
     return response.json();
   }
 

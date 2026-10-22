@@ -45,7 +45,7 @@ export interface ServiceUsageRow {
 }
 
 export interface VisitTypeRow {
-  type: 'CHECKUP' | 'FOLLOW_UP' | 'OTHER';
+  type: 'CHECKUP' | 'FOLLOW_UP' | 'OTHER' | 'TELEPHONE_CONSULTATION';
   count: number;
 }
 

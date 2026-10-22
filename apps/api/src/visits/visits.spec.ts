@@ -114,6 +114,12 @@ describe('Visits Module Tests (E2E)', () => {
       testVisitId = response.body.id;
     });
 
+    it('rejects timezone-less visit datetimes', async () => {
+      await request(app.getHttpServer()).post('/api/visits')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ patientId: testPatientId, type: VisitType.CHECKUP, visitDate: '2026-10-23T10:30' }).expect(400);
+    });
+
     it('should create walk-in visit as receptionist', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/visits')
@@ -126,6 +132,12 @@ describe('Visits Module Tests (E2E)', () => {
 
       expect(response.body).toHaveProperty('id');
       expect(response.body.type).toBe(VisitType.FOLLOW_UP);
+    });
+
+    it('requires telephone consultations to use the billing workflow', async () => {
+      await request(app.getHttpServer()).post('/api/visits')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ patientId: testPatientId, type: 'TELEPHONE_CONSULTATION' }).expect(400);
     });
 
     it('should create visit linked to appointment', async () => {

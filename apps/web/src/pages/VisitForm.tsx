@@ -68,10 +68,14 @@ export default function VisitForm() {
   // Pre-fill patient from appointment if available
   useEffect(() => {
     if (appointmentData && !prefillPatientId) {
-      setFormData((prev) => ({ ...prev, patientId: appointmentData.patientId }));
+      if (!appointmentData.patientId || !appointmentData.patient) {
+        setErrors((previous) => ({ ...previous, general: t('appointments.linkPatientBeforeVisit') }));
+        return;
+      }
+      setFormData((prev) => ({ ...prev, patientId: appointmentData.patientId! }));
       setPatientSearch(appointmentData.patient.fullNameAr);
     }
-  }, [appointmentData, prefillPatientId]);
+  }, [appointmentData, prefillPatientId, t]);
 
   const createMutation = useMutation({
     mutationFn: (data: CreateVisitDto) => visitsService.createVisit(data),

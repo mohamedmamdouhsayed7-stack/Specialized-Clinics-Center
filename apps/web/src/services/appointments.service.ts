@@ -5,7 +5,7 @@ import { collectAppointmentPages } from '../utils/appointmentPages';
 
 export interface Appointment {
   id: string;
-  patientId: string;
+  patientId: string | null;
   scheduledAt: string;
   status: 'BOOKED' | 'CONFIRMED' | 'DONE' | 'CANCELLED' | 'NO_SHOW';
   notes?: string;
@@ -18,11 +18,11 @@ export interface Appointment {
     fullNameAr: string;
     fullNameEn?: string;
     phone?: string;
-  };
+  } | null;
 }
 
 export interface CreateAppointmentDto {
-  patientId: string;
+  patientId?: string;
   scheduledAt: string;
   notes?: string;
 }
@@ -130,6 +130,14 @@ class AppointmentsService {
       throw await parseApiError(response, 'Failed to update appointment');
     }
 
+    return response.json();
+  }
+
+  async linkPatient(id: string, patientId: string): Promise<Appointment> {
+    const response = await fetch(`${apiBaseUrl}/appointments/${id}/link-patient`, {
+      method: 'PATCH', headers: this.getAuthHeaders(), body: JSON.stringify({ patientId }),
+    });
+    if (!response.ok) throw await parseApiError(response, 'Failed to link appointment to patient');
     return response.json();
   }
 

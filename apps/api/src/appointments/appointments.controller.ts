@@ -4,6 +4,7 @@ import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
 import { CancelAppointmentDto } from './dto/cancel-appointment.dto';
+import { LinkAppointmentPatientDto } from './dto/link-appointment-patient.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -68,6 +69,13 @@ export class AppointmentsController {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.appointmentsService.updateStatus(id, updateStatusDto, req.user.id, ipAddress, userAgent);
+  }
+
+  @Patch(':id/link-patient')
+  @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
+  linkPatient(@Request() req, @Param('id', ParseUUIDPipe) id: string, @Body() dto: LinkAppointmentPatientDto) {
+    return this.appointmentsService.linkPatient(id, dto.patientId, req.user.id,
+      req.ip || req.connection.remoteAddress, req.headers['user-agent']);
   }
 
   @Patch(':id/cancel')

@@ -12,6 +12,7 @@ import Skeleton from '../components/Skeleton';
 import ModalDialog from '../components/ModalDialog';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { formatDateTime as formatLocalizedDateTime } from '../utils/dateFormat';
+import { patientsService } from '../services/patients.service';
 
 // Mask civilId for privacy while showing first and last digits
 // Handles null/empty civilId values safely
@@ -33,6 +34,7 @@ export default function AppointmentDetail() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelReasonType, setCancelReasonType] = useState('');
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [patientSearch, setPatientSearch] = useState('');
 
   const { data: appointment, isLoading, error } = useQuery({
     queryKey: ['appointment', id],
@@ -87,6 +89,21 @@ export default function AppointmentDetail() {
       navigate(returnTo);
     },
     onError: (deleteError: Error) => showToast({ type: 'error', message: deleteError.message }),
+  });
+  const { data: patientMatches } = useQuery({
+    queryKey: ['patients', 'link-appointment', patientSearch],
+    queryFn: () => patientsService.getPatients(patientSearch, false, 1, 10),
+    enabled: !!appointment && !appointment.patientId && patientSearch.trim().length >= 2,
+  });
+  const linkPatientMutation = useMutation({
+    mutationFn: (patientId: string) => appointmentsService.linkPatient(id!, patientId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointment', id] });
+      queryClient.invalidateQueries({ queryKey: ['appointments'] });
+      setPatientSearch('');
+      showToast({ type: 'success', message: t('appointments.patientLinked') });
+    },
+    onError: (error: Error) => showToast({ type: 'error', message: error.message }),
   });
 
   const getStatusBadge = (status: string) => {
@@ -187,13 +204,13 @@ export default function AppointmentDetail() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="text-sm text-gray-500 block mb-1">{t('patients.name')}</label>
-                      <p className="font-medium text-gray-900">{appointment.patient.fullNameAr}</p>
+                      <p className="font-medium text-gray-900">{appointment.patient?.fullNameAr || t('appointments.quickUnregistered')}</p>
                     </div>
                     <div>
                       <label className="text-sm text-gray-500 block mb-1">{t('patients.civilId')}</label>
-                      <p className="font-medium text-gray-900">{maskCivilId(appointment.patient.civilId)}</p>
+                      <p className="font-medium text-gray-900">{maskCivilId(appointment.patient?.civilId)}</p>
                     </div>
-                    {appointment.patient.phone && (
+                    {appointment.patient?.phone && (
                       <div>
                         <label className="text-sm text-gray-500 block mb-1">{t('patients.phone')}</label>
                         <p className="text-gray-900">{appointment.patient.phone}</p>
@@ -281,21 +298,32 @@ export default function AppointmentDetail() {
                   </button>
                 )}
 
-                {appointment.status !== 'CANCELLED' && appointment.status !== 'NO_SHOW' && (
+                {appointment.patientId && appointment.status !== 'CANCELLED' && appointment.status !== 'NO_SHOW' && (
                   <button
-                    onClick={() => navigate(`/visits/new?patientId=${encodeURIComponent(appointment.patientId)}&appointmentId=${encodeURIComponent(appointment.id)}&returnTo=${encodeURIComponent(`/appointments/${appointment.id}`)}`)}
+                    onClick={() => navigate(`/visits/new?patientId=${encodeURIComponent(appointment.patientId || '')}&appointmentId=${encodeURIComponent(appointment.id)}&returnTo=${encodeURIComponent(`/appointments/${appointment.id}`)}`)}
                     className="w-full py-2 bg-[#111844] text-white rounded-md hover:bg-[#1c2866] transition-colors"
                   >
                     {t('appointments.registerVisit')}
                   </button>
                 )}
 
-                <Link
+                {appointment.patient && <Link
                   to={preserveListState(`/patients/${appointment.patient.id}`, { pathname: `/appointments/${appointment.id}`, search: '' })}
                   className="w-full py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors"
                 >
                   {t('appointments.viewPatient')}
-                </Link>
+                </Link>}
+                {!appointment.patientId && <div className="space-y-2 rounded-md bg-blue-50 p-3">
+                  <p className="text-sm font-medium text-blue-900">{t('appointments.quickUnregistered')}</p>
+                  <label className="block text-sm text-gray-700">{t('appointments.linkPatient')}
+                    <input value={patientSearch} onChange={(event) => setPatientSearch(event.target.value)} className="mt-1 w-full rounded border border-gray-300 px-3 py-2" placeholder={t('visits.patientSearchPlaceholder')} />
+                  </label>
+                  <div className="max-h-48 overflow-auto">
+                    {(patientMatches?.data || []).filter((patient) => !patient.isArchived).map((patient) => <button key={patient.id} type="button" onClick={() => linkPatientMutation.mutate(patient.id)} disabled={linkPatientMutation.isPending} className="block w-full border-b bg-white p-2 text-right text-sm hover:bg-gray-50">
+                      {patient.fullNameAr}{patient.civilId ? ` · ${maskCivilId(patient.civilId)}` : ''}
+                    </button>)}
+                  </div>
+                </div>}
               </div>
             </div>
           </div>

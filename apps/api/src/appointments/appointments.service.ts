@@ -40,17 +40,12 @@ export class AppointmentsService {
   }
 
   async create(createAppointmentDto: CreateAppointmentDto, userId: string, ipAddress?: string, userAgent?: string) {
-    // Validate patient exists and is not archived
-    const patient = await this.prisma.patient.findUnique({
-      where: { id: createAppointmentDto.patientId },
-    });
-
-    if (!patient) {
-      throw new NotFoundException('Patient not found');
-    }
-
-    if (patient.isArchived) {
-      throw new BadRequestException('Cannot create appointment for archived patient');
+    if (createAppointmentDto.patientId) {
+      const patient = await this.prisma.patient.findUnique({
+        where: { id: createAppointmentDto.patientId },
+      });
+      if (!patient) throw new NotFoundException('Patient not found');
+      if (patient.isArchived) throw new BadRequestException('Cannot create appointment for archived patient');
     }
 
     const appointment = await this.prisma.appointment.create({
@@ -90,6 +85,27 @@ export class AppointmentsService {
     );
 
     return appointment;
+  }
+
+  async linkPatient(id: string, patientId: string, userId: string, ipAddress?: string, userAgent?: string) {
+    const appointment = await this.findOne(id);
+    if (appointment.patientId) throw new ConflictException('Appointment is already linked to a patient');
+    const patient = await this.prisma.patient.findUnique({ where: { id: patientId } });
+    if (!patient) throw new NotFoundException('Patient not found');
+    if (patient.isArchived) throw new BadRequestException('Cannot link an archived patient');
+    return this.prisma.$transaction(async (tx) => {
+      const linked = await tx.appointment.updateMany({ where: { id, patientId: null }, data: { patientId } });
+      if (!linked.count) throw new ConflictException('Appointment was linked to another patient');
+      const updated = await tx.appointment.findUniqueOrThrow({
+        where: { id },
+        include: { patient: { select: { id: true, civilId: true, fullNameAr: true, fullNameEn: true, phone: true } } },
+      });
+      await tx.auditLog.create({ data: {
+        userId, action: 'LINK_PATIENT', entityType: 'Appointment', entityId: id,
+        beforeState: { patientId: null }, afterState: { patientId: updated.patientId }, ipAddress, userAgent,
+      } });
+      return updated;
+    });
   }
 
   async findAll(
@@ -179,6 +195,17 @@ export class AppointmentsService {
   async update(id: string, updateAppointmentDto: UpdateAppointmentDto, userId: string, ipAddress?: string, userAgent?: string) {
     const appointment = await this.findOne(id);
 
+    if (updateAppointmentDto.patientId !== undefined && updateAppointmentDto.patientId !== appointment.patientId) {
+      if (!appointment.patientId) {
+        throw new BadRequestException('Use the dedicated patient-link action for an unregistered appointment');
+      }
+      const patient = await this.prisma.patient.findUnique({ where: { id: updateAppointmentDto.patientId } });
+      if (!patient) throw new NotFoundException('Patient not found');
+      if (patient.isArchived) throw new BadRequestException('Cannot link an archived patient');
+      const linkedVisit = await this.prisma.visit.findUnique({ where: { appointmentId: id }, select: { id: true } });
+      if (linkedVisit) throw new ConflictException('Cannot change the patient after a clinical visit has been created');
+    }
+
     const updated = await this.prisma.appointment.update({
       where: { id },
       data: {
@@ -266,14 +293,14 @@ export class AppointmentsService {
       });
       if (!appointment) throw new NotFoundException('Appointment not found');
       if (appointment.visit) {
-        if (appointment.visit.patientId !== appointment.patientId) {
+        if (!appointment.patientId || appointment.visit.patientId !== appointment.patientId) {
           throw new ConflictException('Appointment cannot be permanently deleted because its visit belongs to another patient.');
         }
         const invoices = await tx.invoice.findMany({
           where: { visitId: appointment.visit.id },
           select: { id: true, patientId: true },
         });
-        if (invoices.some((invoice) => invoice.patientId !== appointment.patientId)) {
+        if (!appointment.patientId || invoices.some((invoice) => invoice.patientId !== appointment.patientId)) {
           throw new ConflictException('Appointment cannot be permanently deleted because an invoice belongs to another patient.');
         }
         await deleteInvoiceTree(tx, invoices.map(({ id: invoiceId }) => invoiceId));

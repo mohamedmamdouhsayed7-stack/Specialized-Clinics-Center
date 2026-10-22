@@ -33,6 +33,7 @@ export default function AppointmentForm() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(-1);
+  const [quickAppointment, setQuickAppointment] = useState(!isEdit && !prefillPatientId);
   const initialFormData = useMemo(() => ({ patientId: prefillPatientId, scheduledAt: '', notes: '' }), [prefillPatientId]);
 
   const { data: existingAppointment, isLoading: isLoadingAppointment } = useQuery({
@@ -41,7 +42,7 @@ export default function AppointmentForm() {
     enabled: isEdit,
   });
   const baseline = existingAppointment
-    ? { patientId: existingAppointment.patientId, scheduledAt: toKuwaitDateTimeLocal(existingAppointment.scheduledAt), notes: existingAppointment.notes || '' }
+    ? { patientId: existingAppointment.patientId || undefined, scheduledAt: toKuwaitDateTimeLocal(existingAppointment.scheduledAt), notes: existingAppointment.notes || '' }
     : initialFormData;
   const isDirty = JSON.stringify(formData) !== JSON.stringify(baseline);
   const { confirmOpen, requestNavigation, stay, leave } = useUnsavedChanges(isDirty);
@@ -49,13 +50,14 @@ export default function AppointmentForm() {
   useEffect(() => {
     if (!existingAppointment) return;
     const next = {
-      patientId: existingAppointment.patientId,
+      patientId: existingAppointment.patientId || '',
       scheduledAt: toKuwaitDateTimeLocal(existingAppointment.scheduledAt),
       notes: existingAppointment.notes || '',
     };
     setFormData(next);
-    setPatientSearch(existingAppointment.patient.fullNameAr);
-    setSelectedPatient({
+    setPatientSearch(existingAppointment.patient?.fullNameAr || '');
+    setQuickAppointment(!existingAppointment.patientId);
+    setSelectedPatient(existingAppointment.patient ? {
       id: existingAppointment.patient.id,
       civilId: existingAppointment.patient.civilId,
       fullNameAr: existingAppointment.patient.fullNameAr,
@@ -63,7 +65,7 @@ export default function AppointmentForm() {
       isArchived: false,
       createdAt: '',
       updatedAt: '',
-    });
+    } : null);
   }, [existingAppointment]);
 
   const { data: prefilledPatient } = useQuery({
@@ -106,9 +108,9 @@ export default function AppointmentForm() {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
 
-    if (!formData.patientId || !selectedPatient || selectedPatient.id !== formData.patientId) {
+    if (!quickAppointment && (!formData.patientId || !selectedPatient || selectedPatient.id !== formData.patientId)) {
       newErrors.patientId = t('visits.patientRequired');
-    } else if (selectedPatient?.isArchived) {
+    } else if (!quickAppointment && selectedPatient?.isArchived) {
       newErrors.patientId = t('appointments.patientArchived');
     }
 
@@ -136,7 +138,8 @@ export default function AppointmentForm() {
       return;
     }
 
-    saveMutation.mutate({ ...formData, scheduledAt: kuwaitDateTimeLocalToIso(formData.scheduledAt) });
+    const payload = { ...formData, ...(quickAppointment ? { patientId: undefined } : {}), scheduledAt: kuwaitDateTimeLocalToIso(formData.scheduledAt) };
+    saveMutation.mutate(payload);
   };
 
   const handlePatientSelect = (patient: Patient) => {
@@ -145,6 +148,7 @@ export default function AppointmentForm() {
       return;
     }
     setFormData((prev) => ({ ...prev, patientId: patient.id }));
+    setQuickAppointment(false);
     setSelectedPatient(patient);
     setPatientSearch(patient.fullNameAr);
     setShowPatientDropdown(false);
@@ -205,7 +209,19 @@ export default function AppointmentForm() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {!isEdit && <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={quickAppointment} onChange={(event) => {
+                setQuickAppointment(event.target.checked);
+                setPatientSearch(''); setSelectedPatient(null);
+                setFormData((previous) => ({ ...previous, patientId: '' }));
+                setErrors((previous) => ({ ...previous, patientId: '' }));
+              }} />
+              {t('appointments.quickUnregistered')}
+            </label>}
+            {quickAppointment && <p className="text-sm text-blue-700">{t('appointments.quickUnregisteredHelp')}</p>}
+
             {/* Patient Selection */}
+            {!quickAppointment && (
             <div className="relative">
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 {t('visits.patient')} <span className="text-red-500">*</span>
@@ -270,6 +286,7 @@ export default function AppointmentForm() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Date and Time */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

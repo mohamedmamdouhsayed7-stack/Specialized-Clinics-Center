@@ -15,6 +15,7 @@ describe('Appointments Module Tests (E2E)', () => {
   let receptionistUserId: string;
   let testPatientId: string;
   let testAppointmentId: string;
+  let quickAppointmentId: string;
   let adminAccessToken: string;
   let receptionistAccessToken: string;
 
@@ -118,6 +119,42 @@ describe('Appointments Module Tests (E2E)', () => {
       testAppointmentId = response.body.id;
     });
 
+    it('should create, retrieve, list, update and link a quick appointment without creating a patient', async () => {
+      const scheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const created = await request(app.getHttpServer()).post('/api/appointments')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ scheduledAt, notes: 'Quick appointment' }).expect(201);
+      quickAppointmentId = created.body.id;
+      expect(created.body.patientId).toBeNull();
+      expect(created.body.patient).toBeNull();
+
+      const retrieved = await request(app.getHttpServer()).get(`/api/appointments/${quickAppointmentId}`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).expect(200);
+      expect(retrieved.body.patient).toBeNull();
+      const listed = await request(app.getHttpServer()).get('/api/appointments?page=1&limit=100')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).expect(200);
+      expect(listed.body.data.some((appointment: { id: string; patient: unknown }) => appointment.id === quickAppointmentId && appointment.patient === null)).toBe(true);
+
+      await request(app.getHttpServer()).post('/api/visits')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ patientId: testPatientId, appointmentId: quickAppointmentId, type: 'CHECKUP' }).expect(400);
+      await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ patientId: testPatientId }).expect(400);
+
+      await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ notes: 'Updated quick appointment' }).expect(200);
+      await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}/cancel`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ reason: 'No longer needed' }).expect(200);
+      const beforeLink = await prisma.appointment.findUnique({ where: { id: quickAppointmentId } });
+      await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}/link-patient`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ patientId: testPatientId }).expect(200);
+      const linked = await prisma.appointment.findUnique({ where: { id: quickAppointmentId } });
+      expect(linked?.patientId).toBe(testPatientId);
+      expect(linked?.scheduledAt.toISOString()).toBe(beforeLink?.scheduledAt.toISOString());
+      expect(linked?.notes).toBe(beforeLink?.notes);
+      expect(await prisma.auditLog.findFirst({ where: { entityType: 'Appointment', entityId: quickAppointmentId, action: 'LINK_PATIENT' } })).toBeTruthy();
+    });
+
     it('should create appointment as receptionist', async () => {
       const scheduledAt = new Date();
       scheduledAt.setDate(scheduledAt.getDate() + 2);
@@ -167,7 +204,7 @@ describe('Appointments Module Tests (E2E)', () => {
         .expect(401);
     });
 
-    it('should validate required fields', async () => {
+    it('should require the scheduled date while allowing a quick appointment without patientId', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/appointments')
         .set('Authorization', `Bearer ${adminAccessToken}`)
@@ -178,10 +215,15 @@ describe('Appointments Module Tests (E2E)', () => {
 
       expect(response.body.message).toEqual(
         expect.arrayContaining([
-          expect.stringContaining('patientId'),
           expect.stringContaining('scheduledAt'),
         ])
       );
+    });
+
+    it('rejects timezone-less appointment datetimes so the server timezone cannot reinterpret them', async () => {
+      await request(app.getHttpServer()).post('/api/appointments')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ scheduledAt: '2026-10-23T10:30' }).expect(400);
     });
   });
 

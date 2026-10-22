@@ -54,6 +54,7 @@ export default function VisitsList() {
     CHECKUP: t('visits.typeCheckup'),
     FOLLOW_UP: t('visits.typeFollowUp'),
     OTHER: t('visits.typeOther'),
+    TELEPHONE_CONSULTATION: t('visits.typeTelephoneConsultation'),
   };
 
   const { data: counts } = useQuery({

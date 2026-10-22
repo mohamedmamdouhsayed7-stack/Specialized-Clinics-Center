@@ -104,7 +104,8 @@ export default function PatientProfile() {
   const outstandingAmount = (invoicesData?.data || [])
     .filter((invoice) => invoice.status === 'ISSUED')
     .reduce((total, invoice) => total + Number(invoice.remaining || 0), 0);
-  const lastVisit = visits
+  const physicalVisits = visits.filter((visit) => visit.type !== 'TELEPHONE_CONSULTATION');
+  const lastVisit = physicalVisits
     .filter((visit) => visit.visitDate)
     .sort((a, b) => new Date(b.visitDate).getTime() - new Date(a.visitDate).getTime())[0];
   const nextAppointment = (appointmentsData?.data || [])
@@ -325,7 +326,7 @@ export default function PatientProfile() {
                       </div>
                       <div className="bg-gray-50 p-4 rounded">
                         <p className="text-sm text-gray-500">{t('patients.totalVisits')}</p>
-                        <p className="text-lg font-semibold text-gray-900">{visitsLoading ? t('common.loading') : visits.length}</p>
+                        <p className="text-lg font-semibold text-gray-900">{visitsLoading ? t('common.loading') : physicalVisits.length}</p>
                       </div>
                     </div>
                   </div>
@@ -354,7 +355,7 @@ export default function PatientProfile() {
                             subtitle={visit.notes || undefined}
                             onClick={() => navigate(preserveListState(`/visits/${visit.id}`, { pathname: `/patients/${patient.id}`, search: '' }))}
                           >
-                            <MobileRecordField label={t('visits.type')} value={visit.type === 'CHECKUP' ? t('visits.typeCheckup') : visit.type === 'FOLLOW_UP' ? t('visits.typeFollowUp') : t('visits.typeOther')} />
+                            <MobileRecordField label={t('visits.type')} value={visit.type === 'CHECKUP' ? t('visits.typeCheckup') : visit.type === 'FOLLOW_UP' ? t('visits.typeFollowUp') : visit.type === 'TELEPHONE_CONSULTATION' ? t('visits.typeTelephoneConsultation') : t('visits.typeOther')} />
                             <MobileRecordField label={t('sidebar.appointments')} value={visit.appointment ? formatDate(visit.appointment.scheduledAt, i18n.language) : '-'} />
                           </MobileRecordCard>
                         ))}
@@ -379,10 +380,12 @@ export default function PatientProfile() {
                                 <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                                   visit.type === 'CHECKUP' ? 'bg-blue-100 text-blue-700' :
                                   visit.type === 'FOLLOW_UP' ? 'bg-green-100 text-green-700' :
+                                  visit.type === 'TELEPHONE_CONSULTATION' ? 'bg-indigo-100 text-indigo-700' :
                                   'bg-gray-100 text-gray-700'
                                 }`}>
                                   {visit.type === 'CHECKUP' ? t('visits.typeCheckup') :
-                                   visit.type === 'FOLLOW_UP' ? t('visits.typeFollowUp') : t('visits.typeOther')}
+                                   visit.type === 'FOLLOW_UP' ? t('visits.typeFollowUp') :
+                                   visit.type === 'TELEPHONE_CONSULTATION' ? t('visits.typeTelephoneConsultation') : t('visits.typeOther')}
                                 </span>
                               </td>
                               <td className="px-4 py-3 text-gray-600">

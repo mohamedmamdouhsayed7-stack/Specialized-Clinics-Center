@@ -39,6 +39,7 @@ export class VisitsController {
     @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('physicalOnly') physicalOnly?: string,
   ) {
     return this.visitsService.findAll(
       patientId,
@@ -50,6 +51,7 @@ export class VisitsController {
       search,
       page ? parseInt(page, 10) : 1,
       limit ? parseInt(limit, 10) : 20,
+      physicalOnly === 'true',
     );
   }
 

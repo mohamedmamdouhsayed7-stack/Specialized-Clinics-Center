@@ -64,7 +64,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
         enabled: open && step === 'select',
     });
 
-    const appointments = appointmentsData?.data ?? [];
+    const appointments = (appointmentsData?.data ?? []).filter((appointment) => appointment.patient);
 
     const appointmentTimeLabel = useMemo(() => {
         if (!selectedAppointment) return '';
@@ -91,8 +91,8 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
         const isArabic = i18n.language.startsWith('ar');
 
         const patientName = isArabic
-            ? appointment.patient.fullNameAr || appointment.patient.fullNameEn || ''
-            : appointment.patient.fullNameEn || appointment.patient.fullNameAr || '';
+            ? appointment.patient?.fullNameAr || appointment.patient?.fullNameEn || ''
+            : appointment.patient?.fullNameEn || appointment.patient?.fullNameAr || '';
 
         const vars = {
             name: patientName,
@@ -132,7 +132,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
         }
     };
 
-    const rawPhone = selectedAppointment?.patient.phone || '';
+    const rawPhone = selectedAppointment?.patient?.phone || '';
     const normalizedPhone = rawPhone ? normalizeWhatsAppPhone(rawPhone, countryCode) : '';
     const hasValidPhone = !!rawPhone && isValidWhatsAppPhone(normalizedPhone);
 
@@ -217,7 +217,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
                                             className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#DCE3EF] px-4 py-3 text-start transition hover:border-[#4B5694] hover:bg-[#F6F8FC] focus:outline-none focus:ring-2 focus:ring-[#4B5694]"
                                         >
                                             <div>
-                                                <div className="font-semibold text-[#111844]">{appointment.patient.fullNameAr}</div>
+                                                <div className="font-semibold text-[#111844]">{appointment.patient?.fullNameAr}</div>
                                                 <div className="mt-0.5 text-xs text-[#667085]">
                                                     {new Intl.DateTimeFormat(i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US', {
                                                         hour: '2-digit',
@@ -242,7 +242,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
                         <div className="mb-4 grid grid-cols-2 gap-3 rounded-xl bg-[#F6F8FC] p-3 text-sm">
                             <div>
                                 <div className="text-xs font-semibold uppercase tracking-wide text-[#8991A6]">{t('appointmentMessages.patientLabel')}</div>
-                                <div className="font-medium text-[#111844]">{selectedAppointment.patient.fullNameAr}</div>
+                                <div className="font-medium text-[#111844]">{selectedAppointment.patient?.fullNameAr}</div>
                             </div>
                             <div>
                                 <div className="text-xs font-semibold uppercase tracking-wide text-[#8991A6]">{t('appointmentMessages.phoneLabel')}</div>

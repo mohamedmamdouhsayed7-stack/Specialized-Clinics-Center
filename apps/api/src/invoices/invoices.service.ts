@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { InvoiceStatus, UserRole, Prisma, InvoicePaymentStatus } from '@prisma/client';
+import { InvoiceStatus, UserRole, Prisma, InvoicePaymentStatus, VisitType, VisitStatus } from '@prisma/client';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { CreateTelephoneConsultationDto } from './dto/create-telephone-consultation.dto';
 import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
 import { AddChargeDto } from './dto/add-charge.dto';
 import { CreateReplacementDto } from './dto/create-replacement.dto';
@@ -77,7 +78,20 @@ export class InvoicesService {
     return `INV-${String(nextNumber).padStart(6, '0')}`;
   }
 
-  async create(createInvoiceDto: CreateInvoiceDto, userId: string, ipAddress?: string, userAgent?: string) {
+  async createTelephoneConsultation(dto: CreateTelephoneConsultationDto, userId: string, ipAddress?: string, userAgent?: string) {
+    return this.create({
+      items: dto.items.map(({ serviceId, quantity }) => ({ serviceId, quantity })),
+      additionalCharges: dto.additionalCharges,
+    }, userId, ipAddress, userAgent, dto.patientId);
+  }
+
+  async create(
+    createInvoiceDto: Omit<CreateInvoiceDto, 'visitId'> & { visitId?: string },
+    userId: string,
+    ipAddress?: string,
+    userAgent?: string,
+    telephonePatientId?: string,
+  ) {
     // New invoices are created as DRAFT so receptionists can review
     // line items, apply additional charges, add notes, and then
     // explicitly issue them via the DRAFT -> ISSUED transition.
@@ -91,12 +105,29 @@ export class InvoicesService {
     // Replacement invoices continue to use their own createReplacement()
     // flow and also remain DRAFT until explicitly issued.
     return this.prisma.$transaction(async (tx) => {
+      let visitId = createInvoiceDto.visitId;
+      if (telephonePatientId) {
+        const patient = await tx.patient.findUnique({ where: { id: telephonePatientId } });
+        if (!patient) throw new NotFoundException('Patient not found');
+        if (patient.isArchived) throw new BadRequestException('Cannot create a telephone consultation for an archived patient');
+        const consultation = await tx.visit.create({
+          data: { patientId: patient.id, type: VisitType.TELEPHONE_CONSULTATION, status: VisitStatus.COMPLETED, createdById: userId },
+        });
+        visitId = consultation.id;
+        await tx.auditLog.create({ data: {
+          userId, action: 'CREATE', entityType: 'Visit', entityId: consultation.id,
+          beforeState: null, afterState: { patientId: patient.id, type: consultation.type, status: consultation.status, attendance: 'TELEPHONE' },
+          ipAddress, userAgent,
+        } });
+      }
+      if (!visitId) throw new BadRequestException('A visit is required to create an invoice');
+
       // Lock the visit row to prevent concurrent invoice creation using SELECT ... FOR UPDATE
-      await tx.$queryRaw`SELECT * FROM "Visit" WHERE id = ${createInvoiceDto.visitId}::uuid FOR UPDATE`;
+      await tx.$queryRaw`SELECT * FROM "Visit" WHERE id = ${visitId}::uuid FOR UPDATE`;
 
       // Re-read the visit after locking to get the actual data
       const visit = await tx.visit.findUnique({
-        where: { id: createInvoiceDto.visitId },
+        where: { id: visitId },
       });
 
       if (!visit) {
@@ -111,7 +142,7 @@ export class InvoicesService {
       // Historical VOID invoices are allowed to coexist.
       const existingActiveInvoice = await tx.invoice.findFirst({
         where: {
-          visitId: createInvoiceDto.visitId,
+          visitId,
           status: { in: ['DRAFT', 'ISSUED'] },
         },
       });

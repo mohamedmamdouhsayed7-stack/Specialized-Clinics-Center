@@ -19,6 +19,7 @@ const ServicesList = lazy(() => import('./pages/ServicesList'))
 const ServiceForm = lazy(() => import('./pages/ServiceForm'))
 const InvoicesList = lazy(() => import('./pages/InvoicesList'))
 const InvoiceForm = lazy(() => import('./pages/InvoiceForm'))
+const TelephoneConsultationForm = lazy(() => import('./pages/TelephoneConsultationForm'))
 const InvoiceDetail = lazy(() => import('./pages/InvoiceDetail'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage'))
 const DailyClosingPage = lazy(() => import('./pages/DailyClosingPage'))
@@ -167,6 +168,10 @@ function App() {
                   <InvoicesList />
                 </ProtectedRoute>
               }
+            />
+            <Route
+              path="/invoices/telephone-consultation"
+              element={<ProtectedRoute><TelephoneConsultationForm /></ProtectedRoute>}
             />
             <Route
               path="/invoices/new"

@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { InvoicesService } from './invoices.service';
 import { InvoicePdfService } from './invoice-pdf.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { CreateTelephoneConsultationDto } from './dto/create-telephone-consultation.dto';
 import { UpdateInvoiceStatusDto } from './dto/update-invoice-status.dto';
 import { AddChargeDto } from './dto/add-charge.dto';
 import { CreateReplacementDto } from './dto/create-replacement.dto';
@@ -27,6 +28,13 @@ export class InvoicesController {
     const ipAddress = req.ip || req.connection.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.invoicesService.create(createInvoiceDto, req.user.id, ipAddress, userAgent);
+  }
+
+  @Post('telephone-consultation')
+  @Roles(UserRole.ADMIN, UserRole.RECEPTIONIST)
+  createTelephoneConsultation(@Request() req, @Body() dto: CreateTelephoneConsultationDto) {
+    return this.invoicesService.createTelephoneConsultation(dto, req.user.id,
+      req.ip || req.connection.remoteAddress, req.headers['user-agent']);
   }
 
   @Get()

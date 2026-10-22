@@ -36,6 +36,7 @@ export default function VisitDetail() {
     CHECKUP: t('visits.typeCheckup'),
     FOLLOW_UP: t('visits.typeFollowUp'),
     OTHER: t('visits.typeOther'),
+    TELEPHONE_CONSULTATION: t('visits.typeTelephoneConsultation'),
   };
   const PAYMENT_STATUS_LABELS: Record<string, string> = {
     UNPAID: t('invoices.unpaid'),

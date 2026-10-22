@@ -37,7 +37,7 @@ describe('invoice print/PDF template', () => {
     expect(html).not.toContain('<div class="cut-line">');
     expect(html).toContain('.invoice-copy {\n    flex: 0 0 auto;');
     expect(html).toContain('.copy {\n    flex: 0 0 auto;');
-    expect(html).toContain('height: 297mm;');
+    expect(html).toContain('min-height: 297mm;');
   });
 
   it('defaults to one copy when options are not provided', () => {
@@ -55,31 +55,50 @@ describe('invoice print/PDF template', () => {
     expect(html).toContain('Date:</b> 26/09/2026');
   });
 
+  it('labels telephone consultations in the invoice PDF and preserves long multi-item content', () => {
+    const telephone = renderInvoiceHtml({
+      ...invoice,
+      visit: { type: 'TELEPHONE_CONSULTATION' },
+      patient: { fullNameAr: 'اسم عربي طويل جدًا للمريضة لاختبار عدم قص النص في الفاتورة', fullNameEn: 'A very long English patient name for invoice layout validation', civilId: null },
+      invoiceItems: Array.from({ length: 8 }, (_, index) => ({
+        serviceNameSnapshot: `خدمة استشارة هاتفية طويلة رقم ${index + 1} with an extended service name to verify wrapping`,
+        unitPriceSnapshot: 10, quantity: 1, lineTotal: 10,
+      })),
+      additionalCharges: [{ chargeType: 'FIXED', chargeValue: 2, calculatedAmount: 2, description: 'Additional fee' }],
+      payments: [{ amount: 5, method: 'KNET', paymentDate: '2026-09-25T07:30:00.000Z' }],
+    }, 'en', { copies: 2 });
+    expect(telephone.match(/class="invoice-copy"/g)).toHaveLength(1);
+    expect(telephone).toContain('Telephone consultation');
+    expect(telephone).toContain('خدمة استشارة هاتفية طويلة رقم 8');
+    expect(telephone).toContain('Additional fee');
+    expect(telephone).toContain('min-height: 148.5mm;');
+    expect(telephone).not.toContain('overflow: hidden;');
+  });
+
   it('renders exactly one copy for internal print/download mode', () => {
     const html = renderInvoiceHtml(invoice, 'en', { copies: 1 });
     expect(html.match(/class="invoice-copy"/g)).toHaveLength(1);
     expect(html).not.toContain('<div class="cut-line">');
-    expect(html).toContain('height: 297mm;');
+    expect(html).toContain('min-height: 297mm;');
   });
 
-  it('renders exactly one copy for customer share mode with the same invoice information', () => {
+  it('renders exactly one copy in customer share mode and ignores legacy two-copy requests', () => {
     const htmlOne = renderInvoiceHtml(invoice, 'en', { copies: 1 });
     const htmlTwo = renderInvoiceHtml(invoice, 'en', { copies: 2 });
 
     const oneCopyCount = (htmlOne.match(/<div class="invoice-copy">/g) || []).length;
     const twoCopyCount = (htmlTwo.match(/<div class="invoice-copy">/g) || []).length;
     expect(oneCopyCount).toBe(1);
-    expect(twoCopyCount).toBe(2);
+    expect(twoCopyCount).toBe(1);
 
     const oneCutLines = (htmlOne.match(/<div class="cut-line"><\/div>/g) || []).length;
     const twoCutLines = (htmlTwo.match(/<div class="cut-line"><\/div>/g) || []).length;
     expect(oneCutLines).toBe(0);
-    expect(twoCutLines).toBe(1);
+    expect(twoCutLines).toBe(0);
 
     const invoiceCopyRegex = /<div class="invoice-copy">([\s\S]*?)<\/div>\s*(?:<div class="cut-line"><\/div>\s*)?/g;
     const twoMatches = [...htmlTwo.matchAll(invoiceCopyRegex)];
-    expect(twoMatches).toHaveLength(2);
-    expect(twoMatches[0][1].trim()).toBe(twoMatches[1][1].trim());
+    expect(twoMatches).toHaveLength(1);
 
     const oneMatch = [...htmlOne.matchAll(invoiceCopyRegex)];
     expect(oneMatch).toHaveLength(1);
@@ -90,7 +109,7 @@ describe('invoice print/PDF template', () => {
     expect(htmlOne).toContain(invoice.patient.fullNameEn as string);
     expect(htmlOne).toContain('Consultation');
     expect(htmlOne).toContain(`<title>Invoice - Sara Ahmed - INV-1788803016897</title>`);
-    expect(htmlOne).toContain('height: 297mm;');
+    expect(htmlOne).toContain('min-height: 297mm;');
   });
 
   it('renders one non-clipped copy on the A4 sheet', async () => {
@@ -113,17 +132,22 @@ describe('invoice print/PDF template', () => {
         const sheet = document.querySelector('.sheet')!.getBoundingClientRect();
         const copies = Array.from(document.querySelectorAll('.invoice-copy'));
         const first = copies[0].getBoundingClientRect();
+        const upperHalfPlacement = first.bottom <= sheet.top + sheet.height / 2 + 2;
         const copyContentsFit = copies.every((copy) => copy.scrollHeight <= copy.clientHeight + 1);
         return {
           count: copies.length,
           copyFitsOnSheet: first.bottom <= sheet.bottom,
           copyContentsFit,
+          upperHalfPlacement,
         };
       });
 
       expect(layout.count).toBe(1);
       expect(layout.copyFitsOnSheet).toBe(true);
       expect(layout.copyContentsFit).toBe(true);
+      expect(layout.upperHalfPlacement).toBe(true);
+      const pdf = await page.pdf({ format: 'A4', printBackground: true });
+      expect((Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length).toBe(1);
       await page.close();
     } finally {
       await browser.close();

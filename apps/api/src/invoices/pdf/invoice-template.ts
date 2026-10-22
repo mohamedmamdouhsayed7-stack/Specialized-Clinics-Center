@@ -24,7 +24,7 @@ export interface InvoicePdfData {
     phone?: string | null;
   };
   visit?: {
-    type: 'CHECKUP' | 'FOLLOW_UP' | 'OTHER';
+    type: 'CHECKUP' | 'FOLLOW_UP' | 'OTHER' | 'TELEPHONE_CONSULTATION';
     diagnosis?: string | null;
   } | null;
   invoiceItems: Array<{
@@ -94,6 +94,7 @@ interface InvoicePdfLabels {
   fixed: string;
   percentage: string;
   paymentMethods: Record<InvoicePdfData['payments'][number]['method'], string>;
+  telephoneConsultation: string;
 }
 
 function formatMoney(value: number | string | Decimal): string {
@@ -145,7 +146,7 @@ function icon(name: keyof typeof ICON_PATHS, size = 16): string {
   return `<svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]}</svg>`;
 }
 
-// ── One compact invoice copy (used twice per printed page) ──
+// ── One compact invoice copy per A4 page ──
 function renderInvoiceCopy(
   invoice: InvoicePdfData,
   language: InvoiceLocale,
@@ -244,6 +245,8 @@ function renderInvoiceCopy(
       </div>
     </div>
 
+    ${invoice.visit?.type === 'TELEPHONE_CONSULTATION' ? `<div class="consultation-badge">${labels.telephoneConsultation}</div>` : ''}
+
     <div class="patient-row">
       <div class="p-field">
         <span class="p-icon">${icon('person', 11)}</span>
@@ -335,8 +338,9 @@ export function renderInvoiceHtml(
   language: InvoiceLocale = 'ar',
   options: InvoiceRenderOptions = {},
 ): string {
+  // Retain the legacy option parameter for callers while enforcing one copy.
+  void options;
   const isArabic = language === 'ar';
-  const copies = options.copies === 2 ? 2 : 1;
 
   const labels: InvoicePdfLabels = isArabic
     ? {
@@ -361,6 +365,7 @@ export function renderInvoiceHtml(
         LINK: 'لينك',
         OTHER: 'أخرى',
       },
+      telephoneConsultation: 'استشارة هاتفية',
     }
     : {
       invoice: 'INVOICE',
@@ -380,6 +385,7 @@ export function renderInvoiceHtml(
       fixed: 'Fixed Charge',
       percentage: 'Additional Charge',
       paymentMethods: PAYMENT_METHOD_LABELS_EN,
+      telephoneConsultation: 'Telephone consultation',
     };
 
   const copyHtml = renderInvoiceCopy(invoice, language, labels);
@@ -415,7 +421,7 @@ export function renderInvoiceHtml(
 
   .sheet {
     width: 210mm;
-    height: 297mm;
+    min-height: 297mm;
     margin: 0 auto;
     background: #FFFFFF;
     display: flex;
@@ -424,6 +430,7 @@ export function renderInvoiceHtml(
 
   .invoice-copy {
     flex: 0 0 auto;
+    min-height: 148.5mm;
     display: flex;
     flex-direction: column;
     padding: 5mm 12mm;
@@ -448,6 +455,7 @@ export function renderInvoiceHtml(
 
   .copy {
     flex: 0 0 auto;
+    min-height: 138.5mm;
     position: relative;
     border: 1px solid #E1E6EF;
     border-radius: 6px;
@@ -554,6 +562,17 @@ export function renderInvoiceHtml(
     margin-bottom: 5px;
   }
 
+  .consultation-badge {
+    align-self: flex-start;
+    margin: 0 0 4px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: #EEF4FF;
+    color: #102F63;
+    font-size: 8px;
+    font-weight: 700;
+  }
+
   .invoice-title {
     font-size: 13px;
     font-weight: 800;
@@ -637,7 +656,6 @@ export function renderInvoiceHtml(
   .p-value {
     font-weight: bold;
     color: #1F2430;
-    overflow: hidden;
     word-wrap: break-word;
     overflow-wrap: break-word;
   }
@@ -666,6 +684,8 @@ export function renderInvoiceHtml(
     font-size: 7.8px;
     border-bottom: 1px solid #EEF1F6;
   }
+
+  table.items td.col-service { overflow-wrap: anywhere; }
 
   table.items tr:nth-child(even) td {
     background: #F7F9FC;
@@ -790,23 +810,16 @@ export function renderInvoiceHtml(
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
+    tr { break-inside: avoid; }
   }
 </style>
 </head>
 
 <body>
   <div class="sheet">
-${copies === 2
-    ? `    <div class="invoice-copy">
-      ${copyHtml}
-    </div>
-    <div class="cut-line"></div>
     <div class="invoice-copy">
       ${copyHtml}
-    </div>`
-    : `    <div class="invoice-copy">
-      ${copyHtml}
-    </div>`}
+    </div>
   </div>
 </body>
 </html>`;

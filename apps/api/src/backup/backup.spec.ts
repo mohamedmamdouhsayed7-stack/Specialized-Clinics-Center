@@ -663,7 +663,7 @@ describe('BackupModule', () => {
         const psql = fakeProcess();
         const input = Readable.from(gzipSync(Buffer.from('SELECT 1;')));
         const gunzip = new (require('zlib').Gunzip)();
-        const managedRestore = service['createManagedRestoreFilter']();
+        const managedRestore = service['createManagedRestoreFilter'](160015);
         const completion = service['completeRestoreProcess'](psql, input, gunzip, managedRestore.filter);
 
         psql.stdin.on('data', () => undefined);
@@ -675,6 +675,7 @@ describe('BackupModule', () => {
         const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const sql = [
           'SET search_path = public;',
+          'SET transaction_timeout = 0;',
           'CREATE TABLE public.restore_fixture (id text);',
           'COPY public.restore_fixture (id) FROM stdin;',
           'GRANT SELECT ON TABLE public.fixture TO app_role',
@@ -694,7 +695,7 @@ describe('BackupModule', () => {
           'END;',
           '$$ LANGUAGE plpgsql;',
         ].join('\n') + '\n';
-        const { filter, getSkippedStatements } = service['createManagedRestoreFilter']();
+        const { filter, getSkippedStatements, getSkippedVersionSpecificSettings } = service['createManagedRestoreFilter'](160015);
         const chunks: Buffer[] = [];
         await new Promise<void>((resolve, reject) => {
           Readable.from(gzipSync(Buffer.from(sql)))
@@ -707,6 +708,8 @@ describe('BackupModule', () => {
 
         const filtered = Buffer.concat(chunks).toString('utf8');
         expect(getSkippedStatements()).toBe(5);
+        expect(getSkippedVersionSpecificSettings()).toBe(1);
+        expect(filtered).not.toContain('SET transaction_timeout = 0;');
         expect(filtered).toContain('CREATE TABLE public.restore_fixture');
         expect(filtered).toContain('GRANT SELECT ON TABLE public.fixture TO app_role');
         expect(filtered).toContain('ALTER DEFAULT PRIVILEGES is ordinary COPY data');
@@ -718,12 +721,29 @@ describe('BackupModule', () => {
         expect(filtered).not.toContain('GRANT SELECT ON TABLE public.restore_fixture TO');
       });
 
+      it('preserves transaction_timeout for PostgreSQL 17 and later', async () => {
+        const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
+        const sql = 'SET transaction_timeout = 0;\nSELECT 1;\n';
+        const { filter, getSkippedVersionSpecificSettings } = service['createManagedRestoreFilter'](170000);
+        const chunks: Buffer[] = [];
+        await new Promise<void>((resolve, reject) => {
+          Readable.from(Buffer.from(sql))
+            .pipe(filter)
+            .on('data', (chunk: Buffer) => chunks.push(Buffer.from(chunk)))
+            .on('error', reject)
+            .on('end', resolve);
+        });
+
+        expect(Buffer.concat(chunks).toString('utf8')).toBe(sql);
+        expect(getSkippedVersionSpecificSettings()).toBe(0);
+      });
+
       it.each(['non-zero exit', 'spawn error', 'input read error', 'gunzip error', 'stdin error', 'truncated input'])('should reject restore on %s', async (failure) => {
         const service = new BackupService({ logUserAction: jest.fn() } as any, createMockPrismaService());
         const psql = fakeProcess();
         const input = new PassThrough();
         const gunzip = new (require('zlib').Gunzip)();
-        const managedRestore = service['createManagedRestoreFilter']();
+        const managedRestore = service['createManagedRestoreFilter'](160015);
         const completion = service['completeRestoreProcess'](psql, input, gunzip, managedRestore.filter);
 
         if (failure === 'non-zero exit') psql.emit('close', 1);

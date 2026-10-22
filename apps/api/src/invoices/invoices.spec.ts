@@ -143,6 +143,33 @@ describe('Invoices Module Tests (E2E)', () => {
   }
 
   describe('Invoice Creation', () => {
+    it('creates a telephone consultation invoice as DRAFT, then supports issue and payment without an appointment', async () => {
+      const created = await request(app.getHttpServer()).post('/api/invoices/telephone-consultation')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ patientId: testPatientId, items: [{ serviceId: testServiceAId, quantity: 1 }] }).expect(201);
+      expect(created.body.status).toBe('DRAFT');
+      expect(Number(created.body.total)).toBe(30);
+      expect(created.body.payments).toHaveLength(0);
+      expect(created.body.visit.type).toBe('TELEPHONE_CONSULTATION');
+      const consultationVisit = await prisma.visit.findUnique({ where: { id: created.body.visit.id } });
+      expect(consultationVisit?.appointmentId).toBeNull();
+      expect(consultationVisit?.status).toBe('COMPLETED');
+
+      const issued = await request(app.getHttpServer()).patch(`/api/invoices/${created.body.id}/status`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ status: 'ISSUED', paymentMethod: 'KNET' }).expect(200);
+      expect(issued.body.status).toBe('ISSUED');
+      expect(issued.body.paymentStatus).toBe('PAID');
+      expect(await prisma.payment.findFirst({ where: { invoiceId: created.body.id, method: 'KNET' } })).toBeTruthy();
+      const stored = await prisma.invoice.findUnique({ where: { id: created.body.id } });
+      expect(Number(stored?.paid.toString())).toBe(30);
+      expect(await prisma.auditLog.findFirst({ where: { entityType: 'Visit', entityId: created.body.visit.id, action: 'CREATE' } })).toBeTruthy();
+      const visitTypeReport = await request(app.getHttpServer()).get('/api/reports/visit-types')
+        .set('Authorization', `Bearer ${adminAccessToken}`).expect(200);
+      expect(visitTypeReport.body).toEqual(expect.arrayContaining([
+        expect.objectContaining({ type: 'TELEPHONE_CONSULTATION', count: expect.any(Number) }),
+      ]));
+    });
+
     it('should create an invoice as admin with multiple items as DRAFT, NO payment, no visit completion', async () => {
       // Regression test for the financial bug:
       //   New Invoice form displayed `invoices.invoiceWillBeCreatedAsDraft`,

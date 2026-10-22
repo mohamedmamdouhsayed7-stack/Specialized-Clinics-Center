@@ -1,11 +1,13 @@
 import { IsString, IsOptional, IsDateString, MaxLength, IsNotEmpty, Matches } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreatePatientDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim() || null : value)
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(12)
   @Matches(/^\d+$/, { message: 'civilId must contain only digits' })
-  civilId: string;
+  civilId?: string;
 
   @IsString()
   @IsNotEmpty()

@@ -1,4 +1,29 @@
-const KUWAIT_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
+const KUWAIT_TIME_ZONE = 'Asia/Kuwait';
+
+function calendarPartsInKuwait(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: KUWAIT_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(value);
+  return Object.fromEntries(parts.map(({ type, value: part }) => [type, Number(part)])) as Record<string, number>;
+}
+
+function kuwaitLocalToUtcEpoch(year: number, month: number, day: number, hour: number, minute: number): number {
+  const localEpoch = Date.UTC(year, month - 1, day, hour, minute);
+  let candidate = localEpoch;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const local = calendarPartsInKuwait(new Date(candidate));
+    const representedEpoch = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute);
+    const correction = localEpoch - representedEpoch;
+    candidate += correction;
+    if (correction === 0) break;
+  }
+  const verified = calendarPartsInKuwait(new Date(candidate));
+  if (verified.year !== year || verified.month !== month || verified.day !== day || verified.hour !== hour || verified.minute !== minute) {
+    throw new Error('Invalid Kuwait local date and time');
+  }
+  return candidate;
+}
 
 function parseCalendarDate(value: string): [number, number, number] | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -100,11 +125,8 @@ export function kuwaitDateTimeLocalToIso(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
   if (!match) throw new Error('Invalid Kuwait local date and time');
   const [year, month, day, hour, minute] = match.slice(1).map(Number);
-  const localAsUtc = Date.UTC(year, month - 1, day, hour, minute);
-  const date = new Date(localAsUtc);
-  if (
-    date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day ||
-    date.getUTCHours() !== hour || date.getUTCMinutes() !== minute
-  ) throw new Error('Invalid Kuwait local date and time');
-  return new Date(localAsUtc - KUWAIT_UTC_OFFSET_MS).toISOString();
+  const date = new Date(Date.UTC(year, month - 1, day, hour, minute));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day ||
+      date.getUTCHours() !== hour || date.getUTCMinutes() !== minute) throw new Error('Invalid Kuwait local date and time');
+  return new Date(kuwaitLocalToUtcEpoch(year, month, day, hour, minute)).toISOString();
 }
