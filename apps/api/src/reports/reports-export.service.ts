@@ -72,7 +72,7 @@ export class ReportsExportService {
         newPatientsTimeseries,
         outstandingInvoices: outstanding.data.map((inv) => ({
           invoiceNumber: inv.invoiceNumber,
-          patientName: inv.patient.fullNameAr,
+          patientName: inv.patient?.fullNameAr || inv.patientNameSnapshot || '—',
           total: Number(inv.total),
           paid: Number(inv.paid),
           remaining: Number(inv.remaining),

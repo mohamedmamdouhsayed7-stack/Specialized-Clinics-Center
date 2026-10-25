@@ -64,6 +64,9 @@ export default function InvoiceDetail() {
     queryFn: () => invoicesService.getInvoice(id!),
     enabled: !!id,
   });
+  const isTelephoneConsultation = Boolean(
+    invoice?.isTelephoneConsultation || invoice?.visit?.type === 'TELEPHONE_CONSULTATION',
+  );
 
   const deleteMutation = useMutation({
     mutationFn: () => invoicesService.deleteInvoicePermanently(id!),
@@ -259,7 +262,7 @@ export default function InvoiceDetail() {
       await invoicesService.downloadPdf(
         id!,
         language,
-        invoicePatientDisplayName(invoice?.patient, language),
+        invoicePatientDisplayName(invoice?.patient, language, invoice?.patientNameSnapshot),
         invoice?.invoiceNumber || id!,
       );
 
@@ -299,7 +302,7 @@ export default function InvoiceDetail() {
 
     const language = i18n.language.startsWith('ar') ? 'ar' : 'en';
     printWindow.document.title = createInvoiceDocumentTitle(
-      invoicePatientDisplayName(invoice?.patient, language),
+      invoicePatientDisplayName(invoice?.patient, language, invoice?.patientNameSnapshot),
       invoice?.invoiceNumber || id!,
     );
     printWindow.document.body.innerHTML = `<p style="font-family: sans-serif; padding: 2rem; text-align: center">${t(
@@ -340,7 +343,7 @@ export default function InvoiceDetail() {
 
   // The invoice share message is always Arabic.
   const buildShareMessage = () => {
-    const patientName = invoice?.patient.fullNameAr || '';
+    const patientName = invoice?.patient?.fullNameAr || invoice?.patientNameSnapshot || '';
     const total = formatMoney(invoice?.total || 0, 'ar');
     const paid = formatMoney(invoice?.paid || 0, 'ar');
     const currency = 'د.ك';
@@ -363,7 +366,7 @@ export default function InvoiceDetail() {
   ) => {
     setShareMenuOpen(false);
     setMessageShareChannel(channel);
-    setMessageSharePhone(invoice?.patient.phone || '');
+    setMessageSharePhone(invoice?.patient?.phone || '');
     setMessageShareCountryCode('');
     setMessageShareMessage(buildShareMessage());
   };
@@ -513,7 +516,7 @@ export default function InvoiceDetail() {
   const sendWhatsAppMessage = () => {
     if (!invoice || shareActionPending) return;
 
-    const rawPhone = invoice.patient.phone || '';
+    const rawPhone = invoice.patient?.phone || '';
 
     // Use the selected country code from the WhatsApp modal
     const normalizedPhone = rawPhone
@@ -911,22 +914,14 @@ export default function InvoiceDetail() {
                   </span>
                 </h1>
 
-                <Link
-                  to={preserveListState(
-                    `/patients/${invoice.patient.id}`,
-                    {
-                      pathname: `/invoices/${invoice.id}`,
-                      search: '',
-                    }
-                  )}
+                {invoice.patient ? <Link
+                  to={preserveListState(`/patients/${invoice.patient.id}`, { pathname: `/invoices/${invoice.id}`, search: '' })}
                   className="text-gray-600 hover:text-[#111844] hover:underline"
-                >
-                  {invoice.patient.fullNameAr}
-                </Link>
+                >{invoice.patient.fullNameAr}</Link> : <span className="text-gray-600">{invoice.patientNameSnapshot}</span>}
 
                 {invoice.visit && (
                   <>
-                  {invoice.visit.type === 'TELEPHONE_CONSULTATION' && <div className="mt-2 inline-block rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{t('visits.typeTelephoneConsultation')}</div>}
+                  {(invoice.isTelephoneConsultation || invoice.visit.type === 'TELEPHONE_CONSULTATION') && <div className="mt-2 inline-block rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{t('visits.typeTelephoneConsultation')}</div>}
                   <Link
                     to={preserveListState(
                       `/visits/${invoice.visit.id}`,
@@ -941,6 +936,8 @@ export default function InvoiceDetail() {
                   </Link>
                   </>
                 )}
+
+                {!invoice.visit && invoice.isTelephoneConsultation && <div className="mt-2 inline-block rounded bg-blue-50 px-2 py-1 text-xs font-medium text-blue-800">{t('visits.typeTelephoneConsultation')}</div>}
 
                 {(invoice.replacedByInvoiceId ||
                   invoice.replacedInvoiceId) && (
@@ -1456,18 +1453,20 @@ export default function InvoiceDetail() {
                     </span>
                   </div>
 
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">
-                      {t('invoices.quantity')}
-                    </span>
+                  {!isTelephoneConsultation && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">
+                        {t('invoices.quantity')}
+                      </span>
 
-                    <span>
-                      {formatNumber(
-                        item.quantity,
-                        i18n.language
-                      )}
-                    </span>
-                  </div>
+                      <span>
+                        {formatNumber(
+                          item.quantity,
+                          i18n.language
+                        )}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex justify-between font-medium">
                     <span className="text-gray-500">
@@ -1499,9 +1498,11 @@ export default function InvoiceDetail() {
                     {t('services.price')}
                   </th>
 
-                  <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
-                    {t('invoices.quantity')}
-                  </th>
+                  {!isTelephoneConsultation && (
+                    <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
+                      {t('invoices.quantity')}
+                    </th>
+                  )}
 
                   <th className="px-6 py-3 text-right text-sm font-semibold text-gray-700">
                     {t('invoices.total')}
@@ -1525,12 +1526,14 @@ export default function InvoiceDetail() {
                         {t('common.currency')}
                       </td>
 
-                      <td className="px-6 py-4 text-gray-700">
-                        {formatNumber(
-                          item.quantity,
-                          i18n.language
-                        )}
-                      </td>
+                      {!isTelephoneConsultation && (
+                        <td className="px-6 py-4 text-gray-700">
+                          {formatNumber(
+                            item.quantity,
+                            i18n.language
+                          )}
+                        </td>
+                      )}
 
                       <td className="px-6 py-4 text-gray-900 font-medium">
                         {formatMoney(
@@ -2197,15 +2200,11 @@ export default function InvoiceDetail() {
           }
           onConfirm={() => {
             const replacementItems =
-              invoice.invoiceItems.map(
-                (item) => ({
-                  serviceId: item.serviceId,
-                  quantity: item.quantity,
-                  unitPrice: parseFloat(
-                    item.unitPriceSnapshot
-                  ),
-                })
-              );
+              invoice.invoiceItems.map((item) => ({
+                ...(item.serviceId ? { serviceId: item.serviceId } : { serviceName: item.serviceNameSnapshot }),
+                quantity: item.quantity,
+                unitPrice: parseFloat(item.unitPriceSnapshot),
+              }));
 
             replacementMutation.mutate({
               items: replacementItems,

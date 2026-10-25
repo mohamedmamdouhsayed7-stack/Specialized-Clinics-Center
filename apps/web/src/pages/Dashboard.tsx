@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { UsersRound, CalendarDays, ClipboardList, ReceiptText, Stethoscope, Wallet, MessageCircle } from 'lucide-react';
+import { UsersRound, CalendarDays, ClipboardList, ReceiptText, Stethoscope, Wallet, MessageCircle, PhoneCall } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTranslation } from 'react-i18next';
 import DashboardCard from '../components/DashboardCard';
@@ -121,6 +121,13 @@ export default function Dashboard() {
               description={t('dashboard.visitsDesc')}
               icon={ClipboardList}
               onClick={() => navigate('/visits')}
+            />
+            <DashboardCard
+              title={t('telephoneConsultation.title')}
+              description={t('dashboard.telephoneConsultationDesc')}
+              icon={PhoneCall}
+              onClick={() => navigate('/invoices/telephone-consultation')}
+              accent="red"
             />
             <DashboardCard
               title={t('sidebar.invoices')}

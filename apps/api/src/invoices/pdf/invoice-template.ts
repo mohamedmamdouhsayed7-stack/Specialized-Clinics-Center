@@ -17,7 +17,9 @@ export interface InvoicePdfData {
   issuedAt?: string | Date | null;
   createdAt: string | Date;
   replacedByInvoiceId?: string | null;
-  patient: {
+  patientNameSnapshot?: string | null;
+  isTelephoneConsultation?: boolean;
+  patient?: {
     fullNameAr: string;
     fullNameEn?: string | null;
     civilId: string | null;
@@ -89,6 +91,7 @@ interface InvoicePdfLabels {
   unitPrice: string;
   total: string;
   paid: string;
+  remaining: string;
   paymentMethod: string;
   additional: string;
   fixed: string;
@@ -153,6 +156,9 @@ function renderInvoiceCopy(
   labels: InvoicePdfLabels,
 ): string {
   const isArabic = language === 'ar';
+  const isTelephoneConsultation = Boolean(
+    invoice.isTelephoneConsultation || invoice.visit?.type === 'TELEPHONE_CONSULTATION',
+  );
 
   const itemsRows = invoice.invoiceItems
     .map(
@@ -160,7 +166,7 @@ function renderInvoiceCopy(
         <tr>
           <td class="col-service">${escapeHtml(item.serviceNameSnapshot)}</td>
           <td class="col-code">${item.service?.code ? escapeHtml(item.service.code) : '&mdash;'}</td>
-          <td class="col-qty">${item.quantity}</td>
+          ${isTelephoneConsultation ? '' : `<td class="col-qty">${item.quantity}</td>`}
           <td class="col-price">${formatMoney(item.unitPriceSnapshot)}</td>
           <td class="col-total">${formatMoney(item.lineTotal)}</td>
         </tr>`,
@@ -184,7 +190,7 @@ function renderInvoiceCopy(
         <tr class="charge-row">
           <td class="col-service">${chargeLabel}</td>
           <td class="col-code">&mdash;</td>
-          <td class="col-qty">1</td>
+          ${isTelephoneConsultation ? '' : '<td class="col-qty">1</td>'}
           <td class="col-price">${priceDisplay}</td>
           <td class="col-total">${formatMoney(charge.calculatedAmount)}</td>
         </tr>`;
@@ -245,20 +251,20 @@ function renderInvoiceCopy(
       </div>
     </div>
 
-    ${invoice.visit?.type === 'TELEPHONE_CONSULTATION' ? `<div class="consultation-badge">${labels.telephoneConsultation}</div>` : ''}
+    ${invoice.isTelephoneConsultation || invoice.visit?.type === 'TELEPHONE_CONSULTATION' ? `<div class="consultation-badge">${labels.telephoneConsultation}</div>` : ''}
 
     <div class="patient-row">
       <div class="p-field">
         <span class="p-icon">${icon('person', 11)}</span>
         <span class="p-label">${labels.patientName}:</span>
-        <span class="p-value ar">${escapeHtml(invoice.patient.fullNameAr)}</span>
+        <span class="p-value ${isArabic ? 'ar' : 'en'}">${escapeHtml(invoicePatientDisplayName(invoice.patient, language, invoice.patientNameSnapshot))}</span>
       </div>
 
       <div class="p-field">
         <span class="p-icon">${icon('idCard', 11)}</span>
         <span class="p-label">${labels.civilId}:</span>
         <span class="p-value">
-          ${invoice.patient.civilId ? escapeHtml(invoice.patient.civilId) : '&mdash;'}
+          ${invoice.patient?.civilId ? escapeHtml(invoice.patient.civilId) : '&mdash;'}
         </span>
       </div>
 
@@ -266,7 +272,7 @@ function renderInvoiceCopy(
         <span class="p-icon">${icon('phone', 11)}</span>
         <span class="p-label">${labels.mobile}:</span>
         <span class="p-value">
-          ${invoice.patient.phone ? escapeHtml(invoice.patient.phone) : '&mdash;'}
+          ${invoice.patient?.phone ? escapeHtml(invoice.patient.phone) : '&mdash;'}
         </span>
       </div>
     </div>
@@ -276,7 +282,7 @@ function renderInvoiceCopy(
         <tr>
           <th class="col-service">${labels.service}</th>
           <th class="col-code">${labels.code}</th>
-          <th class="col-qty">${labels.qty}</th>
+          ${isTelephoneConsultation ? '' : `<th class="col-qty">${labels.qty}</th>`}
           <th class="col-price">${labels.unitPrice}</th>
           <th class="col-total">${labels.total}</th>
         </tr>
@@ -301,6 +307,12 @@ function renderInvoiceCopy(
         <span class="pay-icon">${icon('coins', 12)}</span>
         <span class="pay-label">${labels.paid}</span>
         <span class="pay-value">${formatMoney(invoice.paid)} KD</span>
+      </div>
+
+      <div class="pay-box">
+        <span class="pay-icon">${icon('coins', 12)}</span>
+        <span class="pay-label">${labels.remaining}</span>
+        <span class="pay-value">${formatMoney(invoice.remaining)} KD</span>
       </div>
 
       <div class="pay-box">
@@ -356,6 +368,7 @@ export function renderInvoiceHtml(
       unitPrice: 'سعر الوحدة (د.ك)',
       total: 'الإجمالي (د.ك)',
       paid: 'المدفوع',
+      remaining: 'المتبقي',
       paymentMethod: 'طريقة الدفع',
       additional: 'رسوم إضافية',
       fixed: 'رسوم ثابتة',
@@ -380,6 +393,7 @@ export function renderInvoiceHtml(
       unitPrice: 'UNIT PRICE (KD)',
       total: 'TOTAL (KD)',
       paid: 'Paid',
+      remaining: 'Remaining',
       paymentMethod: 'PAYMENT METHOD',
       additional: 'Additional Charges',
       fixed: 'Fixed Charge',
@@ -390,7 +404,7 @@ export function renderInvoiceHtml(
 
   const copyHtml = renderInvoiceCopy(invoice, language, labels);
   const documentTitle = createInvoiceDocumentTitle(
-    invoicePatientDisplayName(invoice.patient, language),
+    invoicePatientDisplayName(invoice.patient, language, invoice.patientNameSnapshot),
     invoice.invoiceNumber,
   );
 
@@ -462,6 +476,7 @@ export function renderInvoiceHtml(
     padding: 5mm 8mm;
     display: flex;
     flex-direction: column;
+    justify-content: space-between;
   }
 
   .watermark {
@@ -483,35 +498,37 @@ export function renderInvoiceHtml(
     width: 100%;
     border-radius: 999px;
     background: #C4362B;
-    margin-bottom: 5px;
+    margin-bottom: 7px;
   }
 
   .c-header {
     display: grid;
-    grid-template-columns: 34px minmax(0,1fr) auto minmax(120px,1fr);
+    grid-template-columns: 42px minmax(0,1fr) auto minmax(120px,1fr);
     align-items: center;
-    gap: 7px;
-    padding-bottom: 5px;
+    gap: 8px;
+    padding-bottom: 7px;
     border-bottom: 1px solid #E1E6EF;
-    margin-bottom: 5px;
+    margin-bottom: 7px;
   }
 
   .c-header .logo {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     object-fit: contain;
   }
 
   .clinic-name-ar {
     font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', sans-serif;
-    font-size: 11px;
+    font-size: 12.5px;
+    line-height: 1.4;
     font-weight: bold;
     color: #102F63;
     direction: rtl;
   }
 
   .clinic-name-en {
-    font-size: 9px;
+    font-size: 10px;
+    line-height: 1.35;
     font-weight: 700;
     color: #102F63;
   }
@@ -528,7 +545,8 @@ export function renderInvoiceHtml(
 
   .doctor-info .doctor-name {
     font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', sans-serif;
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 1.4;
     font-weight: bold;
     color: #102F63;
     direction: rtl;
@@ -536,7 +554,8 @@ export function renderInvoiceHtml(
 
   .doctor-info .doctor-title {
     font-family: 'Noto Naskh Arabic', 'Noto Sans Arabic', sans-serif;
-    font-size: 7.5px;
+    font-size: 8.2px;
+    line-height: 1.4;
     color: #4B5694;
     direction: rtl;
     margin-top: 1px;
@@ -559,7 +578,7 @@ export function renderInvoiceHtml(
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 5px;
+    margin-bottom: 7px;
   }
 
   .consultation-badge {
@@ -574,7 +593,8 @@ export function renderInvoiceHtml(
   }
 
   .invoice-title {
-    font-size: 13px;
+    font-size: 15px;
+    line-height: 1.3;
     font-weight: 800;
     color: #111844;
     letter-spacing: 1px;
@@ -588,7 +608,7 @@ export function renderInvoiceHtml(
 
   .meta-inline {
     display: flex;
-    gap: 6px;
+    gap: 7px;
   }
 
   .meta-chip {
@@ -598,8 +618,9 @@ export function renderInvoiceHtml(
     background: #F3F7FC;
     border: 1px solid #DCE3EE;
     border-radius: 5px;
-    padding: 2px 7px;
-    font-size: 7.5px;
+    padding: 4px 8px;
+    font-size: 8.2px;
+    line-height: 1.35;
     color: #102F63;
   }
 
@@ -613,27 +634,28 @@ export function renderInvoiceHtml(
 
   .patient-row {
     display: flex;
-    gap: 6px;
+    gap: 8px;
     background: #F8FBFF;
     border: 1px solid #DCE3EE;
     border-radius: 6px;
-    padding: 5px 8px;
-    margin-bottom: 5px;
+    padding: 7px 10px;
+    margin-bottom: 0;
   }
 
   .p-field {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     min-width: 0;
-    font-size: 8px;
+    font-size: 9px;
+    line-height: 1.45;
   }
 
   .p-icon {
-    flex: 0 0 14px;
-    width: 14px;
-    height: 14px;
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     background: #E4EDF9;
     color: #17447F;
@@ -644,8 +666,8 @@ export function renderInvoiceHtml(
 
   .p-icon svg {
     display: block;
-    width: 9px;
-    height: 9px;
+    width: 10px;
+    height: 10px;
   }
 
   .p-label {
@@ -667,22 +689,30 @@ export function renderInvoiceHtml(
 
   table.items {
     width: 100%;
+    flex: 0 0 auto;
     border-collapse: collapse;
-    margin-bottom: 5px;
+    margin-bottom: 0;
   }
 
   table.items th {
     background: #102F63;
     color: #FFFFFF;
-    padding: 3px 5px;
-    font-size: 7px;
+    padding: 4px 7px;
+    font-size: 8.2px;
+    line-height: 1.3;
     text-align: ${isArabic ? 'right' : 'left'};
   }
 
   table.items td {
-    padding: 3px 5px;
-    font-size: 7.8px;
+    padding: 4px 7px;
+    font-size: 8.6px;
+    line-height: 1.35;
     border-bottom: 1px solid #EEF1F6;
+  }
+
+  table.items tbody tr:only-child td {
+    padding-top: 7px;
+    padding-bottom: 7px;
   }
 
   table.items td.col-service { overflow-wrap: anywhere; }
@@ -712,11 +742,12 @@ export function renderInvoiceHtml(
 
   .replacement-note {
     text-align: center;
-    font-size: 7.5px;
+    font-size: 8.2px;
+    line-height: 1.4;
     color: #C4362B;
     font-weight: bold;
-    margin-bottom: 4px;
-    padding: 3px;
+    margin-bottom: 0;
+    padding: 5px;
     border: 1px solid #E0A09A;
     border-radius: 4px;
     background: #FFF5F4;
@@ -724,26 +755,33 @@ export function renderInvoiceHtml(
 
   .pay-row {
     display: flex;
-    gap: 6px;
-    margin-top: 8px;
-    margin-bottom: 5px;
+    gap: 7px;
+    margin-top: 0;
+    padding-top: 0;
+    margin-bottom: 0;
   }
 
   .pay-box {
     flex: 1;
-    display: flex;
+    min-width: 0;
+    min-height: 17mm;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-content: center;
     align-items: center;
-    gap: 5px;
+    column-gap: 7px;
+    row-gap: 2px;
     border: 1px solid #AABBD4;
     border-radius: 6px;
-    padding: 4px 8px;
+    padding: 7px 8px;
     background: #F8FBFF;
   }
 
   .pay-icon {
-    flex: 0 0 18px;
-    width: 18px;
-    height: 18px;
+    grid-row: 1 / span 2;
+    width: 22px;
+    height: 22px;
     border-radius: 50%;
     background: #E4EDF9;
     color: #17447F;
@@ -754,18 +792,24 @@ export function renderInvoiceHtml(
 
   .pay-icon svg {
     display: block;
-    width: 11px;
-    height: 11px;
+    width: 13px;
+    height: 13px;
   }
 
   .pay-label {
-    font-size: 6.5px;
+    grid-column: 2;
+    min-width: 0;
+    font-size: 8px;
+    line-height: 1.3;
     color: #7D879B;
     display: block;
   }
 
   .pay-value {
-    font-size: 9px;
+    grid-column: 2;
+    min-width: 0;
+    font-size: 11px;
+    line-height: 1.3;
     font-weight: bold;
     color: #102F63;
     display: block;
@@ -776,12 +820,13 @@ export function renderInvoiceHtml(
     align-items: center;
     justify-content: center;
     flex-wrap: wrap;
-    gap: 5px;
-    font-size: 6.3px;
+    gap: 7px;
+    font-size: 7px;
+    line-height: 1.4;
     color: #4B5694;
     border-top: 1px solid #EEF1F6;
-    padding-top: 4px;
-    margin-bottom: 3px;
+    padding-top: 6px;
+    margin-bottom: 0;
   }
 
   .copy-footer .cf-item {
@@ -801,7 +846,8 @@ export function renderInvoiceHtml(
   .thanks {
     text-align: center;
     font-style: italic;
-    font-size: 7.5px;
+    font-size: 8.2px;
+    line-height: 1.4;
     color: #4B5694;
   }
 

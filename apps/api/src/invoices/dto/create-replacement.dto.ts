@@ -4,11 +4,39 @@ import {
   ValidateNested,
   IsOptional,
   IsEnum,
+  IsUUID,
+  IsString,
+  MaxLength,
+  IsInt,
+  Min,
+  IsNumber,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PaymentMethod } from '@prisma/client';
-import { CreateInvoiceItemDto } from './create-invoice-item.dto';
 import { CreateInvoiceChargeDto } from './create-invoice-charge.dto';
+
+class CreateReplacementItemDto {
+  @IsUUID()
+  @IsOptional()
+  serviceId?: string;
+
+  @IsString()
+  @MaxLength(300)
+  @IsOptional()
+  serviceName?: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @IsOptional()
+  quantity?: number;
+
+  @Type(() => Number)
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @IsOptional()
+  unitPrice?: number;
+}
 
 // Restrict new payments to KNET, LINK, and OTHER only.
 // CASH and VISA remain valid historical database values,
@@ -25,8 +53,8 @@ export class CreateReplacementDto {
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })
-  @Type(() => CreateInvoiceItemDto)
-  items: CreateInvoiceItemDto[];
+  @Type(() => CreateReplacementItemDto)
+  items: CreateReplacementItemDto[];
 
   @IsArray()
   @IsOptional()

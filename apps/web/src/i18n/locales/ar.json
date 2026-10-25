@@ -176,7 +176,8 @@
     "weekVisits": "زيارات هذا الأسبوع",
     "totalOutstanding": "إجمالي المستحقات",
     "quickActions": "إجراءات سريعة",
-    "quickActionsSubtitle": "افتح مسارات العمل الأكثر استخدامًا في العيادة"
+    "quickActionsSubtitle": "افتح مسارات العمل الأكثر استخدامًا في العيادة",
+    "telephoneConsultationDesc": "تسجيل استشارة هاتفية وإنشاء فاتورة أولية للمريض"
   },
   "patients": {
     "subtitle": "إدارة بيانات المرضى والمريضات",
@@ -533,13 +534,25 @@
     "quickUnregisteredHelp": "هذا الموعد غير مرتبط بملف مريض. اربط مريضًا مسجلًا قبل إنشاء زيارة.",
     "linkPatient": "ربط مريض مسجل",
     "patientLinked": "تم ربط المريض بالموعد",
+    "linkAlreadyLinked": "هذا الموعد مرتبط بالفعل بمريض.",
+    "linkPatientNotFound": "تعذر العثور على المريض المحدد.",
+    "linkArchivedPatient": "لا يمكن ربط مريض مؤرشف بموعد.",
+    "linkPatientFailed": "تعذر ربط المريض بهذا الموعد.",
     "linkPatientBeforeVisit": "اربط مريضًا مسجلًا بهذا الموعد قبل إنشاء زيارة."
   },
   "telephoneConsultation": {
     "title": "استشارة هاتفية",
     "noAttendance": "سجل الاستشارة الهاتفية وأصدر فاتورتها دون حضور المريض إلى العيادة أو الحاجة إلى موعد عادي.",
+      "existingPatient": "مريض مسجل",
+      "manualPatient": "بيانات مريض يدوية",
+      "patientName": "اسم المريض",
+      "existingService": "خدمة مسجلة",
+      "manualService": "خدمة يدوية",
+      "serviceDescription": "وصف الخدمة / الاستشارة",
+      "servicePrice": "السعر",
     "createDraft": "إنشاء فاتورة مسودة",
-    "draftCreated": "تم إنشاء مسودة فاتورة الاستشارة الهاتفية"
+    "draftCreated": "تم إنشاء مسودة فاتورة الاستشارة الهاتفية",
+    "createError": "تعذر إنشاء فاتورة الاستشارة الهاتفية."
   },
   "reports": {
     "subtitle": "تحليلات شاملة لأداء العيادة ومؤشرات النمو المالية",
@@ -637,6 +650,12 @@
     "deleteUserConfirm": "حذف نهائي",
     "userDeleted": "تم حذف المستخدم بنجاح.",
     "deleteUserError": "فشل حذف المستخدم.",
+    "userActivated": "تم تفعيل المستخدم بنجاح.",
+    "userDeactivated": "تم تعطيل المستخدم بنجاح.",
+    "confirmUserActivateTitle": "هل تريد تفعيل المستخدم؟",
+    "confirmUserActivateMessage": "هل تريد تفعيل {{name}}؟",
+    "confirmUserDeactivateTitle": "هل تريد تعطيل المستخدم؟",
+    "confirmUserDeactivateMessage": "هل تريد تعطيل {{name}}؟ لن يتمكن من تسجيل الدخول بعد ذلك.",
     "cannotEditOwnRole": "لا يمكنك تغيير دورك الخاص",
     "notifAppointmentReminders": "تذكير بالمواعيد",
     "notifNewAppointment": "إشعار عند حجز موعد جديد",

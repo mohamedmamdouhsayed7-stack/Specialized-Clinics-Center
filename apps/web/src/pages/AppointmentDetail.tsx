@@ -103,7 +103,18 @@ export default function AppointmentDetail() {
       setPatientSearch('');
       showToast({ type: 'success', message: t('appointments.patientLinked') });
     },
-    onError: (error: Error) => showToast({ type: 'error', message: error.message }),
+    onError: (error: Error) => {
+      const linkErrorKeys: Record<string, string> = {
+        'Appointment is already linked to a patient': 'appointments.linkAlreadyLinked',
+        'Appointment was linked to another patient': 'appointments.linkAlreadyLinked',
+        'Patient not found': 'appointments.linkPatientNotFound',
+        'Cannot link an archived patient': 'appointments.linkArchivedPatient',
+      };
+      showToast({
+        type: 'error',
+        message: linkErrorKeys[error.message] ? t(linkErrorKeys[error.message]) : t('appointments.linkPatientFailed'),
+      });
+    },
   });
 
   const getStatusBadge = (status: string) => {

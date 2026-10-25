@@ -22,7 +22,7 @@ import { MaintenanceModule } from './common/maintenance/maintenance.module';
     MaintenanceModule,
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: ['.env', '../../.env'],
       validate: (config) => {
         const requiredEnvVars = [
           'NODE_ENV',

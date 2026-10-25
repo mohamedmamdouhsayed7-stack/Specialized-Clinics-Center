@@ -265,7 +265,7 @@ export class PatientsService {
       }) ?? [];
       const invoiceIds = invoices.map((invoice) => invoice.id);
 
-      if (invoices.some((invoice) => invoice.patientId !== id || invoice.visit.patientId !== id)) {
+      if (invoices.some((invoice) => invoice.patientId !== id || !invoice.visit || invoice.visit.patientId !== id)) {
         throw new ConflictException('Patient cannot be permanently deleted because an invoice links to another patient’s visit.');
       }
 

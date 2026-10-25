@@ -54,13 +54,18 @@ export class PdfBrowserService implements OnModuleDestroy {
           'Accept-Language': 'en-US,en;q=0.9,ar;q=0.8',
         });
 
-        await page.setContent(html, { waitUntil: 'load' });
-        // Add a small delay to allow fonts to load
+        // Invoice HTML references a remote Arabic font. Do not let a slow or
+        // unavailable font request prevent the PDF from rendering; the CSS
+        // includes system fallbacks for offline/local environments.
+        await page.setContent(html, { waitUntil: 'domcontentloaded' });
+        // Give available web fonts a short opportunity to load before using
+        // the configured fallback fonts.
         await new Promise(resolve => globalThis.setTimeout(resolve, 1000));
         const pdfBuffer = await page.pdf({
           format: 'A4',
           printBackground: true,
           margin,
+          waitForFonts: false,
         });
         return Buffer.from(pdfBuffer);
       } finally {

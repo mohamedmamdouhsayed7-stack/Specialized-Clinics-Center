@@ -144,11 +144,14 @@ describe('Invoices Module Tests (E2E)', () => {
 
   describe('Invoice Creation', () => {
     it('creates a telephone consultation invoice as DRAFT, then supports issue and payment without an appointment', async () => {
+      await request(app.getHttpServer()).post('/api/invoices/telephone-consultation').send({ patientId: testPatientId, items: [{ serviceId: testServiceAId }] }).expect(401);
       const created = await request(app.getHttpServer()).post('/api/invoices/telephone-consultation')
         .set('Authorization', `Bearer ${receptionistAccessToken}`)
-        .send({ patientId: testPatientId, items: [{ serviceId: testServiceAId, quantity: 1 }] }).expect(201);
+        .send({ patientId: testPatientId, items: [{ serviceId: testServiceAId }] }).expect(201);
       expect(created.body.status).toBe('DRAFT');
       expect(Number(created.body.total)).toBe(30);
+      expect(created.body.invoiceItems[0].quantity).toBe(1);
+      expect(created.body.isTelephoneConsultation).toBe(true);
       expect(created.body.payments).toHaveLength(0);
       expect(created.body.visit.type).toBe('TELEPHONE_CONSULTATION');
       const consultationVisit = await prisma.visit.findUnique({ where: { id: created.body.visit.id } });
@@ -168,6 +171,41 @@ describe('Invoices Module Tests (E2E)', () => {
       expect(visitTypeReport.body).toEqual(expect.arrayContaining([
         expect.objectContaining({ type: 'TELEPHONE_CONSULTATION', count: expect.any(Number) }),
       ]));
+    });
+
+    it.each<[string, { patientId?: boolean; patientName?: string }, { serviceId?: boolean; serviceName?: string; unitPrice?: number }]>([
+      ['manual patient with existing service', { patientName: 'Manual Patient Existing Service' }, { serviceId: true }],
+      ['existing patient with manual service', { patientId: true }, { serviceName: 'Manual consultation description', unitPrice: 12.5 }],
+      ['manual patient with manual service', { patientName: 'Manual Telephone Patient' }, { serviceName: 'Manual consultation - phone', unitPrice: 23.75 }],
+    ])('creates a telephone invoice for %s without creating fake records', async (_label, patientData, serviceData) => {
+      const payload = {
+        ...(patientData.patientId ? { patientId: testPatientId } : patientData),
+        items: [serviceData.serviceId ? { serviceId: testServiceAId } : serviceData],
+      };
+      const result = await request(app.getHttpServer())
+        .post('/api/invoices/telephone-consultation')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send(payload)
+        .expect(201);
+
+      const expectedName = patientData.patientName || 'سارة أحمد';
+      const expectedDescription = serviceData.serviceId ? 'Follow-up' : serviceData.serviceName;
+      const expectedPrice = serviceData.serviceId ? 30 : serviceData.unitPrice;
+      expect(result.body.patientNameSnapshot).toBe(patientData.patientName || null);
+      expect(result.body.patient?.fullNameAr || result.body.patientNameSnapshot).toBe(expectedName);
+      expect(result.body.visit?.type || null).toBe(patientData.patientId ? 'TELEPHONE_CONSULTATION' : null);
+      expect(result.body.isTelephoneConsultation).toBe(true);
+      expect(result.body.invoiceItems).toHaveLength(1);
+      expect(result.body.invoiceItems[0].serviceNameSnapshot).toBe(expectedDescription);
+      expect(result.body.invoiceItems[0].serviceId || null).toBe(serviceData.serviceId ? testServiceAId : null);
+      expect(result.body.invoiceItems[0].quantity).toBe(1);
+      expect(Number(result.body.total)).toBe(expectedPrice);
+      if (patientData.patientName) {
+        expect(await prisma.patient.findFirst({ where: { fullNameAr: patientData.patientName } })).toBeNull();
+      }
+      if (serviceData.serviceName) {
+        expect(await prisma.service.findFirst({ where: { name: serviceData.serviceName } })).toBeNull();
+      }
     });
 
     it('should create an invoice as admin with multiple items as DRAFT, NO payment, no visit completion', async () => {

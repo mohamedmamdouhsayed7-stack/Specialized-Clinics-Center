@@ -243,6 +243,7 @@ export class ReportsService {
         remaining: true,
         paymentStatus: true,
         issuedAt: true,
+        patientNameSnapshot: true,
         patient: { select: { fullNameAr: true, civilId: true } },
       },
     });
@@ -356,6 +357,7 @@ export class ReportsService {
           remaining: true,
           paymentStatus: true,
           issuedAt: true,
+          patientNameSnapshot: true,
           patient: { select: { fullNameAr: true, civilId: true } },
         },
       }),
@@ -403,6 +405,7 @@ export class ReportsService {
           remaining: true,
           paymentStatus: true,
           issuedAt: true,
+          patientNameSnapshot: true,
           visit: { select: { appointment: { select: { status: true } } } },
           patient: { select: { fullNameAr: true, civilId: true } },
         },
@@ -415,7 +418,7 @@ export class ReportsService {
           amount: true,
           method: true,
           paymentDate: true,
-          invoice: { select: { invoiceNumber: true, patient: { select: { fullNameAr: true } } } },
+          invoice: { select: { invoiceNumber: true, patientNameSnapshot: true, patient: { select: { fullNameAr: true } } } },
         },
       }),
       this.prisma.payment.groupBy({
@@ -472,7 +475,7 @@ export class ReportsService {
     // data happens to retain an invoice linked through its visit.
     const paymentExceptions = invoicesToday.filter(
       inv => (inv.remaining.gt(0) || inv.paymentStatus !== 'PAID')
-        && !['CANCELLED', 'NO_SHOW'].includes(inv.visit.appointment?.status || ''),
+        && !['CANCELLED', 'NO_SHOW'].includes(inv.visit?.appointment?.status || ''),
     ).length;
 
     return {
@@ -497,8 +500,8 @@ export class ReportsService {
       invoices: invoicesToday.map((inv) => ({
         id: inv.id,
         invoiceNumber: inv.invoiceNumber,
-        patientName: inv.patient.fullNameAr,
-        civilId: inv.patient.civilId,
+        patientName: inv.patient?.fullNameAr || inv.patientNameSnapshot || '—',
+        civilId: inv.patient?.civilId || null,
         total: Number(inv.total),
         paid: Number(inv.paid),
         remaining: Number(inv.remaining),
@@ -508,7 +511,7 @@ export class ReportsService {
       payments: paymentsToday.map((p) => ({
         id: p.id,
         invoiceNumber: p.invoice.invoiceNumber,
-        patientName: p.invoice.patient.fullNameAr,
+        patientName: p.invoice.patient?.fullNameAr || p.invoice.patientNameSnapshot || '—',
         amount: Number(p.amount),
         method: p.method,
         paymentDate: p.paymentDate,

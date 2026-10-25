@@ -7,6 +7,8 @@ import * as argon2 from 'argon2';
 import cookieParser from 'cookie-parser';
 import { AppointmentStatus } from '@prisma/client';
 import { cleanupTestData } from '../test-utils';
+import { kuwaitDateTimeLocalToIso, toKuwaitDateTimeLocal } from '../../../web/src/utils/kuwaitDateTime';
+import { formatDateTime } from '../../../web/src/utils/dateFormat';
 
 describe('Appointments Module Tests (E2E)', () => {
   let app: INestApplication;
@@ -146,6 +148,7 @@ describe('Appointments Module Tests (E2E)', () => {
       await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}/cancel`)
         .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ reason: 'No longer needed' }).expect(200);
       const beforeLink = await prisma.appointment.findUnique({ where: { id: quickAppointmentId } });
+      await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}/link-patient`).send({ patientId: testPatientId }).expect(401);
       await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}/link-patient`)
         .set('Authorization', `Bearer ${receptionistAccessToken}`).send({ patientId: testPatientId }).expect(200);
       const linked = await prisma.appointment.findUnique({ where: { id: quickAppointmentId } });
@@ -153,6 +156,56 @@ describe('Appointments Module Tests (E2E)', () => {
       expect(linked?.scheduledAt.toISOString()).toBe(beforeLink?.scheduledAt.toISOString());
       expect(linked?.notes).toBe(beforeLink?.notes);
       expect(await prisma.auditLog.findFirst({ where: { entityType: 'Appointment', entityId: quickAppointmentId, action: 'LINK_PATIENT' } })).toBeTruthy();
+
+      const secondPatient = await prisma.patient.create({
+        data: { fullNameAr: 'مريض آخر للاختبار', createdById: adminUserId },
+      });
+      await request(app.getHttpServer()).patch(`/api/appointments/${quickAppointmentId}/link-patient`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ patientId: secondPatient.id })
+        .expect(409)
+        .expect(({ body }) => {
+          expect(body.message).toBe('Appointment is already linked to a patient');
+        });
+      const stillLinked = await prisma.appointment.findUnique({ where: { id: quickAppointmentId } });
+      expect(stillLinked?.patientId).toBe(testPatientId);
+      expect(await prisma.auditLog.count({
+        where: { entityType: 'Appointment', entityId: quickAppointmentId, action: 'LINK_PATIENT' },
+      })).toBe(1);
+    });
+
+    it('preserves 10:30 Kuwait appointment time through creation, persistence, retrieval, display and reporting', async () => {
+      const localDateTime = '2032-05-20T10:30';
+      const scheduledAt = kuwaitDateTimeLocalToIso(localDateTime);
+      const reportUrl = '/api/reports/appointment-status?from=2032-05-20&to=2032-05-20';
+      const beforeReport = await request(app.getHttpServer())
+        .get(reportUrl)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .expect(200);
+      const beforeBookedCount = beforeReport.body.find((row: { status: string }) => row.status === 'BOOKED')?.count || 0;
+
+      const created = await request(app.getHttpServer())
+        .post('/api/appointments')
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .send({ patientId: testPatientId, scheduledAt, notes: 'Kuwait 10:30 acceptance fixture' })
+        .expect(201);
+
+      const persisted = await prisma.appointment.findUniqueOrThrow({ where: { id: created.body.id } });
+      expect(persisted.scheduledAt.toISOString()).toBe('2032-05-20T07:30:00.000Z');
+
+      const reopened = await request(app.getHttpServer())
+        .get(`/api/appointments/${created.body.id}`)
+        .set('Authorization', `Bearer ${receptionistAccessToken}`)
+        .expect(200);
+      expect(toKuwaitDateTimeLocal(reopened.body.scheduledAt)).toBe(localDateTime);
+      expect(formatDateTime(reopened.body.scheduledAt, 'en')).toContain('10:30');
+
+      const afterReport = await request(app.getHttpServer())
+        .get(reportUrl)
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .expect(200);
+      const afterBookedCount = afterReport.body.find((row: { status: string }) => row.status === 'BOOKED')?.count || 0;
+      expect(afterBookedCount).toBe(beforeBookedCount + 1);
     });
 
     it('should create appointment as receptionist', async () => {

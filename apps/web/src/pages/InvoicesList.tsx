@@ -142,7 +142,7 @@ export default function InvoicesList() {
                 <MobileRecordCard
                   key={invoice.id}
                   title={invoice.invoiceNumber}
-                  subtitle={invoice.patient?.fullNameAr}
+                  subtitle={invoice.patient?.fullNameAr || invoice.patientNameSnapshot || ''}
                   onClick={() => navigate(preserveListState(`/invoices/${invoice.id}`, location))}
                   actions={getPaymentBadge(invoice.paymentStatus)}
                 >
@@ -174,7 +174,7 @@ export default function InvoicesList() {
                     className="hover:bg-gray-50 cursor-pointer"
                   >
                     <td className="px-6 py-4 font-medium text-gray-900">{invoice.invoiceNumber}</td>
-                    <td className="px-6 py-4 text-gray-900">{invoice.patient?.fullNameAr}</td>
+                    <td className="px-6 py-4 text-gray-900">{invoice.patient?.fullNameAr || invoice.patientNameSnapshot || '—'}</td>
                     <td className="px-6 py-4 text-gray-900 font-medium">
                       {formatMoney(invoice.total, i18n.language)} {t('common.currency')}
                     </td>

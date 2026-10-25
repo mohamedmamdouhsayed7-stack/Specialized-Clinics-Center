@@ -25,6 +25,31 @@ const longNameInvoice: InvoicePdfData = {
   },
 };
 
+const exceptionalContentInvoice: InvoicePdfData = {
+  ...invoice,
+  invoiceNumber: 'INV-LONG-CONTENT-2032',
+  patient: {
+    fullNameAr: 'المريضة ذات الاسم العربي الطويل جدًا لاختبار التفاف النص في الفاتورة دون قص أو تداخل في جميع الحقول',
+    fullNameEn: 'A Patient With An Exceptionally Long English Name For Invoice Wrapping And Readability Verification',
+    civilId: null,
+  },
+  invoiceItems: Array.from({ length: 8 }, (_, index) => ({
+    serviceNameSnapshot: index % 2 === 0
+      ? `خدمة طبية عربية طويلة لاختبار التفاف النص رقم ${index + 1} دون فقدان تفاصيل الخدمة أو المبلغ المستحق`
+      : `Extended English consultation service description ${index + 1} wrapping across multiple readable lines`,
+    unitPriceSnapshot: 10,
+    quantity: 1,
+    lineTotal: 10,
+  })),
+  subtotal: 80,
+  total: 83,
+  paid: 25,
+  remaining: 58,
+  paymentStatus: 'PARTIALLY_PAID',
+  additionalCharges: [{ chargeType: 'FIXED', chargeValue: 3, calculatedAmount: 3, description: 'Additional charge' }],
+  payments: [{ amount: 25, method: 'KNET', paymentDate: '2032-05-20T07:30:00.000Z' }],
+};
+
 describe('invoice print/PDF template', () => {
   it.each([
     ['en', 'Invoice - Sara Ahmed - INV-1788803016897'],
@@ -44,6 +69,18 @@ describe('invoice print/PDF template', () => {
     const html = renderInvoiceHtml(invoice, 'en');
     expect(html.match(/class="invoice-copy"/g)).toHaveLength(1);
     expect(html).not.toContain('<div class="cut-line">');
+  });
+
+  it.each([
+    ['en', 'Remaining', '58.00 KD'],
+    ['ar', 'المتبقي', '58.00 KD'],
+  ] as const)('shows the outstanding balance in the existing payment summary for %s', (language, label, value) => {
+    const html = renderInvoiceHtml({ ...invoice, total: 83, paid: 25, remaining: 58 }, language);
+
+    expect(html).toContain(`<span class="pay-label">${label}</span>`);
+    expect(html).toContain(`<span class="pay-value">${value}</span>`);
+    expect(html).toContain('size: A4;');
+    expect(html).toContain('min-height: 148.5mm;');
   });
 
   it('formats the invoice business date in Asia/Kuwait at a UTC midnight boundary', () => {
@@ -69,6 +106,9 @@ describe('invoice print/PDF template', () => {
     }, 'en', { copies: 2 });
     expect(telephone.match(/class="invoice-copy"/g)).toHaveLength(1);
     expect(telephone).toContain('Telephone consultation');
+    expect(telephone).not.toContain('class="col-qty"');
+    expect(telephone).not.toContain('QTY');
+    expect(telephone).not.toContain('>1</td>');
     expect(telephone).toContain('خدمة استشارة هاتفية طويلة رقم 8');
     expect(telephone).toContain('Additional fee');
     expect(telephone).toContain('min-height: 148.5mm;');
@@ -105,8 +145,10 @@ describe('invoice print/PDF template', () => {
     expect(oneMatch[0][1].trim()).toBe(twoMatches[0][1].trim());
 
     expect(htmlOne).toContain(invoice.invoiceNumber);
-    expect(htmlOne).toContain(invoice.patient.fullNameAr);
-    expect(htmlOne).toContain(invoice.patient.fullNameEn as string);
+    expect(htmlOne).toContain(invoice.patient?.fullNameEn as string);
+    expect(htmlOne).not.toContain(invoice.patient?.fullNameAr);
+    const htmlArabic = renderInvoiceHtml(invoice, 'ar', { copies: 1 });
+    expect(htmlArabic).toContain(invoice.patient?.fullNameAr);
     expect(htmlOne).toContain('Consultation');
     expect(htmlOne).toContain(`<title>Invoice - Sara Ahmed - INV-1788803016897</title>`);
     expect(htmlOne).toContain('min-height: 297mm;');
@@ -132,6 +174,8 @@ describe('invoice print/PDF template', () => {
         const sheet = document.querySelector('.sheet')!.getBoundingClientRect();
         const copies = Array.from(document.querySelectorAll('.invoice-copy'));
         const first = copies[0].getBoundingClientRect();
+        const summary = copies[0].querySelector('.pay-row')!.getBoundingClientRect();
+        const innerCopy = copies[0].querySelector('.copy')!.getBoundingClientRect();
         const upperHalfPlacement = first.bottom <= sheet.top + sheet.height / 2 + 2;
         const copyContentsFit = copies.every((copy) => copy.scrollHeight <= copy.clientHeight + 1);
         return {
@@ -139,6 +183,7 @@ describe('invoice print/PDF template', () => {
           copyFitsOnSheet: first.bottom <= sheet.bottom,
           copyContentsFit,
           upperHalfPlacement,
+          summaryUsesLowerContentArea: summary.top >= innerCopy.top + innerCopy.height * 0.55,
         };
       });
 
@@ -146,12 +191,36 @@ describe('invoice print/PDF template', () => {
       expect(layout.copyFitsOnSheet).toBe(true);
       expect(layout.copyContentsFit).toBe(true);
       expect(layout.upperHalfPlacement).toBe(true);
+      expect(layout.summaryUsesLowerContentArea).toBe(true);
       const pdf = await page.pdf({ format: 'A4', printBackground: true });
       expect((Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length).toBe(1);
       await page.close();
     } finally {
       await browser.close();
     }
+  });
+
+  it.each(['ar', 'en'] as const)('renders manual telephone patient and service snapshots in %s', (language) => {
+    const html = renderInvoiceHtml({
+      ...invoice,
+      patient: null,
+      patientNameSnapshot: 'مريض هاتفي يدوي / Manual Telephone Patient',
+      isTelephoneConsultation: true,
+      visit: null,
+      invoiceItems: [{ serviceNameSnapshot: 'استشارة هاتفية يدوية / Manual telephone consultation', unitPriceSnapshot: 18.5, quantity: 1, lineTotal: 18.5 }],
+      subtotal: 18.5,
+      total: 18.5,
+      paid: 0,
+      remaining: 18.5,
+      paymentStatus: 'UNPAID',
+    }, language);
+    expect(html).toContain('مريض هاتفي يدوي / Manual Telephone Patient');
+    expect(html).toContain('استشارة هاتفية يدوية / Manual telephone consultation');
+    expect(html).toContain('18.50 KD');
+    expect(html).not.toContain('class="col-qty"');
+    expect(html).not.toContain(language === 'ar' ? 'الكمية' : 'QTY');
+    expect(html).not.toContain('>1</td>');
+    expect(html).toContain(language === 'ar' ? 'استشارة هاتفية' : 'Telephone consultation');
   });
 
   it('does not truncate long patient names in the internal copy', async () => {
@@ -175,7 +244,7 @@ describe('invoice print/PDF template', () => {
       const patientNameTruncation = await page.evaluate(() => {
         const copies = Array.from(document.querySelectorAll('.invoice-copy'));
         const results = copies.map((copy) => {
-          const patientValue = copy.querySelector('.p-value.ar') as HTMLElement;
+          const patientValue = copy.querySelector('.p-value.en') as HTMLElement;
           const computedStyle = window.getComputedStyle(patientValue);
           const isEllipsisTruncation = computedStyle.textOverflow === 'ellipsis' && computedStyle.whiteSpace === 'nowrap';
           const scrollWidth = patientValue.scrollWidth;
@@ -233,7 +302,7 @@ describe('invoice print/PDF template', () => {
         const copies = Array.from(document.querySelectorAll('.invoice-copy'));
         const copyFits = copies.length === 1 && copies[0].getBoundingClientRect().bottom <= sheet.bottom;
         const copyContentsFit = copies.every((copy) => copy.scrollHeight <= copy.clientHeight + 1);
-        const patientValue = copies[0].querySelector('.p-value.ar') as HTMLElement;
+        const patientValue = copies[0].querySelector('.p-value.en') as HTMLElement;
         const computedStyle = window.getComputedStyle(patientValue);
         const isEllipsisTruncation = computedStyle.textOverflow === 'ellipsis' && computedStyle.whiteSpace === 'nowrap';
         const isHorizontallyClipped = patientValue.scrollWidth > patientValue.clientWidth + 2;
@@ -256,6 +325,88 @@ describe('invoice print/PDF template', () => {
       expect(layout.isEllipsisTruncation).toBe(false);
       expect(layout.isHorizontallyClipped).toBe(false);
       expect(layout.patientText).toBe(expectedPatientName);
+      await page.close();
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it.each([
+    ['ar', exceptionalContentInvoice.patient.fullNameAr],
+    ['en', exceptionalContentInvoice.patient.fullNameEn as string],
+  ] as const)('renders long %s invoice content as one readable A4 page in the upper half', async (language, expectedPatientName) => {
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--no-zygote'],
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 794, height: 1123 });
+      await page.setRequestInterception(true);
+      page.on('request', (request) => {
+        if (request.url().startsWith('data:') || request.url() === 'about:blank') void request.continue();
+        else void request.abort();
+      });
+      await page.setContent(renderInvoiceHtml(exceptionalContentInvoice, language, { copies: 1 }), { waitUntil: 'domcontentloaded' });
+      await page.emulateMediaType('print');
+      await page.waitForFunction(() => (document.querySelector('.logo') as HTMLImageElement).complete);
+
+      const layout = await page.evaluate((locale) => {
+        const sheet = document.querySelector('.sheet') as HTMLElement;
+        const copies = Array.from(document.querySelectorAll('.invoice-copy')) as HTMLElement[];
+        const invoiceCopy = copies[0];
+        const copy = invoiceCopy.querySelector('.copy') as HTMLElement;
+        const patientName = copy.querySelector('.p-value') as HTMLElement;
+        const serviceCells = Array.from(copy.querySelectorAll('tbody tr:not(.charge-row) .col-service')) as HTMLElement[];
+        const logo = copy.querySelector('.logo') as HTMLImageElement;
+        const sheetBounds = sheet.getBoundingClientRect();
+        const invoiceBounds = invoiceCopy.getBoundingClientRect();
+        return {
+          copyCount: copies.length,
+          sheetWidth: sheetBounds.width,
+          sheetHeight: sheetBounds.height,
+          pageWidth: document.documentElement.scrollWidth,
+          invoiceBottom: invoiceBounds.bottom,
+          upperHalfBottom: sheetBounds.top + sheetBounds.height / 2 + 2,
+          copyScrollWidth: copy.scrollWidth,
+          copyClientWidth: copy.clientWidth,
+          copyScrollHeight: copy.scrollHeight,
+          copyClientHeight: copy.clientHeight,
+          patientName: patientName.textContent,
+          expectedDirectionClass: patientName.classList.contains(locale === 'ar' ? 'ar' : 'en'),
+          patientClipped: patientName.scrollWidth > patientName.clientWidth + 1,
+          serviceCellCount: serviceCells.length,
+          serviceClipped: serviceCells.some((cell) => cell.scrollWidth > cell.clientWidth + 1),
+          serviceLineCounts: serviceCells.map((cell) => {
+            const range = document.createRange();
+            range.selectNodeContents(cell);
+            return range.getClientRects().length;
+          }),
+          logoLoaded: logo.complete && logo.naturalWidth > 0,
+          clinicNameAr: copy.querySelector('.clinic-name-ar')?.textContent?.trim(),
+          clinicNameEn: copy.querySelector('.clinic-name-en')?.textContent?.trim(),
+        };
+      }, language);
+
+      expect(layout.copyCount).toBe(1);
+      expect(layout.sheetWidth).toBeGreaterThan(780);
+      expect(layout.sheetHeight).toBeGreaterThan(1100);
+      expect(layout.pageWidth).toBeLessThanOrEqual(layout.sheetWidth + 2);
+      expect(layout.invoiceBottom).toBeLessThanOrEqual(layout.upperHalfBottom);
+      expect(layout.copyScrollWidth).toBeLessThanOrEqual(layout.copyClientWidth + 1);
+      expect(layout.copyScrollHeight).toBeLessThanOrEqual(layout.copyClientHeight + 2);
+      expect(layout.patientName).toBe(expectedPatientName);
+      expect(layout.expectedDirectionClass).toBe(true);
+      expect(layout.patientClipped).toBe(false);
+      expect(layout.serviceCellCount).toBe(8);
+      expect(layout.serviceClipped).toBe(false);
+      expect(layout.serviceLineCounts.some((lineCount) => lineCount > 1)).toBe(true);
+      expect(layout.logoLoaded).toBe(true);
+      expect(layout.clinicNameAr).toBe('مركز العيادات التخصصية');
+      expect(layout.clinicNameEn).toBe('Specialized Clinics Center');
+
+      const pdf = await page.pdf({ format: 'A4', printBackground: true });
+      expect((Buffer.from(pdf).toString('latin1').match(/\/Type\s*\/Page\b/g) || []).length).toBe(1);
       await page.close();
     } finally {
       await browser.close();

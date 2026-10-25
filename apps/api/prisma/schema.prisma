@@ -194,8 +194,10 @@ model Service {
 model Invoice {
   id                  String              @id @default(uuid()) @db.Uuid
   invoiceNumber       String              @unique
-  visitId             String              @db.Uuid
-  patientId           String              @db.Uuid
+  visitId             String?             @db.Uuid
+  patientId           String?             @db.Uuid
+  patientNameSnapshot String?
+  isTelephoneConsultation Boolean         @default(false)
   status              InvoiceStatus       @default(DRAFT)
   subtotal            Decimal             @default(0) @db.Decimal(10, 2)
   total               Decimal             @default(0) @db.Decimal(10, 2)
@@ -213,8 +215,8 @@ model Invoice {
   createdById  String? @db.Uuid
 
   // Relations
-  visit              Visit                   @relation("VisitInvoices", fields: [visitId], references: [id], onDelete: Restrict)
-  patient             Patient                 @relation("PatientInvoices", fields: [patientId], references: [id], onDelete: Restrict)
+  visit              Visit?                  @relation("VisitInvoices", fields: [visitId], references: [id], onDelete: Restrict)
+  patient             Patient?                @relation("PatientInvoices", fields: [patientId], references: [id], onDelete: Restrict)
   invoiceItems       InvoiceItem[]
   additionalCharges   InvoiceAdditionalCharge[]
   payments           Payment[]

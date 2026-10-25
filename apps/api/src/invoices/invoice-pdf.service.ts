@@ -50,7 +50,7 @@ export class InvoicePdfService {
     });
     return {
       buffer,
-      patientName: invoicePatientDisplayName(invoice.patient, language),
+      patientName: invoicePatientDisplayName(invoice.patient, language, invoice.patientNameSnapshot),
       invoiceNumber: invoice.invoiceNumber,
     };
   }

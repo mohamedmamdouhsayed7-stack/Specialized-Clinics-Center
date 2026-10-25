@@ -15,6 +15,7 @@ import { URL } from 'node:url';
 import { AuditService } from '../audit/audit.service';
 import { MaintenanceService } from '../common/maintenance/maintenance.service';
 import { PrismaService } from '../database/prisma.service';
+import { resolvePostgresToolPath } from './postgres-tools';
 
 export interface BackupManifestEntry {
   filename: string;
@@ -47,6 +48,8 @@ interface BackupManifest {
 @Injectable()
 export class BackupService implements OnModuleInit {
   private readonly logger = new Logger(BackupService.name);
+  private pgDumpCommand = 'pg_dump';
+  private psqlCommand = 'psql';
 
   // Concurrency control: prevent overlapping backup/restore operations
   private operationInProgress = false;
@@ -90,39 +93,27 @@ export class BackupService implements OnModuleInit {
       throw new Error('BACKUP_DIR must be an absolute path for security');
     }
 
-    // Verify pg_dump and psql are available in PATH
-    let pgDumpAvailable = false;
-    let psqlAvailable = false;
-
-    try {
-      const pgDumpCheck = spawnSync('which', ['pg_dump']);
-      if (pgDumpCheck.status === 0) {
-        pgDumpAvailable = true;
-        this.logger.log('pg_dump is available in PATH');
-      } else {
-        this.logger.warn('pg_dump not found in PATH. PostgreSQL client tools must be installed for backup operations.');
-      }
-    } catch (err) {
-      this.logger.warn(`Failed to check pg_dump availability: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    try {
-      const psqlCheck = spawnSync('which', ['psql']);
-      if (psqlCheck.status === 0) {
-        psqlAvailable = true;
-        this.logger.log('psql is available in PATH');
-      } else {
-        this.logger.warn('psql not found in PATH. PostgreSQL client tools must be installed for backup operations.');
-      }
-    } catch (err) {
-      this.logger.warn(`Failed to check psql availability: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    this.pgDumpCommand = resolvePostgresToolPath('pg_dump');
+    this.psqlCommand = resolvePostgresToolPath('psql');
+    const pgDumpAvailable = this.checkPostgresTool(this.pgDumpCommand, 'pg_dump');
+    const psqlAvailable = this.checkPostgresTool(this.psqlCommand, 'psql');
 
     if (!pgDumpAvailable || !psqlAvailable) {
       this.logger.warn('WARNING: Backup service cannot create PostgreSQL backups without pg_dump and psql. PostgreSQL client tools must be installed in the runtime environment.');
     }
 
     this.logger.log(`Backup service initialized with directory: ${backupDir}`);
+  }
+
+  private checkPostgresTool(command: string, name: 'pg_dump' | 'psql'): boolean {
+    const result = spawnSync(command, ['--version'], { encoding: 'utf8', windowsHide: true });
+    if (result.status === 0) {
+      this.logger.log(`${name} is available: ${result.stdout.trim()}`);
+      return true;
+    }
+    const reason = result.error?.message || result.stderr?.trim();
+    this.logger.warn(`${name} could not be executed${reason ? `: ${reason}` : ''}`);
+    return false;
   }
 
   private get backupDir(): string {
@@ -630,7 +621,7 @@ export class BackupService implements OnModuleInit {
   private async getPostgresServerVersionNum(connection: ReturnType<BackupService['getDbConnectionParams']>): Promise<number> {
     const { host, port, user, password, sslmode, database } = connection;
     const versionProcess = spawn(
-      'psql',
+      this.psqlCommand,
       [
         '--host', host,
         '--port', port,
@@ -693,7 +684,7 @@ export class BackupService implements OnModuleInit {
       // CREATE, so restoring it cleanly replaces existing objects rather than
       // erroring on "already exists".
       const pgDump = spawn(
-        'pg_dump',
+        this.pgDumpCommand,
         this.getPgDumpArguments(connection),
         { env: this.getPostgresProcessEnvironment(password, sslmode) },
       );
@@ -982,7 +973,7 @@ export class BackupService implements OnModuleInit {
         // Use ON_ERROR_STOP to ensure psql stops on first SQL error
         // Use single-transaction to ensure atomic restore
         psql = spawn(
-          'psql',
+          this.psqlCommand,
           [
             '--host', host,
             '--port', port,

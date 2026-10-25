@@ -348,15 +348,22 @@ function RolesSection({ currentUserId }: { currentUserId?: string }) {
 function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; onChanged: () => void }) {
   const [busy, setBusy] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [confirmStatus, setConfirmStatus] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { t } = useTranslation();
   const { showToast } = useToast();
 
   const toggleStatus = async () => {
+    if (busy || isSelf) return;
     setBusy(true);
     try {
       await usersService.updateUserStatus(user.id, !user.isActive);
+      setConfirmStatus(false);
       onChanged();
+      showToast({
+        type: 'success',
+        message: t(user.isActive ? 'settings.userDeactivated' : 'settings.userActivated'),
+      });
     } catch (err) {
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.appointmentStatusFailed') });
     } finally {
@@ -398,7 +405,7 @@ function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; 
             <button onClick={() => setShowEdit(true)} className="text-sm text-[#173B78] hover:underline">
               {t('common.edit')}
             </button>
-            <button onClick={toggleStatus} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
+            <button onClick={() => setConfirmStatus(true)} disabled={isSelf || busy} className="text-sm text-[#173B78] disabled:opacity-40 disabled:cursor-not-allowed hover:underline">
               {busy ? '...' : user.isActive ? t('common.deactivate') : t('common.activate')}
             </button>
             <button
@@ -413,6 +420,17 @@ function UserRow({ user, isSelf, onChanged }: { user: AppUser; isSelf: boolean; 
         </td>
       </tr>
       {showEdit && <EditUserModal user={user} isSelf={isSelf} onClose={() => setShowEdit(false)} onUpdated={onChanged} />}
+      <ConfirmDialog
+        open={confirmStatus}
+        title={t(user.isActive ? 'settings.confirmUserDeactivateTitle' : 'settings.confirmUserActivateTitle')}
+        message={t(user.isActive ? 'settings.confirmUserDeactivateMessage' : 'settings.confirmUserActivateMessage', { name: user.name })}
+        confirmLabel={busy ? t('common.loading') : user.isActive ? t('common.deactivate') : t('common.activate')}
+        cancelLabel={t('common.cancel')}
+        destructive={user.isActive}
+        loading={busy}
+        onConfirm={toggleStatus}
+        onCancel={() => setConfirmStatus(false)}
+      />
       <ConfirmDialog
         open={confirmDelete}
         title={t('settings.deleteUserTitle')}

@@ -6,7 +6,7 @@ import { createInvoiceFilename, createShareInvoiceFilename } from '../utils/invo
 
 export interface InvoiceItem {
   id: string;
-  serviceId: string;
+  serviceId: string | null;
   serviceNameSnapshot: string;
   unitPriceSnapshot: string;
   quantity: number;
@@ -27,8 +27,10 @@ export interface AdditionalCharge {
 export interface Invoice {
   id: string;
   invoiceNumber: string;
-  visitId: string;
-  patientId: string;
+  visitId: string | null;
+  patientId: string | null;
+  patientNameSnapshot?: string | null;
+  isTelephoneConsultation?: boolean;
   status: 'DRAFT' | 'ISSUED' | 'VOID';
   subtotal: string;
   total: string;
@@ -48,13 +50,13 @@ export interface Invoice {
     fullNameAr: string;
     fullNameEn?: string | null;
     phone?: string;
-  };
+  } | null;
   visit: {
     id: string;
     type: string;
     visitDate: string;
     diagnosis?: string | null;
-  };
+  } | null;
 }
 
 export interface CreateInvoiceItemDto {
@@ -77,8 +79,9 @@ export interface CreateInvoiceDto {
 }
 
 export interface CreateTelephoneConsultationDto {
-  patientId: string;
-  items: CreateInvoiceItemDto[];
+  patientId?: string;
+  patientName?: string;
+  items: { serviceId?: string; serviceName?: string; unitPrice?: number }[];
 }
 
 export interface AddChargeDto {
@@ -88,7 +91,7 @@ export interface AddChargeDto {
 }
 
 export interface CreateReplacementDto {
-  items: CreateInvoiceItemDto[];
+  items: { serviceId?: string; serviceName?: string; quantity?: number; unitPrice?: number }[];
   additionalCharges?: {
     chargeType: 'PERCENTAGE' | 'FIXED';
     chargeValue: number;

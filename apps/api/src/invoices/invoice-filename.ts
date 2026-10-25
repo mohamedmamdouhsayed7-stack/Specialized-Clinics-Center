@@ -1,12 +1,13 @@
 const ILLEGAL_FILENAME_CHARACTERS = /[\p{Cc}\p{Cf}<>:"/\\|?*]/gu;
 
 export function invoicePatientDisplayName(
-  patient: { fullNameAr: string; fullNameEn?: string | null },
+  patient: { fullNameAr?: string | null; fullNameEn?: string | null } | null | undefined,
   language: 'ar' | 'en',
+  fallbackName?: string | null,
 ): string {
-  return language === 'ar'
-    ? patient.fullNameAr || patient.fullNameEn || 'Unknown'
-    : patient.fullNameEn || patient.fullNameAr || 'Unknown';
+  return (language === 'ar'
+    ? patient?.fullNameAr || patient?.fullNameEn || fallbackName
+    : patient?.fullNameEn || patient?.fullNameAr || fallbackName) || 'Unknown';
 }
 
 export function sanitizeInvoiceFilenamePart(value: string): string {

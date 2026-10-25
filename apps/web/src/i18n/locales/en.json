@@ -176,7 +176,8 @@
     "weekVisits": "Visits This Week",
     "totalOutstanding": "Total Outstanding",
     "quickActions": "Quick actions",
-    "quickActionsSubtitle": "Open the most-used clinic workflows"
+    "quickActionsSubtitle": "Open the most-used clinic workflows",
+    "telephoneConsultationDesc": "Create a consultation and draft invoice for a patient call"
   },
   "patients": {
     "subtitle": "Manage patient records",
@@ -533,13 +534,25 @@
     "quickUnregisteredHelp": "This appointment is not linked to a patient record. Link a registered patient before creating a visit.",
     "linkPatient": "Link a registered patient",
     "patientLinked": "Patient linked to appointment",
+    "linkAlreadyLinked": "This appointment is already linked to a patient.",
+    "linkPatientNotFound": "The selected patient could not be found.",
+    "linkArchivedPatient": "An archived patient cannot be linked to an appointment.",
+    "linkPatientFailed": "The patient could not be linked to this appointment.",
     "linkPatientBeforeVisit": "Link a registered patient to this appointment before creating a visit."
   },
   "telephoneConsultation": {
     "title": "Telephone consultation",
     "noAttendance": "Record and bill a telephone consultation without clinic attendance or a regular appointment.",
+      "existingPatient": "Existing patient",
+      "manualPatient": "Manual patient",
+      "patientName": "Patient name",
+      "existingService": "Existing service",
+      "manualService": "Manual service",
+      "serviceDescription": "Service / consultation description",
+      "servicePrice": "Price",
     "createDraft": "Create draft invoice",
-    "draftCreated": "Telephone consultation draft invoice created"
+    "draftCreated": "Telephone consultation draft invoice created",
+    "createError": "Could not create the telephone consultation invoice."
   },
   "reports": {
     "subtitle": "Comprehensive analytics on clinic performance and financial growth indicators",
@@ -637,6 +650,12 @@
     "deleteUserConfirm": "Delete permanently",
     "userDeleted": "User deleted successfully.",
     "deleteUserError": "Failed to delete user.",
+    "userActivated": "User activated successfully.",
+    "userDeactivated": "User deactivated successfully.",
+    "confirmUserActivateTitle": "Activate user?",
+    "confirmUserActivateMessage": "Activate {{name}}?",
+    "confirmUserDeactivateTitle": "Deactivate user?",
+    "confirmUserDeactivateMessage": "Deactivate {{name}}? They will no longer be able to sign in.",
     "cannotEditOwnRole": "You cannot change your own role",
     "notifAppointmentReminders": "Appointment reminders",
     "notifNewAppointment": "New appointment notification",

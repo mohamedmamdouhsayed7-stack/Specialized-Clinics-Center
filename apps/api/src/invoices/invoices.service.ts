@@ -79,10 +79,96 @@ export class InvoicesService {
   }
 
   async createTelephoneConsultation(dto: CreateTelephoneConsultationDto, userId: string, ipAddress?: string, userAgent?: string) {
-    return this.create({
-      items: dto.items.map(({ serviceId, quantity }) => ({ serviceId, quantity })),
-      additionalCharges: dto.additionalCharges,
-    }, userId, ipAddress, userAgent, dto.patientId);
+    if (dto.items.length !== 1) throw new BadRequestException('A telephone consultation must contain exactly one charge');
+    if (Boolean(dto.patientId) === Boolean(dto.patientName?.trim())) {
+      throw new BadRequestException('Provide either an existing patient or a patient name');
+    }
+
+    const item = dto.items[0];
+    const manualServiceName = item.serviceName?.trim();
+    if (Boolean(item.serviceId) === Boolean(manualServiceName)) {
+      throw new BadRequestException('Provide either an existing service or a manual service description and price');
+    }
+    if (manualServiceName && item.unitPrice === undefined) {
+      throw new BadRequestException('A price is required for a manual service');
+    }
+    if (!manualServiceName && item.unitPrice !== undefined) {
+      throw new BadRequestException('A manual service description is required with a manual price');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      let patientId: string | null = null;
+      let visitId: string | null = null;
+      let patientNameSnapshot: string | null = dto.patientName?.trim() || null;
+
+      if (dto.patientId) {
+        const patient = await tx.patient.findUnique({ where: { id: dto.patientId } });
+        if (!patient) throw new NotFoundException('Patient not found');
+        if (patient.isArchived) throw new BadRequestException('Cannot create a telephone consultation for an archived patient');
+        patientId = patient.id;
+        const consultation = await tx.visit.create({
+          data: { patientId: patient.id, type: VisitType.TELEPHONE_CONSULTATION, status: VisitStatus.COMPLETED, createdById: userId },
+        });
+        visitId = consultation.id;
+        await tx.auditLog.create({ data: {
+          userId, action: 'CREATE', entityType: 'Visit', entityId: consultation.id,
+          beforeState: null, afterState: { patientId: patient.id, type: consultation.type, status: consultation.status, attendance: 'TELEPHONE' },
+          ipAddress, userAgent,
+        } });
+      }
+
+      let serviceId: string | null = null;
+      let serviceNameSnapshot: string;
+      let unitPrice: Decimal;
+      if (item.serviceId) {
+        const service = await tx.service.findUnique({ where: { id: item.serviceId } });
+        if (!service) throw new NotFoundException(`Service ${item.serviceId} not found`);
+        if (!service.isActive) throw new BadRequestException(`Service "${service.name}" is not active and cannot be invoiced`);
+        serviceId = service.id;
+        serviceNameSnapshot = service.name;
+        unitPrice = service.currentPrice;
+      } else {
+        serviceNameSnapshot = manualServiceName!;
+        unitPrice = new Decimal(item.unitPrice!);
+      }
+      const lineTotal = unitPrice.toDecimalPlaces(2);
+      const subtotal = lineTotal;
+      const additionalChargesData = (dto.additionalCharges || []).map((charge) => {
+        const chargeValue = new Decimal(charge.chargeValue);
+        const calculatedAmount = charge.chargeType === 'PERCENTAGE'
+          ? subtotal.mul(chargeValue.div(100)).toDecimalPlaces(2)
+          : chargeValue.toDecimalPlaces(2);
+        return { chargeType: charge.chargeType, chargeValue, calculatedAmount, description: charge.description };
+      });
+      const total = subtotal.add(additionalChargesData.reduce((sum, charge) => sum.add(charge.calculatedAmount), new Decimal(0))).toDecimalPlaces(2);
+      const invoice = await tx.invoice.create({
+        data: {
+          invoiceNumber: `DRAFT-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`,
+          visitId,
+          patientId,
+          patientNameSnapshot,
+          isTelephoneConsultation: true,
+          status: 'DRAFT',
+          subtotal,
+          total,
+          paid: new Decimal(0),
+          remaining: total,
+          paymentStatus: 'UNPAID',
+          createdById: userId,
+          invoiceItems: { create: [{ serviceId, serviceNameSnapshot, unitPriceSnapshot: unitPrice, quantity: 1, lineTotal }] },
+          additionalCharges: { create: additionalChargesData },
+        },
+        include: INVOICE_ITEM_INCLUDE,
+      });
+      await tx.auditLog.create({
+        data: {
+          userId, action: 'CREATE', entityType: 'Invoice', entityId: invoice.id, beforeState: null,
+          afterState: { invoiceNumber: invoice.invoiceNumber, visitId, patientId, total: invoice.total, status: invoice.status, paymentStatus: invoice.paymentStatus, createAsDraft: true, isTelephoneConsultation: true },
+          ipAddress, userAgent,
+        },
+      });
+      return invoice;
+    });
   }
 
   async create(
@@ -306,6 +392,7 @@ export class InvoicesService {
     if (normalizedSearch) {
       where.OR = [
         { invoiceNumber: { contains: normalizedSearch } },
+        { patientNameSnapshot: { contains: normalizedSearch, mode: 'insensitive' } },
         { patient: { fullNameAr: { contains: normalizedSearch, mode: 'insensitive' } } },
         { patient: { fullNameEn: { contains: normalizedSearch, mode: 'insensitive' } } },
         { patient: { phone: { contains: normalizedSearch, mode: 'insensitive' } } },
@@ -583,10 +670,10 @@ export class InvoicesService {
         updateStatusDto.status === 'ISSUED' &&
         invoice.status === 'DRAFT'
       ) {
-        const visit = await tx.visit.findUnique({
+        const visit = invoice.visitId ? await tx.visit.findUnique({
           where: { id: invoice.visitId },
           select: { id: true, status: true },
-        });
+        }) : null;
 
         if (visit && visit.status !== 'COMPLETED') {
           await tx.visit.update({
@@ -787,16 +874,18 @@ export class InvoicesService {
       }
 
       // Get the visit and patient information
-      const visit = await tx.visit.findUnique({
+      const visit = originalInvoice.visitId ? await tx.visit.findUnique({
         where: { id: originalInvoice.visitId },
-      });
+      }) : null;
 
-      if (!visit) {
+      if (!visit && !(originalInvoice.isTelephoneConsultation && (originalInvoice.patientNameSnapshot || originalInvoice.patientId))) {
         throw new NotFoundException('Visit not found');
       }
 
       // Validate and price every requested service, snapshotting name + price
-      const serviceIds = createReplacementDto.items.map((item) => item.serviceId);
+      const serviceIds = createReplacementDto.items
+        .map((item) => item.serviceId)
+        .filter((serviceId): serviceId is string => Boolean(serviceId));
       const services = await tx.service.findMany({
         where: { id: { in: serviceIds } },
       });
@@ -804,27 +893,31 @@ export class InvoicesService {
       const serviceMap = new Map(services.map((s) => [s.id, s]));
 
       const invoiceItemsData = createReplacementDto.items.map((item) => {
-        const service = serviceMap.get(item.serviceId);
-
-        if (!service) {
-          throw new NotFoundException(`Service ${item.serviceId} not found`);
+        const manualName = item.serviceName?.trim();
+        if (Boolean(item.serviceId) === Boolean(manualName)) {
+          throw new BadRequestException('Provide either an existing service or a manual service description and price');
         }
-
-        if (!service.isActive) {
-          throw new BadRequestException(`Service "${service.name}" is not active and cannot be invoiced`);
-        }
-
         const quantity = item.quantity ?? 1;
-
-        const unitPrice = item.unitPrice !== undefined
-          ? new Decimal(item.unitPrice)
-          : service.currentPrice;
-
+        let serviceId: string | null = null;
+        let serviceNameSnapshot: string;
+        let unitPrice: Decimal;
+        if (item.serviceId) {
+          const service = serviceMap.get(item.serviceId);
+          if (!service) throw new NotFoundException(`Service ${item.serviceId} not found`);
+          if (!service.isActive) throw new BadRequestException(`Service "${service.name}" is not active and cannot be invoiced`);
+          serviceId = service.id;
+          serviceNameSnapshot = service.name;
+          unitPrice = item.unitPrice !== undefined ? new Decimal(item.unitPrice) : service.currentPrice;
+        } else {
+          if (item.unitPrice === undefined) throw new BadRequestException('A price is required for a manual service');
+          serviceNameSnapshot = manualName!;
+          unitPrice = new Decimal(item.unitPrice);
+        }
         const lineTotal = unitPrice.mul(quantity).toDecimalPlaces(2);
 
         return {
-          serviceId: service.id,
-          serviceNameSnapshot: service.name,
+          serviceId,
+          serviceNameSnapshot,
           unitPriceSnapshot: unitPrice,
           quantity,
           lineTotal,
@@ -974,8 +1067,10 @@ export class InvoicesService {
       const replacementInvoice = await tx.invoice.create({
         data: {
           invoiceNumber: replacementInvoiceNumber,
-          visitId: visit.id,
-          patientId: visit.patientId,
+          visitId: visit?.id ?? null,
+          patientId: visit?.patientId ?? originalInvoice.patientId,
+          patientNameSnapshot: originalInvoice.patientNameSnapshot,
+          isTelephoneConsultation: originalInvoice.isTelephoneConsultation,
           status: 'DRAFT',
           subtotal,
           total,

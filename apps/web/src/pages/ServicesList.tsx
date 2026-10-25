@@ -23,6 +23,8 @@ export default function ServicesList() {
   const [page, setPage] = useState(1);
   const [confirmDeactivate, setConfirmDeactivate] = useState<Service | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Service | null>(null);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const limit = 20;
 
   const isAdmin = user?.role === 'ADMIN';
@@ -37,6 +39,8 @@ export default function ServicesList() {
   const meta = data?.meta;
 
   const handleToggleStatus = async (service: Service) => {
+    if (statusUpdating) return;
+    setStatusUpdating(true);
     try {
       await servicesService.updateServiceStatus(service.id, { isActive: !service.isActive });
       setConfirmDeactivate(null);
@@ -45,10 +49,13 @@ export default function ServicesList() {
     } catch (err) {
       console.error('Failed to update service status:', err);
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.serviceStatusFailed') });
+    } finally {
+      setStatusUpdating(false);
     }
   };
   const handleDelete = async () => {
-    if (!confirmDelete) return;
+    if (!confirmDelete || !isAdmin || deleting) return;
+    setDeleting(true);
     try {
       await servicesService.deleteServicePermanently(confirmDelete.id);
       setConfirmDelete(null);
@@ -56,6 +63,8 @@ export default function ServicesList() {
       showToast({ type: 'success', message: t('feedback.serviceDeleted') });
     } catch (err) {
       showToast({ type: 'error', message: err instanceof Error ? err.message : t('feedback.serviceStatusFailed') });
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -132,7 +141,7 @@ export default function ServicesList() {
                   <div className="flex gap-1 pt-1">
                     {isAdmin && <button onClick={() => navigate(`/services/${service.id}/edit`)} aria-label={t('services.editService')} className="icon-btn"><Pencil size={16} strokeWidth={1.75} /></button>}
                     {isAdmin && <button onClick={() => setConfirmDeactivate(service)} aria-label={service.isActive ? t('services.deactivateService') : t('services.activateService')} className="icon-btn danger"><Trash2 size={16} strokeWidth={1.75} /></button>}
-                    <button onClick={() => setConfirmDelete(service)} aria-label={t('services.deletePermanently')} className="icon-btn danger"><Trash2 size={16} strokeWidth={1.75} /></button>
+                    {isAdmin && <button onClick={() => setConfirmDelete(service)} aria-label={t('services.deletePermanently')} className="icon-btn danger"><Trash2 size={16} strokeWidth={1.75} /></button>}
                   </div>
                 )}
               </MobileRecordCard>
@@ -189,7 +198,7 @@ export default function ServicesList() {
                         >
                           <Trash2 size={16} strokeWidth={1.75} />
                         </button>}
-                        <button onClick={() => setConfirmDelete(service)} aria-label={t('services.deletePermanently')} className="icon-btn danger"><Trash2 size={16} strokeWidth={1.75} /></button>
+                        {isAdmin && <button onClick={() => setConfirmDelete(service)} aria-label={t('services.deletePermanently')} className="icon-btn danger"><Trash2 size={16} strokeWidth={1.75} /></button>}
                       </div>
                     </td>
                   )}
@@ -241,9 +250,10 @@ export default function ServicesList() {
             ? t('services.deactivateConfirm', { name: confirmDeactivate.name })
             : t('services.activateConfirm', { name: confirmDeactivate.name }))
           : ''}
-        confirmLabel={confirmDeactivate?.isActive ? t('common.deactivate') : t('common.activate')}
+        confirmLabel={statusUpdating ? t('common.loading') : confirmDeactivate?.isActive ? t('common.deactivate') : t('common.activate')}
         cancelLabel={t('common.cancel')}
         destructive={!!confirmDeactivate?.isActive}
+        loading={statusUpdating}
         onCancel={() => setConfirmDeactivate(null)}
         onConfirm={() => confirmDeactivate && handleToggleStatus(confirmDeactivate)}
       />
@@ -251,9 +261,10 @@ export default function ServicesList() {
         open={!!confirmDelete}
         title={t('services.deletePermanently')}
         message={t('services.deleteWarning')}
-        confirmLabel={t('common.confirm')}
+        confirmLabel={deleting ? t('common.loading') : t('common.confirm')}
         cancelLabel={t('common.cancel')}
         destructive
+        loading={deleting}
         onConfirm={() => void handleDelete()}
         onCancel={() => setConfirmDelete(null)}
       />
