@@ -4,6 +4,7 @@ import { ChildProcessWithoutNullStreams, spawn, spawnSync } from 'child_process'
 import { UserRole } from '@prisma/client';
 import { createGzip, createGunzip } from 'zlib';
 import { createReadStream, createWriteStream } from 'fs';
+import type { Dirent } from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { pipeline } from 'stream/promises';
@@ -16,6 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import { MaintenanceService } from '../common/maintenance/maintenance.service';
 import { PrismaService } from '../database/prisma.service';
 import { resolvePostgresToolPath } from './postgres-tools';
+import { assertBackupContainsMigrations } from './backup-schema-compatibility';
 
 export interface BackupManifestEntry {
   filename: string;
@@ -957,11 +959,32 @@ export class BackupService implements OnModuleInit {
       try {
         const manifest = await this.readManifest();
         await this.validateRecoveryPoint(filename, manifest);
+        validatedSnapshot = await this.createVerifiedSnapshot(filename, manifest);
+        const migrationsDirectoryCandidates = [
+          path.resolve(process.cwd(), 'prisma/migrations'),
+          path.resolve(process.cwd(), 'apps/api/prisma/migrations'),
+        ];
+        let migrationDirectories: Dirent[] | undefined;
+        for (const migrationsDirectory of migrationsDirectoryCandidates) {
+          try {
+            migrationDirectories = await fs.readdir(migrationsDirectory, { withFileTypes: true });
+            break;
+          } catch (error) {
+            if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
+          }
+        }
+        const requiredMigrations = migrationDirectories
+          ?.filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
+          .map((entry) => entry.name)
+          .sort() ?? [];
+        if (requiredMigrations.length === 0) {
+          throw new InternalServerErrorException('Application Prisma migration history is unavailable; restore was not started.');
+        }
+        await assertBackupContainsMigrations(validatedSnapshot, requiredMigrations);
 
         // Safety net: always take a fresh backup of the CURRENT state right
         // before overwriting it, so a restore is never a one-way door.
         await this.runBackupUnlocked('pre-restore-safety', userId, ipAddress, userAgent);
-        validatedSnapshot = await this.createVerifiedSnapshot(filename, await this.readManifest());
 
         let psql: ChildProcessWithoutNullStreams | undefined;
         let stderr = '';
@@ -1008,14 +1031,13 @@ export class BackupService implements OnModuleInit {
         const exitCode = err instanceof Error ? err.message.match(/psql exited with code (-?\d+)/)?.[1] : undefined;
         this.logger.error(`Restore failed (${category}${exitCode ? `, psql exit code ${exitCode}` : ''})`);
         throw new InternalServerErrorException(this.getRestoreFailureMessage(category));
-        } finally {
-          if (validatedSnapshot) await fs.unlink(validatedSnapshot).catch(() => undefined);
         }
 
         await this.auditService.logUserAction(userId, 'RESTORE_EXECUTED', 'System', filename, ipAddress, userAgent);
 
         return { restored: filename, restoredAt: new Date().toISOString() };
       } finally {
+        if (validatedSnapshot) await fs.unlink(validatedSnapshot).catch(() => undefined);
         this.maintenanceService.leave();
       }
     });

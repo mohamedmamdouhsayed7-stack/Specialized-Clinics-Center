@@ -1,10 +1,11 @@
 import { BackupService } from './backup.service';
 import { PrismaClient } from '@prisma/client';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdtemp, readdir as readDirectory, rm, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { spawn } from 'child_process';
 import { createHash } from 'crypto';
 import { gzipSync } from 'zlib';
+import * as path from 'path';
 
 describe('Backup PostgreSQL integration', () => {
   let source: PrismaClient;
@@ -26,6 +27,24 @@ describe('Backup PostgreSQL integration', () => {
       child.once('error', reject);
       child.once('close', (code) => code === 0 ? resolve() : reject(new Error(`${command} failed: ${stderr}`)));
     });
+
+  async function migrationHistorySql(migrationNames?: string[]) {
+    const migrationsDirectory = path.resolve(__dirname, '../../prisma/migrations');
+    const directories = migrationNames || (await readDirectory(migrationsDirectory, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    const rows = directories.map((name, index) => {
+      const id = `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`;
+      return `${id}\t${'a'.repeat(64)}\t2026-10-25 00:00:00+00\t${name}\t\\N\t\\N\t2026-10-25 00:00:00+00\t1`;
+    });
+    return [
+      'CREATE TABLE public."_prisma_migrations" ("id" VARCHAR(36) NOT NULL, "checksum" VARCHAR(64) NOT NULL, "finished_at" TIMESTAMPTZ, "migration_name" VARCHAR(255) NOT NULL, "logs" TEXT, "rolled_back_at" TIMESTAMPTZ, "started_at" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, "applied_steps_count" INTEGER NOT NULL DEFAULT 0, CONSTRAINT "_prisma_migrations_pkey" PRIMARY KEY ("id"));',
+      'COPY public."_prisma_migrations" ("id", "checksum", "finished_at", "migration_name", "logs", "rolled_back_at", "started_at", "applied_steps_count") FROM stdin;',
+      ...rows,
+      '\\.',
+    ].join('\n');
+  }
 
   beforeAll(async () => {
     backupDir = await mkdtemp(`${tmpdir()}/clinic-backup-integration-`);
@@ -146,10 +165,12 @@ describe('Backup PostgreSQL integration', () => {
     const tableName = `backup_restore_compat_${suffix}`;
     const filename = `clinic_backup_historical-${suffix}.sql.gz`;
     const sql = [
+      'DROP TABLE IF EXISTS public."_prisma_migrations";',
       `CREATE TABLE public.${tableName} (id integer PRIMARY KEY, label text NOT NULL);`,
       `COPY public.${tableName} (id, label) FROM stdin;`,
       '1\tfixture row',
       '\\.',
+      await migrationHistorySql(),
       `ALTER TABLE public.${tableName} OWNER TO historical_owner;`,
       'ALTER DEFAULT PRIVILEGES FOR ROLE historical_owner IN SCHEMA public GRANT SELECT ON TABLES TO historical_reader;',
       `GRANT SELECT ON TABLE public.${tableName} TO historical_reader;`,
@@ -198,6 +219,58 @@ describe('Backup PostgreSQL integration', () => {
       }
     } finally {
       skippedStatementsLog.mockRestore();
+    }
+  }, 120000);
+
+  it('refuses an old-schema backup before it changes the target database', async () => {
+    const suffix = `${Date.now()}_${process.pid}`;
+    const tableName = `backup_restore_incompatible_${suffix}`;
+    const filename = `clinic_backup_incompatible-${suffix}.sql.gz`;
+    const migrationsDirectory = path.resolve(__dirname, '../../prisma/migrations');
+    const allMigrations = (await readDirectory(migrationsDirectory, { withFileTypes: true }))
+      .filter((entry) => entry.isDirectory() && /^\d{14}_/.test(entry.name))
+      .map((entry) => entry.name)
+      .sort();
+    const oldMigrations = allMigrations.slice(0, -2);
+    const sql = [
+      `CREATE TABLE public.${tableName} (id integer PRIMARY KEY);`,
+      await migrationHistorySql(oldMigrations),
+    ].join('\n') + '\n';
+    const content = gzipSync(Buffer.from(sql));
+    await writeFile(`${backupDir}/${filename}`, content);
+    const manifest = await backupService['readManifest']();
+    manifest.entries.push({
+      filename,
+      sizeBytes: content.length,
+      sha256: createHash('sha256').update(content).digest('hex'),
+      createdAt: new Date().toISOString(),
+      triggeredBy: 'manual',
+      uploadedToRemote: false,
+      validation: { gzipVerified: true, databaseVerified: false, verifiedAt: new Date().toISOString() },
+      protected: false,
+    });
+    await backupService['writeManifest'](manifest);
+
+    const targetUrl = new URL(process.env.DATABASE_URL!);
+    targetUrl.pathname = `/${restoreDatabase}`;
+    process.env.POSTGRES_DB = restoreDatabase;
+    process.env.DATABASE_URL = targetUrl.toString();
+    const safetyBackupCountBefore = (await backupService.listBackups())
+      .filter((entry) => entry.triggeredBy === 'pre-restore-safety').length;
+
+    await expect(backupService.restoreBackup(filename, 'old-backup-admin'))
+      .rejects.toThrow(/Backup schema is older than this application/i);
+
+    const target = new PrismaClient({ datasources: { db: { url: targetUrl.toString() } } });
+    try {
+      const table = await target.$queryRawUnsafe<Array<{ name: string | null }>>(
+        `SELECT to_regclass('public.${tableName}')::text AS name`,
+      );
+      expect(table[0]?.name).toBeNull();
+      expect((await backupService.listBackups())
+        .filter((entry) => entry.triggeredBy === 'pre-restore-safety')).toHaveLength(safetyBackupCountBefore);
+    } finally {
+      await target.$disconnect();
     }
   }, 120000);
 });

@@ -120,6 +120,20 @@ describe('Visits Module Tests (E2E)', () => {
         .send({ patientId: testPatientId, type: VisitType.CHECKUP, visitDate: '2026-10-23T10:30' }).expect(400);
     });
 
+    it.each([
+      ['legacy application ISO UTC format', '2035-04-12T09:30:00.000Z', '2035-04-12T09:30:00.000Z'],
+      ['explicit Kuwait offset format', '2035-04-12T12:30:00+03:00', '2035-04-12T09:30:00.000Z'],
+    ])('accepts %s without changing the represented instant', async (_label, input, expectedUtc) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/visits')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ patientId: testPatientId, type: VisitType.CHECKUP, visitDate: input })
+        .expect(201);
+
+      expect(new Date(response.body.visitDate).toISOString()).toBe(expectedUtc);
+      await prisma.visit.delete({ where: { id: response.body.id } });
+    });
+
     it('should create walk-in visit as receptionist', async () => {
       const response = await request(app.getHttpServer())
         .post('/api/visits')

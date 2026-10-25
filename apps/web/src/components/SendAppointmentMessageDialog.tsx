@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { X, MessageCircle } from 'lucide-react';
 import { appointmentsService, Appointment } from '../services/appointments.service';
-import { formatDate } from '../utils/dateFormat';
+import { formatDate, formatTime } from '../utils/dateFormat';
 import { buildWhatsAppUrl, isValidWhatsAppPhone, normalizeWhatsAppPhone } from '../utils/invoiceSharing';
 import { useToast } from '../contexts/ToastContext';
 type MessageType = 'CONFIRMED' | 'REMINDER' | 'CANCELLED' | 'RESCHEDULED';
@@ -68,10 +68,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
 
     const appointmentTimeLabel = useMemo(() => {
         if (!selectedAppointment) return '';
-        const locale = i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US';
-        return new Intl.DateTimeFormat(locale, { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kuwait' }).format(
-            new Date(selectedAppointment.scheduledAt),
-        );
+        return formatTime(selectedAppointment.scheduledAt, i18n.language);
     }, [selectedAppointment, i18n.language]);
 
     const appointmentDateLabel = useMemo(() => {
@@ -98,11 +95,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
             name: patientName,
             clinic: t('dashboard.clinicLabel'),
             date: formatDate(new Date(appointment.scheduledAt), i18n.language),
-            time: new Intl.DateTimeFormat(i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US', {
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: 'Asia/Kuwait',
-            }).format(new Date(appointment.scheduledAt)),
+            time: formatTime(appointment.scheduledAt, i18n.language),
         };
         switch (type) {
             case 'CONFIRMED':
@@ -219,11 +212,7 @@ export default function SendAppointmentMessageDialog({ open, onClose }: SendAppo
                                             <div>
                                                 <div className="font-semibold text-[#111844]">{appointment.patient?.fullNameAr}</div>
                                                 <div className="mt-0.5 text-xs text-[#667085]">
-                                                    {new Intl.DateTimeFormat(i18n.language.startsWith('ar') ? 'ar-KW' : 'en-US', {
-                                                        hour: '2-digit',
-                                                        minute: '2-digit',
-                                                        timeZone: 'Asia/Kuwait',
-                                                    }).format(new Date(appointment.scheduledAt))}
+                                                    {formatTime(appointment.scheduledAt, i18n.language)}
                                                 </div>
                                             </div>
                                             <span className="shrink-0 rounded-full bg-[#F6F8FC] px-3 py-1 text-xs font-semibold text-[#4B5694]">

@@ -4,7 +4,13 @@ import { useQuery } from '@tanstack/react-query';
 import { appointmentsService, Appointment } from '../services/appointments.service';
 import { useTranslation } from 'react-i18next';
 import { formatTime as formatTimeUtil } from '../utils/dateFormat';
-import { addCalendarDays, formatKuwaitCalendarDate, getSelectedKuwaitCalendarDate, groupAppointmentsByKuwaitTime } from '../utils/kuwaitDateTime';
+import {
+  addCalendarDays,
+  formatKuwaitCalendarDate,
+  getSelectedKuwaitCalendarDate,
+  groupAppointmentsByKuwaitTime,
+  kuwaitDateTimeLocalToIso,
+} from '../utils/kuwaitDateTime';
 import { preserveListState } from '../utils/listState';
 import PageHeader from '../components/PageHeader';
 import EmptyState from '../components/EmptyState';
@@ -63,6 +69,11 @@ export default function AppointmentsList() {
   };
 
   const formatTime = (dateString: string) => formatTimeUtil(dateString, i18n.language);
+  const formatCalendarTimeSlot = (time: string) =>
+    formatTimeUtil(
+      kuwaitDateTimeLocalToIso(selectedDate + 'T' + time),
+      i18n.language,
+    );
 
   const formatDateDisplay = (date: string) => {
     const locale = i18n.language === 'ar' ? 'ar-KW' : 'en-GB';
@@ -192,7 +203,7 @@ export default function AppointmentsList() {
                     key={time}
                     className="flex items-center p-4 hover:bg-gray-50 min-h-[60px]"
                   >
-                    <div className="w-20 text-sm font-medium text-gray-600">{time}</div>
+                    <div className="w-20 text-sm font-medium text-gray-600">{formatCalendarTimeSlot(time)}</div>
                     <div className="flex-1">
                       {slotAppointments.length > 0 ? (
                         slotAppointments.map((apt) => (

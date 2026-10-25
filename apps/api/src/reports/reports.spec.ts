@@ -155,6 +155,54 @@ describe('Reports Module Tests (E2E)', () => {
     });
   });
 
+  describe('Unlinked appointment reporting', () => {
+    const scheduledAtToday = () => new Date(localDayStartToUtc(getLocalTodayInClinicTimezone()).getTime() + 12 * 60 * 60 * 1000);
+
+    it('keeps the existing patient names for a linked appointment', async () => {
+      const appointment = await prisma.appointment.create({
+        data: {
+          patientId: testPatientId,
+          scheduledAt: scheduledAtToday(),
+          status: 'CANCELLED',
+          createdById: adminUserId,
+        },
+      });
+
+      try {
+        const response = await request(app.getHttpServer())
+          .get('/api/reports/today-appointment-exceptions')
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .expect(200);
+        const result = response.body.find((row: { id: string }) => row.id === appointment.id);
+        expect(result).toMatchObject({ patientNameAr: 'تقارير اختبار', patientNameEn: 'Test Reports' });
+      } finally {
+        await prisma.appointment.delete({ where: { id: appointment.id } });
+      }
+    });
+
+    it('returns localized fallback names instead of crashing for an unlinked appointment', async () => {
+      const appointment = await prisma.appointment.create({
+        data: {
+          patientId: null,
+          scheduledAt: scheduledAtToday(),
+          status: 'NO_SHOW',
+          createdById: adminUserId,
+        },
+      });
+
+      try {
+        const response = await request(app.getHttpServer())
+          .get('/api/reports/today-appointment-exceptions')
+          .set('Authorization', `Bearer ${adminAccessToken}`)
+          .expect(200);
+        const result = response.body.find((row: { id: string }) => row.id === appointment.id);
+        expect(result).toMatchObject({ patientNameAr: 'غير مرتبط بمريض', patientNameEn: 'No patient linked' });
+      } finally {
+        await prisma.appointment.delete({ where: { id: appointment.id } });
+      }
+    });
+  });
+
   describe('Payment Reversal Exclusion', () => {
     it('should include RECORDED payment in summary total collected', async () => {
       // Create a RECORDED payment with a paymentDate within the default range

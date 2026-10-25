@@ -226,6 +226,20 @@ describe('Appointments Module Tests (E2E)', () => {
       expect(response.body.status).toBe(AppointmentStatus.BOOKED);
     });
 
+    it.each([
+      ['legacy application ISO UTC format', '2035-04-12T09:30:00.000Z', '2035-04-12T09:30:00.000Z'],
+      ['explicit Kuwait offset format', '2035-04-12T12:30:00+03:00', '2035-04-12T09:30:00.000Z'],
+    ])('accepts %s without changing the represented instant', async (_label, input, expectedUtc) => {
+      const response = await request(app.getHttpServer())
+        .post('/api/appointments')
+        .set('Authorization', `Bearer ${adminAccessToken}`)
+        .send({ patientId: testPatientId, scheduledAt: input })
+        .expect(201);
+
+      expect(new Date(response.body.scheduledAt).toISOString()).toBe(expectedUtc);
+      await prisma.appointment.delete({ where: { id: response.body.id } });
+    });
+
     it('should reject appointment for non-existent patient', async () => {
       const scheduledAt = new Date();
       scheduledAt.setDate(scheduledAt.getDate() + 1);
